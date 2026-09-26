@@ -145,6 +145,63 @@ See [the hardware tests](../../scripts/ports/README.md) for a repeatable upstrea
 shell check. The bootstrap test script expects a different prompt and must only
 be used with the original `teensy41` target.
 
+## Rev D audio shield and aplay — software prepared, hardware pending
+
+The user has a PJRC Audio Adapter Rev D and is wiring it to the bare Teensy.
+This is separate from the custom SuperKeyboard codec circuit and its unresolved
+VDDIO issue below. Use the Rev D shield's **3.3V** and **GND**, plus matching
+Teensy/shield pins 18/19 (I²C), 7 (audio out), 20 (LRCLK), 21 (BCLK), and 23
+(MCLK). Pin 8 supplies the input path if recording is later integrated. Wire
+with power disconnected and keep clock wiring short. Keep the SD card in the
+Teensy's native SDIO socket. The shield's SPI SD socket is not used.
+
+The initial output is the headphone jack; line-out is muted. The headphone
+virtual ground must not be tied to ordinary ground or a grounded amplifier.
+Use the shield's line-output pads when adding an amplifier.
+[PJRC shield documentation](https://www.pjrc.com/store/teensy3_audio.html).
+
+Build the separate profile:
+
+```sh
+pio run -e teensy41_audio
+```
+
+**Not uploaded or acoustically verified yet.** Wait for wiring confirmation,
+then upload that environment and check:
+
+```text
+audio status
+audio tone
+aplay -v 10 /music/song.mp3
+```
+
+`audio tone` produces a quiet 440 Hz tone for approximately one second;
+`audio off` stops it early. `aplay` accepts 16-bit PCM WAV and MP3, including
+mono/stereo and sample-rate conversion to the fixed 44.1 kHz stereo output.
+Ctrl-C, Escape or Ctrl+] cancels playback. Default headphone volume is 20%;
+`-v` selects 0–100. Recording, line-out selection, background playback and the
+full audio stream/device service are not enabled in this profile.
+
+The implementation links the actual upstream `solar_os_audio_apps.c` with a
+synchronous execution option, the existing MP3 codec and PCM converter, and a
+Teensy SD transport/output adapter. The synchronous option defaults off for
+other platforms and keeps all file operations in the one console task. A
+32-slot stereo PCM ring lives in OCRAM; the Audio library ISR copies into its
+internal audio blocks and drives I²S/DMA. Decode buffers use PSRAM. Cancellation
+and a bounded output wait keep a stalled sink from waiting forever. Diagnostics
+report output blocks and source starvation events, not measured analog quality.
+The console stack is 32 KiB for this target; compiler stack-usage output reports
+16,576 bytes in `mp3dec_decode_frame` alone.
+
+The working SD/editor/Python shell is preserved in commit `4839f71` and
+`../solar_os-baselines/2026-09-26-writable/`. The default `teensy41_shell`
+profile keeps audio disabled. Host audio tests generate original quiet tones
+with FFmpeg, run actual MP3/WAV decode/resampling, and check cancellation,
+allocation failure, malformed/truncated inputs, output errors and cleanup
+under AddressSanitizer/UndefinedBehaviorSanitizer. Hardware codec detection,
+DMA/FreeRTOS coexistence, audible output, underruns and repeated playback remain
+unverified until the shield is connected.
+
 ## Hardware evidence
 
 Inspected the current KiCad hierarchical schematic using `kicad-cli sch export
@@ -504,3 +561,11 @@ Final shell/calculator/SD-read regression passed 100 cycles in
 bytes; external 8,385,240 bytes). Log:
 `/tmp/teensy-writable-shell-100.json`. A final rebuild produced the identical
 HEX hash above. The recovery image was compiled but not uploaded.
+
+Audio preparation results (not flashed): `teensy41_audio` builds at 436,544 bytes
+RAM1, 35,284 bytes RAM2, and 444,168 bytes flash. Prepared HEX SHA-256:
+`f9e9e63607ed3f43a417dc1224d83f155d495b6543abc24d822511222cf14476`.
+Extended audio host tests passed with sanitizers; quiet fixtures are retained
+in `/tmp/solaros-audio.Yi7JBp`. The regular shell builds and its host regression
+suite passes. Existing unused-function/truncation warnings remain in shared
+shell/calculator code. On-board playback and listening checks remain pending.

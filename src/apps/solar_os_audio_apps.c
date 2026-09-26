@@ -1,3 +1,9 @@
+#ifndef SOLAR_OS_AUDIO_APP_SYNCHRONOUS
+#define SOLAR_OS_AUDIO_APP_SYNCHRONOUS 0
+#endif
+#ifndef SOLAR_OS_HEADLESS
+#define SOLAR_OS_HEADLESS 0
+#endif
 #include "solar_os_audio_apps.h"
 
 #include <errno.h>
@@ -319,6 +325,7 @@ static void audio_app_task(void *arg)
              info.duration_ms,
              esp_err_to_name(err));
     audio_app.task_done = true;
+    if (SOLAR_OS_AUDIO_APP_SYNCHRONOUS) return;
     if (audio_app_uses_external_worker()) {
         solar_os_task_delete_external(NULL);
     } else {
@@ -346,6 +353,8 @@ static void audio_app_print_info(solar_os_shell_io_t *io,
                                  info->duration_ms);
     }
 }
+
+static void audio_app_drain_events(solar_os_context_t *ctx);
 
 static esp_err_t audio_app_start_common(solar_os_context_t *ctx, audio_app_mode_t mode)
 {
@@ -455,6 +464,11 @@ static esp_err_t audio_app_start_common(solar_os_context_t *ctx, audio_app_mode_
     }
 
     audio_app.running = true;
+    if (SOLAR_OS_AUDIO_APP_SYNCHRONOUS) {
+        audio_app_task(NULL);
+        audio_app_drain_events(ctx);
+        return ESP_OK;
+    }
     const BaseType_t created = audio_app_uses_external_worker() ?
         solar_os_task_create_pinned_external(
             audio_app_task,
@@ -576,7 +590,7 @@ static void audio_app_stop(solar_os_context_t *ctx)
     (void)ctx;
 
     audio_app.stop_requested = true;
-    if (!solar_os_task_wait_done(audio_app.task,
+    if (!SOLAR_OS_AUDIO_APP_SYNCHRONOUS && !solar_os_task_wait_done(audio_app.task,
                                  &audio_app.task_done,
                                  SOLAR_OS_TASK_STOP_WAIT_MS)) {
         SOLAR_OS_LOGW(TAG, "audio task did not stop within %u ms",
@@ -624,14 +638,14 @@ static bool audio_app_event(solar_os_context_t *ctx, const solar_os_event_t *eve
     }
     if (ch == SOLAR_OS_KEY_PAGE_UP) {
         solar_os_terminal_t *term = solar_os_context_terminal(ctx);
-        if (term != NULL) {
+        if (!SOLAR_OS_HEADLESS && term != NULL) {
             solar_os_terminal_page_up(term);
         }
         return true;
     }
     if (ch == SOLAR_OS_KEY_PAGE_DOWN) {
         solar_os_terminal_t *term = solar_os_context_terminal(ctx);
-        if (term != NULL) {
+        if (!SOLAR_OS_HEADLESS && term != NULL) {
             solar_os_terminal_page_down(term);
         }
         return true;
@@ -652,7 +666,7 @@ const solar_os_app_t solar_os_arecord_app = {
     .state_storage = SOLAR_OS_APP_STATE_TRANSIENT,
     .state_release_ready = audio_app_state_release_ready,
     .state_release_cleanup = audio_app_cleanup_resources,
-    .worker_stack_bytes = AUDIO_APP_TASK_STACK,
+    .worker_stack_bytes = SOLAR_OS_AUDIO_APP_SYNCHRONOUS ? 0 : AUDIO_APP_TASK_STACK,
 };
 #endif
 
@@ -669,7 +683,7 @@ const solar_os_app_t solar_os_aplay_app = {
     .state_storage = SOLAR_OS_APP_STATE_TRANSIENT,
     .state_release_ready = audio_app_state_release_ready,
     .state_release_cleanup = audio_app_cleanup_resources,
-    .worker_stack_bytes = AUDIO_APP_TASK_STACK,
+    .worker_stack_bytes = SOLAR_OS_AUDIO_APP_SYNCHRONOUS ? 0 : AUDIO_APP_TASK_STACK,
     .worker_stack_external = true,
 };
 #endif

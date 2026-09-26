@@ -159,7 +159,9 @@ void setup() {
     heartbeat_queue = solar_os_queue_create_internal(1, sizeof(uint32_t));
     configASSERT(heartbeat_queue);
     configASSERT(xTaskCreate(heartbeat, "heartbeat", 256, nullptr, 1, nullptr) == pdPASS);
-    #if SK_UPSTREAM_SHELL
+    #if SK_AUDIO_PLAYER
+    constexpr unsigned console_stack = 8192; // MP3 decoder scratch plus shell frames.
+#elif SK_UPSTREAM_SHELL
     constexpr unsigned console_stack = 6144;
 #else
     constexpr unsigned console_stack = 4096;

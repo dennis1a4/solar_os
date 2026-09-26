@@ -209,3 +209,16 @@ from on-board tests.
 - Saved files and Python execution survived a software reboot. Final 100-cycle
   shell/calculator/read regression and recovery build passed. Cold power-cycle
   testing of this writable profile remains separate from the earlier baseline.
+
+### Rev D audio shield / aplay — software prepared, wiring pending
+
+- User identified a PJRC Rev D shield, currently disconnected, and is wiring
+  it to the Teensy. No audio firmware upload or audible test has happened yet.
+- Added a separate `teensy41_audio` profile with SGTL5000 headphone output,
+  one-second tone/status commands, buffered stereo I²S, and the real `aplay`
+  application using the bundled MP3 decoder and sample-rate converter.
+- Software build and host decoder/transport tests are the current scope;
+  hardware detection, tone, SD MP3/WAV playback, cancellation, stack/memory
+  stability and listening confirmation must pass before marking audio done.
+- Next: confirm wiring and listening output, close the serial monitor, upload
+  the audio profile, and run the generated-tone hardware suite.

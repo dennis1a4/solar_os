@@ -101,7 +101,7 @@ int sk_usb_read() {
     return -1;
 }
 
-#if SK_AUDIO_SGTL5000
+#if SK_AUDIO_SGTL5000 && !SK_AUDIO_PLAYER
 #include <Audio.h>
 static AudioSynthWaveformSine sine;
 static AudioOutputI2S audio_output;
@@ -111,7 +111,10 @@ static AudioControlSGTL5000 codec;
 static bool audio_ready;
 #endif
 void sk_audio_begin() {
-#if SK_AUDIO_SGTL5000
+#if SK_AUDIO_PLAYER
+    extern void sk_audio_player_begin();
+    sk_audio_player_begin();
+#elif SK_AUDIO_SGTL5000
     AudioMemory(16);
     sine.amplitude(0);
     sine.frequency(440);
@@ -126,7 +129,10 @@ void sk_audio_begin() {
 #endif
 }
 void sk_audio_tone(bool on) {
-#if SK_AUDIO_SGTL5000
+#if SK_AUDIO_PLAYER
+    extern void sk_audio_player_tone(bool);
+    sk_audio_player_tone(on);
+#elif SK_AUDIO_SGTL5000
     if (audio_ready) sine.amplitude(on ? 0.05f : 0.0f);
     else sk_console_print("Audio unavailable\r\n");
 #else

@@ -130,3 +130,31 @@ python3 scripts/ports/test_teensy41_writable.py \
 This intentionally restarts the board, waits for USB to settle, and checks the
 saved file contents and Python execution. It is a software restart, not a
 physical power-cycle or interrupted-write test.
+
+## Rev D shield audio (hardware validation pending)
+
+Generate quiet original test files and test the real decoder/SD transport on
+the host (requires FFmpeg and a C compiler):
+
+```sh
+bash scripts/ports/test_teensy41_audio_host.sh
+```
+
+The script prints its retained `/tmp/solaros-audio.XXXXXX` fixture directory.
+It uses address/undefined-behavior sanitizers; LeakSanitizer needs an environment
+without ptrace. After confirming wiring and uploading `teensy41_audio`, close
+other serial monitors and substitute that fixture directory:
+
+```sh
+python3 scripts/ports/test_teensy41_audio.py \
+  --fixtures /tmp/solaros-audio.XXXXXX --repeat 20 \
+  --log /tmp/teensy-audio.json
+```
+
+This test emits quiet tones, copies only generated audio to a new
+`/_solaros_audio_<random>` directory through the board's Python REPL, verifies
+SHA-256, then tests stereo 44.1 kHz MP3, mono 48 kHz MP3, mono 22.05 kHz WAV,
+playback duration, block/underrun counters, cancellation, input errors and
+repeated app cleanup. Test files remain on SD. Someone must also listen and
+confirm both channels sound correct; software counters cannot prove analog
+output quality. No playback passes are claimed until this runs on the shield.
