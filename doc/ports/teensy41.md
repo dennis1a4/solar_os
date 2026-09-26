@@ -674,7 +674,7 @@ The user confirmed hearing these tones and reported moving the Teensy slightly.
 A physical connection issue is therefore plausible, but not confirmed. Inspect
 and secure the wiring with power disconnected if silence or hum returns.
 
-## Native Ethernet adapter — preparation
+## Native Ethernet adapter — initial hardware checks passed
 
 The user selected the PJRC Ethernet kit for the Teensy 4.1's native Ethernet
 header. Wire with power disconnected according to the
@@ -727,3 +727,28 @@ against the board yet. No network firmware uploaded during preparation.
 
 The independent `teensy41_audio` profile also rebuilt successfully after these
 changes; network code remains excluded there.
+
+### Native Ethernet hardware validation — 2026-09-26
+
+User connected the PJRC kit; uploaded `teensy41_network`. Link detection, DHCP,
+DNS resolution of example.com, TCP connection to example.com:80, invalid-port
+handling and software down/up with DHCP reacquisition passed. They passed again
+after audio and shell tests. Network task stack low-water mark was 1,700 words
+in the first suite. Ethernet remains enabled in this running session; restart
+requires `network up` again. The test only connected TCP; it did not request
+an HTTP page.
+
+With Ethernet running, stereo MP3, resampled mono MP3/WAV, cancellation/error
+recovery and three further plays passed with stable free memory (36,540
+internal bytes; PSRAM 8,385,240 bytes) and console stack low-water mark of
+3,793 words. Shell/calculator lifecycle, line editing/history and SD reads
+passed 20 cycles, stable within that suite at 36,300 internal free bytes.
+The differing suite measurements are not a long-duration leak test.
+
+Logs: `/tmp/teensy-network-first.json`, `/tmp/teensy-network-audio.json`,
+`/tmp/teensy-network-shell.json`, `/tmp/teensy-network-after-apps.json`.
+Tested firmware backup: `../solar_os-baselines/2026-09-26-network/`.
+Uploaded SHA-256: `e88451b74e4fa0c26f8b4d45e3248fb9d0db13b2f96c545a4d869813de0e6ba5`.
+Physical cable removal/reinsertion, prolonged DHCP renewal/traffic and Python
+network APIs remain untested/unimplemented as applicable. No services listen
+for remote shell or file access.
