@@ -673,3 +673,57 @@ Backup: `../solar_os-baselines/2026-09-26-microphone-diagnostic/`.
 The user confirmed hearing these tones and reported moving the Teensy slightly.
 A physical connection issue is therefore plausible, but not confirmed. Inspect
 and secure the wiring with power disconnected if silence or hum returns.
+
+## Native Ethernet adapter — preparation
+
+The user selected the PJRC Ethernet kit for the Teensy 4.1's native Ethernet
+header. Wire with power disconnected according to the
+[PJRC kit instructions](https://www.pjrc.com/store/ethernet_kit.html). The jack
+requires its magnetics; this is not a direct GPIO-to-RJ45 connection.
+
+`teensy41_network` extends the tested audio profile and adds QNEthernet 0.36.0
+at commit `ce1977ecb7af916083d5d3435270bc5585e296a8`. QNEthernet is
+AGPL-3.0-or-later; its own license is retained in the downloaded dependency.
+The adapter initially exposes a reduced text command:
+
+```text
+network up
+network status
+network resolve example.com
+network connect example.com 80
+network down
+```
+
+Startup is manual. `up` starts DHCP without waiting for a cable or lease. Status
+reports `eth0`, link, IPv4 address/mask/gateway/DNS, MAC and task stack headroom.
+Connect checks only the TCP handshake to the specified endpoint and closes it;
+it does not fetch a page. DNS and connect each have a three-second timeout.
+There is no listening server or automatic outbound application connection.
+
+A dedicated FreeRTOS task owns every QNEthernet operation and receives copied
+shell requests through queues. Automatic polling through Arduino yield is
+disabled because QNEthernet does not support concurrent callers. This lets
+DHCP/packet processing continue while foreground apps run. Its static stack,
+lwIP heap/pools and DMA buffers use RAM2. Ethernet/lwIP library code and constant
+data are placed in cached flash by a generated linker script, preserving RAM1
+for the console heap.
+
+This is the first transport adapter, not full compatibility with ESP-IDF. The
+shared network registry currently exposes `esp_netif` and ESP events; mapping
+it and the socket APIs is a subsequent step. Wi-Fi scanning, SSIDs, AP/router
+mode, TLS, MQTT, WireGuard and Python networking are not enabled by this profile.
+Current Python and audio functionality remain compiled in.
+
+Build: `pio run -e teensy41_network`. Hardware link/DHCP and DNS/TCP validation
+remain pending until the kit is connected. The saved audio-only firmware remains
+available under `../solar_os-baselines/2026-09-26-microphone-diagnostic/`.
+
+Ethernet preparation build passed: RAM1 444,352 bytes (84.8%), RAM2 145,696
+bytes (27.8%), flash 527,080 bytes. ELF inspection confirms Ethernet.loop and
+lwIP tcp_input reside in flash at 0x6000xxxx/0x6001xxxx. Build log:
+`/tmp/teensy-network-build.log`. Prepared HEX SHA-256: `e88451b74e4fa0c26f8b4d45e3248fb9d0db13b2f96c545a4d869813de0e6ba5`.
+The hardware test script passes Python syntax compilation; it has not run
+against the board yet. No network firmware uploaded during preparation.
+
+The independent `teensy41_audio` profile also rebuilt successfully after these
+changes; network code remains excluded there.

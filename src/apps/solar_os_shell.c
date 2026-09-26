@@ -527,6 +527,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"uptime", "show time since boot", solar_os_shell_cmd_uptime},
     {"clear", "clear the screen", solar_os_shell_cmd_clear},
     {"setterm", "set serial terminal size", solar_os_shell_cmd_setterm},
+#if SK_ETHERNET
+    {"network", "Ethernet status, DHCP, DNS and TCP checks", solar_os_shell_cmd_network},
+#endif
 #if SK_AUDIO_PLAYER
     {"audio", "audio status and one-second test tone", solar_os_shell_cmd_audio},
 #endif

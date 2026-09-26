@@ -175,3 +175,18 @@ a clear rise/fall in tone energy. It reports clipping and spectral measurements;
 a pass does not establish clean analog quality. Uniquely named WAVs remain on
 SD. The retrieved host WAV contains microphone audio, potentially including
 nearby conversation; keep it and the logs outside the repository.
+
+## Native Ethernet
+
+After connecting the PJRC kit to a DHCP LAN and uploading `teensy41_network`,
+close the serial monitor and run:
+
+```sh
+python3 scripts/ports/test_teensy41_network.py --log /tmp/teensy-network.json
+```
+
+This checks link, DHCP, invalid arguments and a software down/up cycle, leaving
+Ethernet enabled. Optional `--resolve HOST` and `--connect HOST PORT` check
+one explicitly chosen DNS name/TCP endpoint; there is no LAN scan. Physical
+cable removal/reinsertion and networking alongside long audio/Python workloads
+need separate hardware checks. Logs include the board's MAC and LAN addresses.

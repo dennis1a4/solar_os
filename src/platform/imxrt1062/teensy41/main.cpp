@@ -119,6 +119,10 @@ static void shell_task(void *) {
     sk_displays_begin();
     sk_audio_begin();
     sk_usb_begin();
+#if SK_ETHERNET
+    extern void sk_network_begin();
+    sk_network_begin();
+#endif
 #if SK_UPSTREAM_SHELL
     extern void sk_upstream_shell_run();
     sk_upstream_shell_run();

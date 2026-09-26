@@ -128,7 +128,9 @@ together. Optional peripheral compilation is not hardware validation.
 - [ ] Check stack use, allocation failures, and missing-storage behavior per app.
 - [x] Prioritize on-device editing and MicroPython scripting.
 - [ ] Choose further apps and Python modules as needed.
-- [ ] Choose Ethernet/Wi-Fi hardware before planning network-dependent apps.
+- [x] Choose native Teensy 4.1 Ethernet with the PJRC Ethernet kit.
+- [ ] Verify the Ethernet adapter: link, DHCP, DNS, TCP, cable recovery and audio coexistence.
+- [ ] Bridge Ethernet into the shared network registry/socket and Python APIs.
 
 Done when: the selected applications work reliably on the intended hardware.
 
@@ -142,7 +144,7 @@ Done when: the selected applications work reliably on the intended hardware.
 | USB console connection timing | Test client needed a one-second settling delay after opening the port. |
 | SD hot removal | Recovery after an already successful mount is not implemented. |
 | Hardware wiring/population | See unresolved items in the port notes before peripheral bring-up. |
-| Network transport | Undecided; not required for the bare-board baseline. |
+| Network transport | Native Ethernet with PJRC kit selected; separate teensy41_network adapter in preparation. Shared network/socket API integration remains. |
 | MicroPython scope | 512 KiB PSRAM heap, basic REPL and SD scripts/imports/files; no CircuitPython or hardware/network modules yet. |
 | Full upstream feature scope | Select incrementally after shell/storage integration. |
 
