@@ -518,6 +518,7 @@ static void calc_text_submit(solar_os_context_t *ctx)
     calc_text_prompt(ctx);
 }
 
+#if !SOLAR_OS_HEADLESS
 static int calc_map_x(double x, int left, int width)
 {
     return left + width / 2 + (int)lround((x - calc->center_x) / calc->units_x);
@@ -836,6 +837,8 @@ static void calc_graphics_event(solar_os_context_t *ctx, uint8_t ch)
     calc_graphics_render(ctx);
 }
 
+#endif
+
 static void calc_print_usage(solar_os_context_t *ctx, const char *reason)
 {
     solar_os_shell_io_t *io = calc_io(ctx);
@@ -913,6 +916,7 @@ static esp_err_t calc_start(solar_os_context_t *ctx)
         return ESP_OK;
     }
 
+#if !SOLAR_OS_HEADLESS
     solar_os_shell_io_t *launch_io = solar_os_context_shell_io(ctx);
     const bool port_shell =
         launch_io != NULL &&
@@ -922,7 +926,10 @@ static esp_err_t calc_start(solar_os_context_t *ctx)
         solar_os_context_set_app_class(ctx, SOLAR_OS_APP_CLASS_GUI);
         solar_os_context_set_graphics_active(ctx, true);
         calc_graphics_render(ctx);
-    } else {
+    } else
+#endif
+    {
+        (void)force_tui;
         calc->mode = CALC_MODE_TEXT;
         solar_os_context_set_app_class(ctx, SOLAR_OS_APP_CLASS_TUI);
         solar_os_shell_io_t *io = calc_io(ctx);
@@ -960,9 +967,11 @@ static void calc_resume(solar_os_context_t *ctx)
             calc_text_render_input(ctx);
         return;
     }
+#if !SOLAR_OS_HEADLESS
     calc->suspended = false;
     solar_os_context_set_graphics_active(ctx, true);
     calc_graphics_render(ctx);
+#endif
 }
 
 static bool calc_event(solar_os_context_t *ctx, const solar_os_event_t *event)
@@ -987,10 +996,12 @@ static bool calc_event(solar_os_context_t *ctx, const solar_os_event_t *event)
         }
         return true;
     }
+#if !SOLAR_OS_HEADLESS
     if (calc->mode == CALC_MODE_GRAPHICS) {
         calc_graphics_event(ctx, ch);
         return true;
     }
+#endif
 
     if (ch == '\r' || ch == '\n')
         calc_text_submit(ctx);

@@ -95,6 +95,13 @@
 #include "solar_os_wifi.h"
 #endif
 
+#ifndef SOLAR_OS_HEADLESS
+#define SOLAR_OS_HEADLESS 0
+#endif
+#ifndef SOLAR_OS_SHELL_CORE_ONLY
+#define SOLAR_OS_SHELL_CORE_ONLY 0
+#endif
+
 #define SHELL_INPUT_MAX 192
 #define SHELL_ARG_MAX 20
 #define SHELL_PATH_MAX SOLAR_OS_STORAGE_PATH_MAX
@@ -507,7 +514,23 @@ static bool shell_prepare_app_launch_args(
     char **launch_argv,
     shell_app_launch_storage_t *storage);
 
+/* Small serial-only profile for platforms bringing up the shared shell.
+ * Default builds retain the complete command and service completion tables. */
 static const shell_command_t shell_builtin_commands[] = {
+#if SOLAR_OS_SHELL_CORE_ONLY
+    {"help", "list shell commands", cmd_commands},
+    {"commands", "list shell commands", cmd_commands},
+    {"echo", "print text", cmd_echo},
+    {"wait", "pause the calling shell", cmd_wait},
+    {"apps", "list applications", solar_os_shell_cmd_apps},
+    {"mem", "show free memory", solar_os_shell_cmd_mem},
+    {"uptime", "show time since boot", solar_os_shell_cmd_uptime},
+    {"clear", "clear the screen", solar_os_shell_cmd_clear},
+    {"cd", "change directory", solar_os_shell_cmd_cd},
+    {"ls", "list storage files", solar_os_shell_cmd_ls},
+    {"cat", "print a small text file", solar_os_shell_cmd_cat},
+    {"sh", "run a shell script", cmd_sh},
+#else
     {"help", "browse or refresh the SolarOS manual", solar_os_shell_cmd_help},
     {"commands", "list shell commands", cmd_commands},
     {"man", "search the SolarOS manual", solar_os_shell_cmd_man},
@@ -701,6 +724,7 @@ static const shell_command_t shell_builtin_commands[] = {
     {"zip", "create ZIP archives", solar_os_shell_cmd_zip},
     {"unzip", "list or extract ZIP archives", solar_os_shell_cmd_unzip},
 #endif
+#endif
     {"exit", "close this port shell", cmd_exit},
     {"reboot", "restart the board", cmd_reboot},
 };
@@ -721,6 +745,7 @@ static bool shell_builtin_command_exists(const char *name)
     return false;
 }
 
+#if !SOLAR_OS_SHELL_CORE_ONLY
 static const char * const setterm_subcommands[] = {
     "--display",
     "orientation",
@@ -3575,6 +3600,8 @@ static uint16_t shell_completion_rule_next(uint16_t index, const char *command)
 #undef SHELL_COMPLETION_STATIC
 #undef SHELL_COMPLETION_MANUAL_REFERENCES
 
+#endif
+
 static solar_os_shell_session_t *shell_session(solar_os_context_t *ctx)
 {
     solar_os_shell_session_t *session = solar_os_context_shell_session(ctx);
@@ -5198,6 +5225,7 @@ static void shell_complete_builtin_command(solar_os_context_t *ctx, bool show_ma
     }
 }
 
+#if !SOLAR_OS_SHELL_CORE_ONLY
 typedef struct {
     char tokens[SHELL_ARG_MAX][SHELL_INPUT_MAX];
     size_t starts[SHELL_ARG_MAX];
@@ -8050,6 +8078,21 @@ static void shell_complete_command(solar_os_context_t *ctx, bool show_matches)
     solar_os_memory_free(parse);
 }
 
+#else
+static void shell_update_common_prefix(char *common, size_t common_len, const char *name)
+{
+    (void)common_len;
+    common[solar_os_shell_completion_common_prefix(common, name)] = '\0';
+}
+static void shell_complete_command(solar_os_context_t *ctx, bool show_matches)
+{
+    if (shell_session(ctx)->input_cursor == shell_session(ctx)->input_len &&
+        strpbrk(shell_session(ctx)->input, " \t") == NULL) {
+        shell_complete_builtin_command(ctx, show_matches);
+    }
+}
+#endif
+
 static void shell_script_discard_rest_of_line(FILE *file)
 {
     int ch = 0;
@@ -9431,12 +9474,12 @@ static void shell_handle_char(solar_os_context_t *ctx, char ch)
         shell_move_cursor_end(ctx);
         break;
     case SOLAR_OS_KEY_PAGE_UP:
-        if (solar_os_shell_io_terminal(shell_io(ctx)) != NULL) {
+        if (!SOLAR_OS_HEADLESS && solar_os_shell_io_terminal(shell_io(ctx)) != NULL) {
             solar_os_terminal_page_up(solar_os_shell_io_terminal(shell_io(ctx)));
         }
         break;
     case SOLAR_OS_KEY_PAGE_DOWN:
-        if (solar_os_shell_io_terminal(shell_io(ctx)) != NULL) {
+        if (!SOLAR_OS_HEADLESS && solar_os_shell_io_terminal(shell_io(ctx)) != NULL) {
             solar_os_terminal_page_down(solar_os_shell_io_terminal(shell_io(ctx)));
         }
         break;
@@ -9572,7 +9615,7 @@ bool solar_os_shell_session_event(solar_os_context_t *ctx,
     solar_os_context_set_shell_session(ctx, session);
     solar_os_context_set_shell_io(ctx, &session->io);
 
-    if (shell_handle_log_follow_event(ctx, event)) {
+    if (!SOLAR_OS_SHELL_CORE_ONLY && shell_handle_log_follow_event(ctx, event)) {
         return true;
     }
 

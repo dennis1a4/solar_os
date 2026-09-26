@@ -72,3 +72,25 @@ and during the loop. The `mem` responses in the JSON transcript include the
 PSRAM capacity detected at boot. Repeated small allocations do not test the
 whole chip or every address line. Added QSPI flash is not probed or tested by
 this script; the current bootstrap firmware has no added-flash command.
+
+## Upstream USB shell target
+
+For `teensy41_shell` firmware, use the separate test client:
+
+```sh
+python3 scripts/ports/test_teensy41_shell.py --read /test.txt --repeat 1000 \
+  --log /tmp/teensy-upstream-shell.json
+```
+
+Omit `--read` to repeat directory listings instead of reading a file. The test
+requires a mounted card; it does not create files. It checks the real shell,
+command parsing, editing, Ctrl-C, history, Tab completion, calculator evaluation,
+interactive calculator launch and return via Ctrl+] / `:quit`, missing paths,
+SD reads, stable internal/external free memory, uptime and stack headroom.
+Logs include selected file contents. Close other serial monitors first.
+
+For interactive use, open a VT100/ANSI serial terminal at 115200 with 80×24
+geometry. `calc -e "2 + 3 * 4"` returns 14; `calc` enters the calculator.
+Use `:quit` or Ctrl+] to return to `user@teensy41:/`. The initial SD bridge is
+read-only: saved history, persistent settings and calculator `:save` are not
+available. The original `test_teensy41_serial.py` remains for recovery firmware.

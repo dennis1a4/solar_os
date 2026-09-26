@@ -80,3 +80,5 @@ void sk_sd_cat(const char *path) {
     file.close();
     xSemaphoreGive(mutex);
 }
+
+bool sk_sd_is_mounted() { return mounted; }

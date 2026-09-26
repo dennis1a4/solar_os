@@ -38,3 +38,5 @@ void sk_usb_poll();
 int sk_usb_read();
 void sk_audio_begin();
 void sk_audio_tone(bool on);
+
+bool sk_sd_is_mounted();

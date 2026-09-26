@@ -5,6 +5,18 @@
 
 #include "solar_os_terminal.h"
 
+/* Headless ports use the real byte-stream I/O without linking a display. */
+#if SOLAR_OS_HEADLESS
+#define SHELL_IO_HAS_DISPLAY 0
+#else
+#define SHELL_IO_HAS_DISPLAY 1
+#endif
+
+static bool shell_io_has_display(const solar_os_shell_io_t *io)
+{
+    return SHELL_IO_HAS_DISPLAY && io != NULL && io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL;
+}
+
 #define SHELL_IO_DEFAULT_COLS 80
 #define SHELL_IO_DEFAULT_ROWS 24
 #define SHELL_IO_FOOTER_MAX 160
@@ -170,19 +182,19 @@ void solar_os_shell_io_init_terminal(solar_os_shell_io_t *io, solar_os_terminal_
     }
 
     memset(io, 0, sizeof(*io));
-    io->kind = terminal != NULL ? SOLAR_OS_SHELL_IO_KIND_TERMINAL : SOLAR_OS_SHELL_IO_KIND_NONE;
+    io->kind = (SHELL_IO_HAS_DISPLAY && terminal != NULL) ? SOLAR_OS_SHELL_IO_KIND_TERMINAL : SOLAR_OS_SHELL_IO_KIND_NONE;
     io->terminal_profile = SOLAR_OS_SHELL_TERMINAL_PROFILE_VT100;
     io->terminal = terminal;
     io->port = (solar_os_port_handle_t)SOLAR_OS_PORT_HANDLE_INIT;
-    io->cols = terminal != NULL ? (uint16_t)solar_os_terminal_cols(terminal) : 0;
-    io->rows = terminal != NULL ? (uint16_t)solar_os_terminal_rows(terminal) : 0;
-    io->cursor_row = terminal != NULL ? solar_os_terminal_cursor_row(terminal) : 0;
-    io->cursor_col = terminal != NULL ? solar_os_terminal_cursor_col(terminal) : 0;
-    io->bold = terminal != NULL ? solar_os_terminal_bold(terminal) : false;
-    io->italic = terminal != NULL ? solar_os_terminal_italic(terminal) : false;
-    io->underline = terminal != NULL ? solar_os_terminal_underline(terminal) : false;
-    io->inverse = terminal != NULL ? solar_os_terminal_inverse(terminal) : false;
-    io->cursor_visible = terminal != NULL ? solar_os_terminal_cursor_visible(terminal) : true;
+    io->cols = (SHELL_IO_HAS_DISPLAY && terminal != NULL) ? (uint16_t)solar_os_terminal_cols(terminal) : 0;
+    io->rows = (SHELL_IO_HAS_DISPLAY && terminal != NULL) ? (uint16_t)solar_os_terminal_rows(terminal) : 0;
+    io->cursor_row = (SHELL_IO_HAS_DISPLAY && terminal != NULL) ? solar_os_terminal_cursor_row(terminal) : 0;
+    io->cursor_col = (SHELL_IO_HAS_DISPLAY && terminal != NULL) ? solar_os_terminal_cursor_col(terminal) : 0;
+    io->bold = (SHELL_IO_HAS_DISPLAY && terminal != NULL) ? solar_os_terminal_bold(terminal) : false;
+    io->italic = (SHELL_IO_HAS_DISPLAY && terminal != NULL) ? solar_os_terminal_italic(terminal) : false;
+    io->underline = (SHELL_IO_HAS_DISPLAY && terminal != NULL) ? solar_os_terminal_underline(terminal) : false;
+    io->inverse = (SHELL_IO_HAS_DISPLAY && terminal != NULL) ? solar_os_terminal_inverse(terminal) : false;
+    io->cursor_visible = (SHELL_IO_HAS_DISPLAY && terminal != NULL) ? solar_os_terminal_cursor_visible(terminal) : true;
 }
 
 void solar_os_shell_io_init_port(solar_os_shell_io_t *io,
@@ -246,7 +258,7 @@ solar_os_shell_io_kind_t solar_os_shell_io_kind(const solar_os_shell_io_t *io)
 
 solar_os_terminal_t *solar_os_shell_io_terminal(solar_os_shell_io_t *io)
 {
-    return io != NULL && io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL ? io->terminal : NULL;
+    return io != NULL && shell_io_has_display(io) ? io->terminal : NULL;
 }
 
 const char *solar_os_shell_terminal_profile_name(solar_os_shell_terminal_profile_t profile)
@@ -354,7 +366,7 @@ bool solar_os_shell_io_is_cursor_addressable(const solar_os_shell_io_t *io)
     if (io == NULL) {
         return false;
     }
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         return true;
     }
     return shell_io_port_supports_ansi_controls(io);
@@ -371,7 +383,7 @@ esp_err_t solar_os_shell_io_write_len(solar_os_shell_io_t *io, const char *text,
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         for (size_t i = 0; i < len; i++) {
             solar_os_terminal_put_char(io->terminal, text[i]);
         }
@@ -402,7 +414,7 @@ esp_err_t solar_os_shell_io_write_raw(solar_os_shell_io_t *io, const char *data,
         return ESP_OK;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         for (size_t i = 0; i < len; i++) {
             solar_os_terminal_put_char(io->terminal, data[i]);
         }
@@ -466,7 +478,7 @@ esp_err_t solar_os_shell_io_set_bold(solar_os_shell_io_t *io, bool enabled)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_set_bold(io->terminal, enabled);
         io->bold = enabled;
         return ESP_OK;
@@ -494,7 +506,7 @@ esp_err_t solar_os_shell_io_set_italic(solar_os_shell_io_t *io, bool enabled)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_set_italic(io->terminal, enabled);
         io->italic = enabled;
         return ESP_OK;
@@ -522,7 +534,7 @@ esp_err_t solar_os_shell_io_set_underline(solar_os_shell_io_t *io, bool enabled)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_set_underline(io->terminal, enabled);
         io->underline = enabled;
         return ESP_OK;
@@ -550,7 +562,7 @@ esp_err_t solar_os_shell_io_set_inverse(solar_os_shell_io_t *io, bool enabled)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_set_inverse(io->terminal, enabled);
         io->inverse = enabled;
         return ESP_OK;
@@ -578,7 +590,7 @@ esp_err_t solar_os_shell_io_write_bold(solar_os_shell_io_t *io, const char *text
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_write_bold(io->terminal, text);
         io->cursor_row = solar_os_terminal_cursor_row(io->terminal);
         io->cursor_col = solar_os_terminal_cursor_col(io->terminal);
@@ -620,7 +632,7 @@ esp_err_t solar_os_shell_io_clear(solar_os_shell_io_t *io)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         io->screen_generation++;
         io->cursor_row = 0;
         io->cursor_col = 0;
@@ -650,7 +662,7 @@ esp_err_t solar_os_shell_io_put_char(solar_os_shell_io_t *io, char ch)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_put_char(io->terminal, ch);
         io->cursor_row = solar_os_terminal_cursor_row(io->terminal);
         io->cursor_col = solar_os_terminal_cursor_col(io->terminal);
@@ -682,7 +694,7 @@ esp_err_t solar_os_shell_io_put_utf8_byte(solar_os_shell_io_t *io, uint8_t byte)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_put_utf8_byte(io->terminal, byte);
         io->cursor_row = solar_os_terminal_cursor_row(io->terminal);
         io->cursor_col = solar_os_terminal_cursor_col(io->terminal);
@@ -708,7 +720,7 @@ uint16_t solar_os_shell_io_cols(const solar_os_shell_io_t *io)
     if (io == NULL) {
         return 0;
     }
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         return (uint16_t)solar_os_terminal_cols(io->terminal);
     }
     return io->cols;
@@ -719,7 +731,7 @@ uint16_t solar_os_shell_io_rows(const solar_os_shell_io_t *io)
     if (io == NULL) {
         return 0;
     }
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         return (uint16_t)solar_os_terminal_rows(io->terminal);
     }
     return io->rows;
@@ -730,7 +742,7 @@ size_t solar_os_shell_io_cursor_row(const solar_os_shell_io_t *io)
     if (io == NULL) {
         return 0;
     }
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         return solar_os_terminal_cursor_row(io->terminal);
     }
     return io->cursor_row;
@@ -741,7 +753,7 @@ size_t solar_os_shell_io_cursor_col(const solar_os_shell_io_t *io)
     if (io == NULL) {
         return 0;
     }
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         return solar_os_terminal_cursor_col(io->terminal);
     }
     return io->cursor_col;
@@ -753,7 +765,7 @@ esp_err_t solar_os_shell_io_set_cursor(solar_os_shell_io_t *io, size_t row, size
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_set_cursor(io->terminal, row, col);
         io->cursor_row = solar_os_terminal_cursor_row(io->terminal);
         io->cursor_col = solar_os_terminal_cursor_col(io->terminal);
@@ -783,7 +795,7 @@ esp_err_t solar_os_shell_io_set_cursor_visible(solar_os_shell_io_t *io, bool vis
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_set_cursor_visible(io->terminal, visible);
         io->cursor_visible = visible;
         return ESP_OK;
@@ -810,7 +822,7 @@ bool solar_os_shell_io_cursor_visible(const solar_os_shell_io_t *io)
     if (io == NULL) {
         return false;
     }
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         return solar_os_terminal_cursor_visible(io->terminal);
     }
     return io->cursor_visible;
@@ -827,7 +839,7 @@ esp_err_t solar_os_shell_io_clear_line_from(solar_os_shell_io_t *io, size_t row,
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_clear_line_from(io->terminal, row, col);
         return ESP_OK;
     }
@@ -854,7 +866,7 @@ esp_err_t solar_os_shell_io_redraw_line(solar_os_shell_io_t *io,
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         esp_err_t err = solar_os_shell_io_clear_line_from(io, row, col);
         if (err == ESP_OK) {
             err = solar_os_shell_io_set_cursor(io, row, col);
@@ -963,7 +975,7 @@ esp_err_t solar_os_shell_io_set_footer(solar_os_shell_io_t *io,
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_set_footer(io->terminal, text);
         io->rows = (uint16_t)solar_os_terminal_rows(io->terminal);
         io->cursor_row = solar_os_terminal_cursor_row(io->terminal);
@@ -1018,7 +1030,7 @@ esp_err_t solar_os_shell_io_clear_footer(solar_os_shell_io_t *io)
         return ESP_OK;
     }
 
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_set_footer(io->terminal, NULL);
         io->rows = (uint16_t)solar_os_terminal_rows(io->terminal);
         io->cursor_row = solar_os_terminal_cursor_row(io->terminal);
@@ -1062,7 +1074,7 @@ esp_err_t solar_os_shell_io_flush(solar_os_shell_io_t *io)
     if (io == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (io->kind == SOLAR_OS_SHELL_IO_KIND_TERMINAL) {
+    if (shell_io_has_display(io)) {
         solar_os_terminal_draw(io->terminal);
     }
     return io->kind == SOLAR_OS_SHELL_IO_KIND_NONE ? ESP_ERR_INVALID_STATE : ESP_OK;

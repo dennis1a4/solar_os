@@ -119,6 +119,10 @@ static void shell_task(void *) {
     sk_displays_begin();
     sk_audio_begin();
     sk_usb_begin();
+#if SK_UPSTREAM_SHELL
+    extern void sk_upstream_shell_run();
+    sk_upstream_shell_run();
+#else
     emit("Bring-up console; type help\r\nsolaros[teensy41]> ");
     char line[160]; size_t used = 0;
     bool was_cr = false, overflow = false;
@@ -144,6 +148,7 @@ static void shell_task(void *) {
             } else overflow = true;
         }
     }
+#endif
 }
 void setup() {
     // No LED heartbeat: pin 13 is the primary display's SPI clock.
@@ -154,7 +159,12 @@ void setup() {
     heartbeat_queue = solar_os_queue_create_internal(1, sizeof(uint32_t));
     configASSERT(heartbeat_queue);
     configASSERT(xTaskCreate(heartbeat, "heartbeat", 256, nullptr, 1, nullptr) == pdPASS);
-    configASSERT(xTaskCreate(shell_task, "solar-console", 4096, nullptr, 2, nullptr) == pdPASS);
+    #if SK_UPSTREAM_SHELL
+    constexpr unsigned console_stack = 6144;
+#else
+    constexpr unsigned console_stack = 4096;
+#endif
+    configASSERT(xTaskCreate(shell_task, "solar-console", console_stack, nullptr, 2, nullptr) == pdPASS);
     vTaskStartScheduler();
     while (true) {}
 }

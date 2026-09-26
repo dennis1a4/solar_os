@@ -20,9 +20,11 @@ do not maintain a separate device or website copy.
 
 ## Experimental Teensy 4.1 port
 
-The SuperKeyboard CPU v2 bring-up target builds with `pio run -e teensy41`.
-It currently runs a core subset and bootstrap console; full SolarOS shell and
-service integration are pending. See the [port status, hardware findings, and
+The SuperKeyboard CPU v2 upstream USB shell builds with `pio run -e teensy41_shell`.
+It runs a reduced command set, the full text calculator, and read-only SD access.
+The original `teensy41` target retains the bring-up console for recovery.
+Writable storage and broader service/session integration remain pending.
+See the [port status, hardware findings, and
 bring-up instructions](doc/ports/teensy41.md) before flashing.
 Track milestones, next actions, and future ideas in the
 [Teensy progress tracker](doc/ports/teensy41-roadmap.md).

@@ -7,8 +7,10 @@ This is the **first bring-up port**, based on SolarOS commit
 `5e1ddf2200055a6bdfdc7ae0664fd26f00e98b51`. It is not a completed SolarOS
 platform, nor a fully hardware-validated firmware release. Basic bare-board
 testing was performed on 2026-09-24; see the results below.
-The full ESP-IDF shell, services, filesystem VFS, scheduler/session manager,
-and application registry have not yet been ported.
+The `teensy41_shell` target now runs the shared upstream shell and calculator
+through a single USB session and read-only SD bridge. The complete command set,
+writable VFS, persistent settings, and full scheduler/session manager remain
+unported. The original `teensy41` target remains the bring-up/recovery console.
 
 ## Build
 
@@ -42,6 +44,58 @@ be resolved before enabling these options on the board.
 Libraries retain their own licenses. In particular, the FreeRTOS kernel is
 MIT, while some Teensy port files and the bundled RA8875 driver have GPL
 notices; do not assume the complete linked firmware is Apache-only.
+
+## Upstream USB shell
+
+The tested bring-up baseline is saved in local commit `b46367f`. Its original
+HEX/ELF are also backed up outside the repository in
+`../solar_os-baselines/2026-09-26/`. The separate shell target builds with:
+
+```sh
+pio run -e teensy41_shell
+pio run -e teensy41_shell -t upload
+pio device monitor --port /dev/ttyACM0 --baud 115200
+```
+
+Use a VT100/ANSI-capable serial terminal, 80 columns by 24 rows. Close automated
+tests before opening a monitor. The USB serial device number may change.
+Opening USB CDC starts a fresh shell session with this prompt:
+
+```text
+Welcome to SolarOS
+user@teensy41:/
+```
+
+Try `help`, `apps`, `echo hello`, `mem`, `uptime`, `ls /`, `cat /test.txt`, and
+`calc -e "2 + 3 * 4"`. `calc` opens the actual upstream interactive calculator;
+enter expressions, then use `:quit` or Ctrl+] to return to the shell. Arrow-key
+history/editing, backspace, Ctrl-C input cancellation and command-name Tab
+completion are supported. The prompt has a trailing space, not a `>` marker.
+`exit` refuses to close the only shell, keeping the console available.
+
+The new target compiles `src/apps/solar_os_shell.c`, its shared I/O, parser,
+line/completion/launch helpers and filesystem commands, the real application
+registry, and `src/apps/solar_os_calc.c`. `SOLAR_OS_SHELL_CORE_ONLY` selects a
+small command table and command-name completion; default ESP builds retain the
+full tables. Headless builds exclude display rendering from shell I/O and the
+calculator. The single USB runtime uses the upstream port/stream registry,
+VT100 decoder, shell session API and app lifecycle; it does not yet implement
+the full multi-session `solar_os_port_shell` scheduler or background workers.
+
+SD is mounted at `/`. The adapter supplies read-only libc streams via `funopen`
+and link wrappers for `fopen`/`stat`, plus directory enumeration. It preserves
+upstream path normalization and error handling. This is enough for `cd`, `ls`,
+`cat`, script reads and calculator loads, not a complete writable POSIX VFS.
+Storage operations are owned by the single shell task. No SD files are written
+by this profile. Persistent settings report unsupported; identity is fixed to
+`user@teensy41`, history is in RAM, and automatic startup scripts are disabled.
+A reconnect starts a fresh shell and closes any foreground calculator. Insert
+the card before boot; manual SD mount/recovery commands remain in the recovery
+console. Added QSPI flash and Serial1 shell input remain outside this target.
+
+See [the hardware tests](../../scripts/ports/README.md) for a repeatable upstream
+shell check. The bootstrap test script expects a different prompt and must only
+be used with the original `teensy41` target.
 
 ## Hardware evidence
 
@@ -104,8 +158,8 @@ present in the exposed interface. Do not auto-probe arbitrary SPI cards.
 | Platform and core | ARM firmware links actual upstream `solar_os.c` app/context lifecycle, queues, shell parser/line utility, expression engine. This is a core subset, not the upstream `core` flavor. |
 | Boot FreeRTOS | Startup creates console + heartbeat tasks and a queue. USB console and advancing heartbeat observed on a bare Teensy 4.1. |
 | USB or Serial1 output | CDC and Serial1 at 115200, with no wait for USB enumeration. Both feed one bootstrap session. |
-| SolarOS shell prompt | Bootstrap `solaros[teensy41]>` prompt uses upstream tokenization; full `src/apps/solar_os_shell.c` and its command registry/session model are still pending. |
-| SDIO / mount | `SD.begin(BUILTIN_SDCARD)`, `mount`, read-only `ls` and `cat`; no SolarOS VFS/POSIX mount bridge yet. Card insertion/removal recovery after successful mount is not implemented. |
+| SolarOS shell prompt | Recovery target retains the bootstrap prompt. `teensy41_shell` runs the upstream shell with a reduced command table and one USB session; multi-session support remains. |
+| SDIO / mount | Recovery target uses `SD.begin(BUILTIN_SDCARD)` and direct commands. Shell target adds read-only libc/directory adapters for upstream `cd`, `ls` and `cat`; writable VFS remains pending. Card insertion/removal recovery after successful mount is not implemented. |
 | Primary display | Optional RA8875 text bring-up; controller/wiring confirmation and SolarOS terminal/GFX rendering still needed. |
 | I²C / SPI / UART | Board adapters with per-bus locks and explicit SPI settings, bounded sizes, repeated-start I²C, slot UARTs. Upstream service API integration still needed. |
 | Expansion | Pin descriptors and exclusive slot claims; no upstream expansion manifest/driver registry integration or auto-discovery. |
@@ -113,7 +167,7 @@ present in the exposed interface. Do not auto-probe arbitrary SPI cards.
 | Audio | Optional SGTL5000/I2S 440 Hz headphone tone, off initially; speaker amp stays shut down. Electrical fix/confirmation, input/stream service and resource integration pending. |
 | Secondary display | Optional ST7735 startup text; actual controller not confirmed. Full second-terminal support pending. |
 | USB functionality | CDC console; optional host hub + ASCII keyboard input. USB disk, device HID, MIDI, networking and full SolarOS input events not implemented. |
-| Higher applications | First command adapter runs the upstream expression engine through the upstream app lifecycle. The full interactive calculator and other upstream apps are not enabled. |
+| Higher applications | Shell target runs the full calculator in text mode and one-shot evaluation through the upstream app registry/lifecycle. Other apps and graphics remain disabled. |
 
 The application task is the sole owner of display, SD and USB-host polling.
 Bus wrappers use mutexes for future task callers; callers must not bypass the
@@ -156,15 +210,14 @@ include newlib free blocks and the uncommitted heap range.
 
 ## Next integration work, in order
 
-Preserve the working boot/console baseline. Extract platform hooks from the
-upstream shell/session/port services, implement internal storage/SD VFS semantics
-and persistent configuration, then link the real shell. Replace the bootstrap
-console after that shell passes host and board tests. Bridge board buses and
-slot ownership to the SolarOS resource model. Adapt terminal/GFX output to the
-confirmed panels, then audio and structured USB input services. Enable upstream
-apps individually (calculator, clock, pager/files, editor), testing stack,
-allocation failure and missing-card behavior before enabling the next app.
-Network-dependent apps require a separate Ethernet/Wi-Fi decision.
+The baseline is preserved and the first upstream USB shell works. Next add
+writable storage and persistent configuration with explicit failure/recovery
+semantics; then extend command coverage and session management. Test the shell
+without a card and across cold boots independently of the older bootstrap
+results. Broaden PSRAM coverage and identify the fitted flash before choosing
+its filesystem layout. Bridge board buses and slot ownership to the SolarOS
+resource model, then bring up confirmed displays, audio and USB-host input.
+Enable further apps individually, checking stack use and launch/exit cleanup.
 
 ## Reproduce schematic extraction
 
@@ -293,3 +346,31 @@ useful. Added flash has not been probed, formatted, or tested; the bootstrap
 firmware has no added-flash interface. Flash identification/integration and a
 broader PSRAM test remain follow-up work. Existing port changes remain
 uncommitted and were preserved.
+
+### Upstream shell hardware validation — 2026-09-26
+
+`teensy41_shell` built, uploaded, and passed the dedicated hardware test with
+1,000 calculator/SD-read cycles in 103.774 seconds. The board is
+left running this image. Tested behavior includes `help`, `apps`, quoting and
+unknown-command diagnostics, backspace, Ctrl-C, arrow-key history, command-name
+Tab completion, CRLF, full interactive calculator entry/exit via Ctrl+] and
+`:quit`, one-shot calculations and invalid expressions/options, `cd /`, missing
+paths, root listing, and repeated reads of the existing `/test.txt`.
+
+- Final test log: `/tmp/teensy-upstream-shell-final-1000.json` (host-local).
+- Uptime: 29,299 → 131,965 ms; final stack high-water
+  headroom: 5,460 words. No USB disconnect during the test.
+- Internal free heap: 269,924 / 301,216 bytes; PSRAM free:
+  8,385,240 / 8,388,608 bytes. Both unchanged across the loop.
+- Image: 201,116 bytes flash; RAM1 218,944 bytes; RAM2 14,532 bytes.
+- HEX SHA-256: `ad79deab8794ead5c400e3df65af49e5239d408dd1012dcd0be790fe06e5576d`.
+- `bash scripts/ports/test_teensy41.sh` passed lifecycle/failure cleanup,
+  parser, line editor, non-headless context/I/O and new path-normalization tests.
+- Recovery `teensy41` target rebuilt successfully. Default graphical calculator
+  and full-shell paths passed host syntax checks (with declarations supplementing
+  the older host test headers); this is not an ESP32 firmware build/test.
+- `git diff --check` passed. Third-party and existing upstream warnings remain.
+
+This validates the first upstream shell, not all commands/services or all
+hardware conditions. Shell-specific cold-start/missing-card checks, long soaks,
+full PSRAM coverage, writable storage and persistent settings remain pending.

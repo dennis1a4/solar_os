@@ -8,10 +8,12 @@ and test evidence in the [port notes](teensy41.md).
 
 ## Current position
 
-The baseline port runs on a bare Teensy 4.1 with an SD card. USB console,
-FreeRTOS heartbeat, calculator, and SD reads have passed short hardware tests.
-The full SolarOS shell, services, and applications are still pending.
-Current work is on the local `main` branch and is not yet committed.
+The bring-up baseline is preserved in local commit `b46367f`. The separate
+`teensy41_shell` build now runs the real upstream USB shell, app registry and
+calculator (interactive text mode and `-e`) with read-only SD access. A reduced
+command table and single USB session are implemented; writable storage,
+persistent settings and the complete multi-session/service integration remain.
+Fitted PSRAM is detected as 8 MiB. Current work is on local `main`.
 
 ## Original 13-step plan
 
@@ -24,8 +26,8 @@ step. Partial implementations and compile checks do not mean full integration.
 | 1 | Make an imxrt1062/teensy41 platform target and get the SolarOS core compiling. | Partial: target builds with upstream core lifecycle, queues, parser and expression engine. Full upstream core flavor/services are not yet ported. |
 | 2 | Boot FreeRTOS. | Verified on hardware: console task and heartbeat run. |
 | 3 | Get USB or Serial1 console output. | Verified over USB. Serial1 is implemented but not hardware-tested. |
-| 4 | Get the SolarOS shell prompt. | Partial: bootstrap `solaros[teensy41]>` prompt works. Full upstream shell/session integration remains. |
-| 5 | Implement SDIO and mount the SD card. | Basic mount, listing and reads verified. Startup mount failed once after reflashing; recovery, VFS integration and write support remain. |
+| 4 | Get the SolarOS shell prompt. | Verified: upstream `user@teensy41:/` USB shell with reduced command table. Bootstrap retained for recovery; full multi-session integration remains. |
+| 5 | Implement SDIO and mount the SD card. | Mount and reads verified, including upstream shell through a read-only libc/directory bridge. Startup failure root cause, hot-removal recovery and writable VFS remain. |
 | 6 | Implement the primary display. | Optional RA8875 bring-up compiles. Controller/wiring confirmation, hardware testing and SolarOS terminal/GFX integration remain. |
 | 7 | Implement I²C/SPI/UART abstraction. | Initial adapters compile. Hardware tests and upstream service/resource integration remain. |
 | 8 | Implement expansion slots. | Initial pin descriptors and exclusive slot claims implemented. Manifest/driver registry integration and hardware tests remain. |
@@ -33,7 +35,7 @@ step. Partial implementations and compile checks do not mean full integration.
 | 10 | Add audio. | Optional SGTL5000/I2S tone bring-up compiles. Wiring/supply checks, hardware tests and audio services remain. |
 | 11 | Add secondary display. | Optional ST7735 bring-up compiles. Controller confirmation, hardware tests and second-terminal support remain. |
 | 12 | Add USB functionality. | USB CDC console verified. Optional host keyboard support compiles but is untested; other USB roles/features need scope decisions and implementation. |
-| 13 | Start enabling higher-level SolarOS applications one at a time. | Started: expression engine runs through the app lifecycle and passes hardware tests. Full calculator UI and further applications remain. |
+| 13 | Start enabling higher-level SolarOS applications one at a time. | Full upstream calculator runs in serial text mode and one-shot evaluation through the app registry/lifecycle. Graphics and further applications remain. |
 
 ## Next actions
 
@@ -51,7 +53,7 @@ step. Partial implementations and compile checks do not mean full integration.
   cause is still unconfirmed. Try another computer if failures recur.
 - [ ] Test PSRAM beyond the repeated 4 KiB allocation check.
 - [ ] Bring up the fitted W25Q128JVSIQ flash; no probe or storage test yet.
-- [ ] Preserve a reproducible known-working baseline in version control.
+- [x] Preserve the tested bring-up baseline in version control (`b46367f`).
 
 ## Milestones
 
@@ -72,17 +74,19 @@ step. Partial implementations and compile checks do not mean full integration.
 Done when: boot and console are repeatable, SD failure/recovery behavior is
 understood, and a tested baseline is saved with reproduction instructions.
 
-### 2. Integrate the real SolarOS shell and storage — planned
+### 2. Integrate the real SolarOS shell and storage — in progress
 
-- [ ] Identify and extract platform hooks from shell/session/port services.
-- [ ] Bridge SD storage to SolarOS VFS/POSIX semantics.
+- [x] Add a core shell profile, headless I/O, and one USB session adapter.
+- [x] Bridge read-only SD files/directories to upstream shell filesystem calls.
+- [ ] Extend the bridge to writable VFS semantics and recovery.
 - [ ] Implement persistent configuration storage.
-- [ ] Integrate the upstream shell, command registry, and session manager.
-- [ ] Validate application launch/exit and error cleanup on hardware.
-- [ ] Replace the bootstrap console after the real shell passes tests.
+- [x] Integrate the upstream shell and application registry with one USB session.
+- [ ] Port full session management and extend supported commands.
+- [x] Validate calculator launch/exit, invalid input and memory stability on hardware.
+- [x] Flash and verify the separate upstream shell target; retain bootstrap recovery.
 
-Done when: the upstream shell can launch commands and access SD files through
-the SolarOS storage APIs on Teensy.
+First usable shell achieved. Complete when persistent settings, writable storage
+and intended session/command coverage also pass their tests.
 
 ### 3. Integrate buses and expansion — planned
 
@@ -111,7 +115,7 @@ together. Optional peripheral compilation is not hardware validation.
 
 ### 5. Enable useful applications — planned
 
-- [ ] Integrate the full calculator application.
+- [x] Integrate the full calculator application in serial text mode.
 - [ ] Enable clock, file viewer/pager, and editor one at a time.
 - [ ] Check stack use, allocation failures, and missing-storage behavior per app.
 - [ ] Decide which further upstream apps and scripting features to prioritize.
@@ -164,6 +168,13 @@ an idea into a milestone when its priority and hardware needs are clear.
   cycles, with stable reported free memory. Added `--psram` to the test client.
   User reports fitted W25Q128JVSIQ flash; flash testing and broader RAM coverage
   remain pending. No firmware upload or commit performed.
+
+- **2026-09-26, upstream shell:** Preserved recovery baseline in `b46367f`.
+  Built and flashed `teensy41_shell`: shared shell, app registry, full text
+  calculator, one USB session and read-only SD libc bridge. Interactive tests
+  and 1,000 calculator/read cycles passed in 103.774 seconds with
+  stable internal/external free memory. Recovery build and host regressions
+  passed. Persistent settings, writable storage and full sessions remain next.
 
 ## Keeping this useful
 

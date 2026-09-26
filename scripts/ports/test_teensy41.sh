@@ -23,3 +23,9 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -D_GNU_SOURCE \
   tests/host/app_exit_result_test.c src/solar_os.c src/shell/solar_os_shell_io.c \
   -Wl,--gc-sections -o "$sk_test_dir/context"
 "$sk_test_dir/context"
+
+cc -std=c11 -O2 -Wall -Wextra -Werror -D_GNU_SOURCE -DSK_UPSTREAM_SHELL=1 \
+  -include tests/host/compat.h -Itests/host -Isrc/services \
+  tests/ports/teensy41_paths_test.c src/platform/imxrt1062/teensy41/shell_paths.c \
+  -o "$sk_test_dir/paths"
+"$sk_test_dir/paths"

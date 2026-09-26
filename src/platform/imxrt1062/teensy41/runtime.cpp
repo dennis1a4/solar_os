@@ -37,8 +37,11 @@ extern "C" esp_err_t solar_os_log_write(solar_os_log_level_t level,
 }
 // This bring-up uses context output callbacks. Full shell I/O/session service
 // integration remains separate; do not substitute successful no-op services.
+#if !SK_UPSTREAM_SHELL
 extern "C" void solar_os_shell_io_capture_output(solar_os_shell_io_t *io,
                                                  solar_os_context_t *ctx) {
     if (!io) return;
     io->output_mirror_fn = solar_os_context_output_handler(ctx, &io->output_mirror_user);
 }
+
+#endif
