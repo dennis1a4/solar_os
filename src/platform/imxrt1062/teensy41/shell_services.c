@@ -1,5 +1,6 @@
 #if SK_UPSTREAM_SHELL
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "nvs.h"
 #include "solar_os_shell_commands.h"
@@ -10,7 +11,7 @@
 #include "solar_os_board_caps.h"
 #include "solar_os_task.h"
 
-// Persistent settings are not available in this first read-only SD profile.
+// Persistent settings are not available in this SD profile.
 // Return an explicit failure; never report a successful discarded write.
 esp_err_t nvs_open(const char *name, nvs_open_mode_t mode, nvs_handle_t *out) {
     (void)name; (void)mode; (void)out; return ESP_ERR_NOT_SUPPORTED;
@@ -25,7 +26,10 @@ esp_err_t nvs_commit(nvs_handle_t h) { (void)h; return ESP_ERR_NOT_SUPPORTED; }
 void nvs_close(nvs_handle_t h) { (void)h; }
 void solar_os_identity_format(char *buffer, size_t len) { snprintf(buffer, len, "user@teensy41"); }
 bool solar_os_board_has(solar_os_board_capability_t cap) {
-    const uint64_t supported = SOLAR_OS_BOARD_CAP_CDC | SOLAR_OS_BOARD_CAP_SD;
+    solar_os_memory_status_t status;
+    solar_os_memory_get_status(&status);
+    const uint64_t supported = SOLAR_OS_BOARD_CAP_CDC | SOLAR_OS_BOARD_CAP_SD |
+        (status.external.total ? SOLAR_OS_BOARD_CAP_PSRAM : 0);
     return (supported & cap) == cap;
 }
 bool solar_os_task_admit(const char *name, uint32_t size,
@@ -58,5 +62,20 @@ void solar_os_shell_cmd_uptime(solar_os_context_t *ctx, int argc, char **argv) {
 }
 void solar_os_shell_cmd_clear(solar_os_context_t *ctx, int argc, char **argv) {
     (void)argc; (void)argv; solar_os_shell_io_clear(solar_os_context_shell_io(ctx));
+}
+// Geometry is explicit because a serial connection does not carry window size.
+void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) {
+    solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
+    if (argc == 4 && !strcmp(argv[1], "size")) {
+        char *end_col, *end_row;
+        long cols = strtol(argv[2], &end_col, 10), rows = strtol(argv[3], &end_row, 10);
+        if (*argv[2] && *argv[3] && !*end_col && !*end_row &&
+            cols >= 20 && cols <= 300 && rows >= 8 && rows <= 120) {
+            solar_os_shell_io_set_dimensions(io, cols, rows);
+            solar_os_shell_io_clear(io);
+            return;
+        }
+    }
+    solar_os_shell_io_writeln(io, "usage: setterm size <cols 20..300> <rows 8..120> (default 80 24)");
 }
 #endif

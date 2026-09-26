@@ -1,3 +1,7 @@
+#ifndef SOLAR_OS_HEADLESS
+#define SOLAR_OS_HEADLESS 0
+#endif
+
 #include "solar_os_edit.h"
 
 #include <ctype.h>
@@ -7,6 +11,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "esp_attr.h"
 #include "solar_os_ble_keyboard.h"
@@ -176,7 +181,7 @@ static void editor_set_capacity_message(const char *message)
 
 static void editor_capture_text_size(void)
 {
-    solar_os_terminal_t *terminal = editor.tui.terminal;
+    solar_os_terminal_t *terminal = SOLAR_OS_HEADLESS ? NULL : editor.tui.terminal;
     if (terminal == NULL) {
         return;
     }
@@ -191,7 +196,7 @@ static void editor_restore_text_size(void)
         return;
     }
 
-    solar_os_terminal_t *terminal = editor.tui.terminal;
+    solar_os_terminal_t *terminal = SOLAR_OS_HEADLESS ? NULL : editor.tui.terminal;
     if (terminal != NULL) {
         (void)solar_os_terminal_set_text_size_transient(terminal, editor.saved_text_size);
     }
@@ -209,7 +214,7 @@ static int editor_text_size_index(solar_os_terminal_text_size_t text_size)
 
 static void editor_adjust_text_size(int delta)
 {
-    solar_os_terminal_t *terminal = editor.tui.terminal;
+    solar_os_terminal_t *terminal = SOLAR_OS_HEADLESS ? NULL : editor.tui.terminal;
     if (terminal == NULL) {
         editor_set_message("text size display only");
         return;
@@ -1201,29 +1206,36 @@ static void editor_select_all(void)
 
 static esp_err_t editor_save(void)
 {
-    FILE *file = fopen(editor.path, "wb");
-    if (file == NULL) {
-        char message[sizeof(editor.message)];
-        snprintf(message, sizeof(message), "save failed: %s", strerror(errno));
-        editor_set_message(message);
+    char staged[SOLAR_OS_STORAGE_PATH_MAX], backup[SOLAR_OS_STORAGE_PATH_MAX];
+    if (solar_os_storage_sibling_path(editor.path, ".edit-tmp", staged, sizeof(staged)) != ESP_OK ||
+        solar_os_storage_sibling_path(editor.path, ".edit-bak", backup, sizeof(backup)) != ESP_OK) {
+        editor_set_message("save failed: path too long");
         return ESP_FAIL;
     }
-
+    // Preserve recovery files from an interrupted save for manual inspection.
+    struct stat st;
+    if (stat(staged, &st) == 0 || errno != ENOENT ||
+        stat(backup, &st) == 0 || errno != ENOENT) {
+        editor_set_message("save blocked: check .edit-tmp/.edit-bak");
+        return ESP_FAIL;
+    }
+    FILE *file = fopen(staged, "wb");
+    if (file == NULL) {
+        editor_set_message("save failed: cannot create temporary file");
+        return ESP_FAIL;
+    }
     esp_err_t ret = ESP_OK;
-    if (editor.len > 0 && fwrite(editor.buffer, 1, editor.len, file) != editor.len) {
-        ret = ESP_FAIL;
-    }
-
-    const int write_errno = errno;
-    if (fclose(file) != 0 && ret == ESP_OK) {
-        ret = ESP_FAIL;
-    }
-
+    if (editor.len > 0 && fwrite(editor.buffer, 1, editor.len, file) != editor.len) ret = ESP_FAIL;
+    if (ret == ESP_OK) ret = solar_os_storage_sync_file(file);
+    if (fclose(file) != 0) ret = ESP_FAIL;
     if (ret != ESP_OK) {
-        char message[sizeof(editor.message)];
-        const int error_number = write_errno != 0 ? write_errno : EIO;
-        snprintf(message, sizeof(message), "save failed: %s", strerror(error_number));
-        editor_set_message(message);
+        remove(staged);
+        editor_set_message("save failed: write/flush error; original kept");
+        return ret;
+    }
+    ret = solar_os_storage_replace_file(staged, editor.path, backup);
+    if (ret != ESP_OK) {
+        editor_set_message("save failed: check .edit-tmp/.edit-bak");
         return ret;
     }
 

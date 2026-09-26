@@ -93,10 +93,40 @@ For interactive use, open a VT100/ANSI serial terminal at 115200 with 80×24
 geometry. In Konsole use `pio device monitor --baud 115200 --raw --exit-char 28`:
 `--raw` preserves ANSI controls, and Ctrl+\ exits the monitor so Ctrl-C can
 reach the shell. `calc -e "2 + 3 * 4"` returns 14; `calc` enters the calculator.
-Use `:quit` or Ctrl+] to return to `user@teensy41:/`. The initial SD bridge is
-read-only: saved history, persistent settings and calculator `:save` are not
-available. The original `test_teensy41_serial.py` remains for recovery firmware.
+Use `:quit` or Ctrl+] to return to `user@teensy41:/`. The SD bridge now supports writes; persistent configuration remains unsupported.
+See the port notes for editor/Python usage and `setterm size COLS ROWS`. The original `test_teensy41_serial.py` remains for recovery firmware.
 
 The host suite also renders the real calculator's ANSI output at five terminal
 heights, covering typing, backspace, arrow keys, results and scrolling. This
 catches cursor placement errors that a text-only USB transcript cannot detect.
+
+## Writable SD, editor and MicroPython
+
+With the `teensy41_shell` firmware, a mounted SD card and fitted PSRAM:
+
+```sh
+python3 scripts/ports/test_teensy41_writable.py --repeat 50 \
+  --log /tmp/teensy-writable.json
+```
+
+Close the serial monitor first. This test creates a unique
+`/_solaros_test_<random>` directory and retains its files for inspection. It
+exercises real editor saves/replacement and dirty-exit prompts, copy/move/delete,
+file modes and seek/flush, Python REPL/scripts/imports, PSRAM allocation and GC,
+interrupts, exceptions, allocation/descriptor exhaustion, recovery-file
+protection, terminal geometry, and repeated application cleanup. Normal shell
+history writes also occur. It does not test surprise card removal, power loss,
+a full SD card, or the entire PSRAM capacity. Logs capture only test output;
+the separate shell read test may include selected personal file contents.
+
+To check persistence, substitute the directory reported by your successful run:
+
+```sh
+python3 scripts/ports/test_teensy41_writable.py \
+  --verify-existing /_solaros_test_111186ef8a --reboot \
+  --log /tmp/teensy-writable-reboot.json
+```
+
+This intentionally restarts the board, waits for USB to settle, and checks the
+saved file contents and Python execution. It is a software restart, not a
+physical power-cycle or interrupted-write test.

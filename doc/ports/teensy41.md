@@ -7,10 +7,10 @@ This is the **first bring-up port**, based on SolarOS commit
 `5e1ddf2200055a6bdfdc7ae0664fd26f00e98b51`. It is not a completed SolarOS
 platform, nor a fully hardware-validated firmware release. Basic bare-board
 testing was performed on 2026-09-24; see the results below.
-The `teensy41_shell` target now runs the shared upstream shell and calculator
-through a single USB session and read-only SD bridge. The complete command set,
-writable VFS, persistent settings, and full scheduler/session manager remain
-unported. The original `teensy41` target remains the bring-up/recovery console.
+The `teensy41_shell` target now runs the shared shell, calculator, editor and
+a Teensy MicroPython adapter through one USB session with writable SD storage.
+The complete command set, persistent settings, storage hot-removal recovery,
+and full scheduler/session manager remain unported. The original `teensy41` target remains the bring-up/recovery console.
 
 ## Build
 
@@ -57,7 +57,11 @@ pio run -e teensy41_shell -t upload
 pio device monitor --port /dev/ttyACM0 --baud 115200 --raw --exit-char 28
 ```
 
-Use a VT100/ANSI-capable serial terminal, 80 columns by 24 rows. PlatformIO
+Use a VT100/ANSI-capable serial terminal with at least 80 columns and 24 rows.
+The initial geometry is 80×24. For another size, run `stty size` in a separate
+Konsole tab (it prints rows then columns), then `setterm size COLS ROWS` in
+SolarOS. This setting is manual, session-local, and must match the actual window
+when using the full-screen editor. PlatformIO
 needs `--raw` to pass escape codes through to Konsole. `--exit-char 28` makes
 Ctrl+\ exit the monitor, leaving Ctrl-C available to the shell. Close automated
 tests before opening a monitor. The USB serial device number may change.
@@ -84,16 +88,58 @@ calculator. The single USB runtime uses the upstream port/stream registry,
 VT100 decoder, shell session API and app lifecycle; it does not yet implement
 the full multi-session `solar_os_port_shell` scheduler or background workers.
 
-SD is mounted at `/`. The adapter supplies read-only libc streams via `funopen`
-and link wrappers for `fopen`/`stat`, plus directory enumeration. It preserves
-upstream path normalization and error handling. This is enough for `cd`, `ls`,
-`cat`, script reads and calculator loads, not a complete writable POSIX VFS.
-Storage operations are owned by the single shell task. No SD files are written
-by this profile. Persistent settings report unsupported; identity is fixed to
-`user@teensy41`, history is in RAM, and automatic startup scripts are disabled.
-A reconnect starts a fresh shell and closes any foreground calculator. Insert
-the card before boot; manual SD mount/recovery commands remain in the recovery
-console. Added QSPI flash and Serial1 shell input remain outside this target.
+SD is mounted at `/`. The adapter supplies `funopen` streams, directory
+iteration, and a 16-slot descriptor table shared with MicroPython. Supported
+operations include read/write/append/update modes, seek, flush, mkdir, copy,
+rename and removal. `mkdir`, `cp`, `mv` and `rm` use the upstream shell handlers;
+`cp` and `mv` refuse existing destinations in this first profile. This is a
+single-task SdFat bridge, not a complete POSIX VFS: metadata/permissions are
+synthetic, seek is limited to signed 32-bit offsets, and hot removal and shared
+access from other tasks are unsupported. Insert the card before boot.
+
+The upstream editor uses PSRAM for its 256 KiB document buffer when fitted.
+Save writes and syncs a sibling `.edit-tmp`, then swaps the previous file via
+`.edit-bak`. Existing recovery files block a save so they can be inspected with
+`cat`, `mv` and `rm`. This preserves the original on a write failure but is not
+power-loss-atomic on FAT. Do not remove the card during use.
+
+To create and run a script directly on the board:
+
+```text
+mkdir /scripts
+edit /scripts/hello.py
+```
+
+Type `print("Hello from Teensy!")`, press Enter, **Ctrl-S** to save, and
+**Ctrl-Q** or **Ctrl+]** to return to the shell. Then run:
+
+```text
+python /scripts/hello.py
+python
+```
+
+`python` starts a basic ASCII REPL; backspace works, compound statements use
+`...` continuation prompts and a blank line to execute. Ctrl-C interrupts a
+running Python loop; Ctrl-D exits the REPL. `python -c "print(6*7)"` also works.
+Each launch starts a fresh interpreter. SD file I/O, imports, script arguments,
+and bundled modules including `math`, `json`, `gc`, `struct`, `binascii`,
+`hashlib` and `random` are enabled. The heap is 512 KiB and requires PSRAM;
+it does not expose all 8 MiB to a script. Source imports search the script's
+directory, shell working directory and root. This is MicroPython, not
+CircuitPython: `machine`, `board`, device drivers, networking, `input()` and
+SolarOS's ESP-specific Python bindings are not integrated. Busy execution
+consumes serial typeahead to detect interruption. Direct `.mpy` app launch is
+not offered. The vendored interpreter sources and generated tables are reused
+without modifying the generated engine; `scripts/platformio_teensy_micropython.py`
+builds them with the Teensy runtime in `python.c`.
+
+Storage and the synchronous interpreter are owned by the one shell task.
+Shell history can now persist under `/.shell/history`; persistent configuration
+still reports unsupported, identity remains `user@teensy41`, and automatic
+startup scripts are disabled. A reconnect starts a fresh shell and closes the
+foreground app, discarding unsaved editor changes. Manual SD mount/recovery
+commands remain in the recovery console. Added QSPI flash and Serial1 shell
+input remain outside this target.
 
 See [the hardware tests](../../scripts/ports/README.md) for a repeatable upstream
 shell check. The bootstrap test script expects a different prompt and must only
@@ -161,15 +207,15 @@ present in the exposed interface. Do not auto-probe arbitrary SPI cards.
 | Boot FreeRTOS | Startup creates console + heartbeat tasks and a queue. USB console and advancing heartbeat observed on a bare Teensy 4.1. |
 | USB or Serial1 output | CDC and Serial1 at 115200, with no wait for USB enumeration. Both feed one bootstrap session. |
 | SolarOS shell prompt | Recovery target retains the bootstrap prompt. `teensy41_shell` runs the upstream shell with a reduced command table and one USB session; multi-session support remains. |
-| SDIO / mount | Recovery target uses `SD.begin(BUILTIN_SDCARD)` and direct commands. Shell target adds read-only libc/directory adapters for upstream `cd`, `ls` and `cat`; writable VFS remains pending. Card insertion/removal recovery after successful mount is not implemented. |
+| SDIO / mount | Recovery target uses `SD.begin(BUILTIN_SDCARD)` and direct commands. Shell target adds writable streams/descriptors and directory adapters for file commands, editor and Python; full VFS and recovery remain pending. Card insertion/removal recovery after successful mount is not implemented. |
 | Primary display | Optional RA8875 text bring-up; controller/wiring confirmation and SolarOS terminal/GFX rendering still needed. |
 | I²C / SPI / UART | Board adapters with per-bus locks and explicit SPI settings, bounded sizes, repeated-start I²C, slot UARTs. Upstream service API integration still needed. |
 | Expansion | Pin descriptors and exclusive slot claims; no upstream expansion manifest/driver registry integration or auto-discovery. |
-| PSRAM | SolarOS allocation API mapped to external pool with explicit internal fallback policy. `psram` command checks 4 KiB with cache writeback/invalidation. No fitted RAM assumed. |
+| PSRAM | SolarOS allocation API mapped to external pool with explicit internal fallback policy. `psram` command checks 4 KiB with cache writeback/invalidation. Fitted 8 MiB detected and used by editor/Python; full-capacity validation remains. |
 | Audio | Optional SGTL5000/I2S 440 Hz headphone tone, off initially; speaker amp stays shut down. Electrical fix/confirmation, input/stream service and resource integration pending. |
 | Secondary display | Optional ST7735 startup text; actual controller not confirmed. Full second-terminal support pending. |
 | USB functionality | CDC console; optional host hub + ASCII keyboard input. USB disk, device HID, MIDI, networking and full SolarOS input events not implemented. |
-| Higher applications | Shell target runs the full calculator in text mode and one-shot evaluation through the upstream app registry/lifecycle. Other apps and graphics remain disabled. |
+| Higher applications | Shell target runs the full calculator in text mode and one-shot evaluation through the upstream app registry/lifecycle. Editor and a Teensy MicroPython runtime are enabled; other apps and graphics remain disabled. |
 
 The application task is the sole owner of display, SD and USB-host polling.
 Bus wrappers use mutexes for future task callers; callers must not bypass the
@@ -407,3 +453,54 @@ memory stayed unchanged; final stack headroom was 5,460 words.
 Log: `/tmp/teensy-cursor-fix-100.json`.
 Flashed HEX SHA-256:
 `130bc9660107186cdbf9adb10f9588e9de904b9ef4d22bf85549ef2b1e0ecf5a`.
+
+### Writable SD, editor and MicroPython validation — 2026-09-26
+
+Working cursor-fix shell HEX/ELF were preserved before this work under
+`../solar_os-baselines/2026-09-26-cursor/`. The new shell build was uploaded;
+no added-QSPI-flash operations or card formatting were performed.
+
+The writable integration suite passed on the fitted board/card:
+
+- Create a Python source file in the actual editor, save, exit, read it back
+  and execute it; replace an existing file and reopen it.
+- Dirty-exit confirmation, preserved original when a recovery file blocks save,
+  and editor launch at 80×24 and 100×40 geometry. These are hardware transcript
+  checks, not full editor screen-layout or power-failure tests.
+- Copy/move/remove, refusal to overwrite destinations (including a FAT case
+  alias), file write/append/update/truncate/seek/flush, missing files and
+  exclusive-create errors.
+- REPL arithmetic, selected standard modules, SD imports and scripts, 300,000
+  byte allocation followed by GC, Ctrl-C interruption of an infinite loop,
+  division errors, out-of-memory errors and recursion-limit recovery.
+- Exhaust all 16 file slots, then leave files open on interpreter exit and
+  successfully reopen afterward, exercising finalizer cleanup.
+- 50 editor/Python lifecycle cycles with unchanged reported free memory:
+  internal 61,164 / 92,224 bytes; external 8,385,240 / 8,388,608 bytes.
+  Deep-recursion stress left a minimum of 452 words of console stack headroom;
+  that is the historical low-water mark, not current stack availability.
+- Reboot, read persisted files and rerun the saved script. Fresh uptime was
+  1,922 ms and minimum stack headroom 5,541 words. The first test-client attempt
+  hit an I/O error during USB re-enumeration; reconnect retry resolved it.
+
+Host lifecycle/parser/path/calculator-screen tests, editor key-policy tests,
+non-headless TUI widget tests and shell launch tests pass. Recovery firmware
+still builds. New shell size: RAM1 427,936 bytes, RAM2 15,236 bytes, flash
+414,368 bytes. Python's heap and editor/diff buffers allocate from PSRAM at
+runtime; internal RAM remains limited for future additions.
+
+Logs: `/tmp/teensy-writable-extended.json`,
+`/tmp/teensy-writable-reboot-retry.json`. Test files are retained under
+`/_solaros_test_111186ef8a`; earlier development runs retained their own uniquely
+named test directories. Cold power-loss recovery, surprise SD removal/full-card
+writes, the entire PSRAM capacity, and missing-PSRAM behavior of the new apps
+have not been hardware-tested.
+
+Flashed HEX SHA-256:
+`563157187083967df008f7354b76a24c570589b38bd5bc9ec82fbb8e3f77a2c4`.
+
+Final shell/calculator/SD-read regression passed 100 cycles in
+13.194 seconds with stable free memory (internal 60,924
+bytes; external 8,385,240 bytes). Log:
+`/tmp/teensy-writable-shell-100.json`. A final rebuild produced the identical
+HEX hash above. The recovery image was compiled but not uploaded.

@@ -10,9 +10,10 @@ and test evidence in the [port notes](teensy41.md).
 
 The bring-up baseline is preserved in local commit `b46367f`. The separate
 `teensy41_shell` build now runs the real upstream USB shell, app registry and
-calculator (interactive text mode and `-e`) with read-only SD access. A reduced
-command table and single USB session are implemented; writable storage,
-persistent settings and the complete multi-session/service integration remain.
+calculator (interactive text mode and `-e`), upstream editor, and MicroPython
+REPL/SD scripts with writable SD access. A reduced command table and single USB
+session are implemented; storage hot-removal recovery, persistent settings and
+the complete multi-session/service integration remain.
 Fitted PSRAM is detected as 8 MiB. Current work is on local `main`.
 
 ## Original 13-step plan
@@ -27,7 +28,7 @@ step. Partial implementations and compile checks do not mean full integration.
 | 2 | Boot FreeRTOS. | Verified on hardware: console task and heartbeat run. |
 | 3 | Get USB or Serial1 console output. | Verified over USB. Serial1 is implemented but not hardware-tested. |
 | 4 | Get the SolarOS shell prompt. | Verified: upstream `user@teensy41:/` USB shell with reduced command table. Bootstrap retained for recovery; full multi-session integration remains. |
-| 5 | Implement SDIO and mount the SD card. | Mount and reads verified, including upstream shell through a read-only libc/directory bridge. Startup failure root cause, hot-removal recovery and writable VFS remain. |
+| 5 | Implement SDIO and mount the SD card. | Mount and reads verified, including writable shell/SD file operations, editor saves and Python files. Startup failure root cause, hot-removal recovery and full VFS semantics remain. |
 | 6 | Implement the primary display. | Optional RA8875 bring-up compiles. Controller/wiring confirmation, hardware testing and SolarOS terminal/GFX integration remain. |
 | 7 | Implement I²C/SPI/UART abstraction. | Initial adapters compile. Hardware tests and upstream service/resource integration remain. |
 | 8 | Implement expansion slots. | Initial pin descriptors and exclusive slot claims implemented. Manifest/driver registry integration and hardware tests remain. |
@@ -35,7 +36,7 @@ step. Partial implementations and compile checks do not mean full integration.
 | 10 | Add audio. | Optional SGTL5000/I2S tone bring-up compiles. Wiring/supply checks, hardware tests and audio services remain. |
 | 11 | Add secondary display. | Optional ST7735 bring-up compiles. Controller confirmation, hardware tests and second-terminal support remain. |
 | 12 | Add USB functionality. | USB CDC console verified. Optional host keyboard support compiles but is untested; other USB roles/features need scope decisions and implementation. |
-| 13 | Start enabling higher-level SolarOS applications one at a time. | Full upstream calculator runs in serial text mode and one-shot evaluation through the app registry/lifecycle. Graphics and further applications remain. |
+| 13 | Start enabling higher-level SolarOS applications one at a time. | Calculator, upstream editor and a Teensy MicroPython adapter run through the registry/lifecycle. Graphics, hardware Python bindings and further applications remain. |
 
 ## Next actions
 
@@ -78,7 +79,8 @@ understood, and a tested baseline is saved with reproduction instructions.
 
 - [x] Add a core shell profile, headless I/O, and one USB session adapter.
 - [x] Bridge read-only SD files/directories to upstream shell filesystem calls.
-- [ ] Extend the bridge to writable VFS semantics and recovery.
+- [x] Add writable SD streams/descriptors and test file operations, editor saves and Python I/O.
+- [ ] Add storage hot-removal recovery and remaining VFS semantics.
 - [ ] Implement persistent configuration storage.
 - [x] Integrate the upstream shell and application registry with one USB session.
 - [ ] Port full session management and extend supported commands.
@@ -113,12 +115,16 @@ conflicts are handled predictably. External hardware is required.
 Done when: confirmed peripherals work through SolarOS APIs, individually and
 together. Optional peripheral compilation is not hardware validation.
 
-### 5. Enable useful applications — planned
+### 5. Enable useful applications — in progress
 
 - [x] Integrate the full calculator application in serial text mode.
-- [ ] Enable clock, file viewer/pager, and editor one at a time.
+- [x] Enable and hardware-test the upstream editor, including protected replacement saves.
+- [x] Add MicroPython REPL, SD scripts/imports, file I/O and Ctrl-C cancellation.
+- [ ] Enable clock and file viewer/pager.
+- [ ] Add selected Teensy hardware bindings to Python after peripheral integration.
 - [ ] Check stack use, allocation failures, and missing-storage behavior per app.
-- [ ] Decide which further upstream apps and scripting features to prioritize.
+- [x] Prioritize on-device editing and MicroPython scripting.
+- [ ] Choose further apps and Python modules as needed.
 - [ ] Choose Ethernet/Wi-Fi hardware before planning network-dependent apps.
 
 Done when: the selected applications work reliably on the intended hardware.
@@ -134,6 +140,7 @@ Done when: the selected applications work reliably on the intended hardware.
 | SD hot removal | Recovery after an already successful mount is not implemented. |
 | Hardware wiring/population | See unresolved items in the port notes before peripheral bring-up. |
 | Network transport | Undecided; not required for the bare-board baseline. |
+| MicroPython scope | 512 KiB PSRAM heap, basic REPL and SD scripts/imports/files; no CircuitPython or hardware/network modules yet. |
 | Full upstream feature scope | Select incrementally after shell/storage integration. |
 
 ## Future ideas inbox
@@ -182,3 +189,23 @@ Check items off only when their stated result has been verified. Add dated
 evidence to the port notes, update the next actions when priorities change,
 and keep uncommitted ideas in the inbox. Record compile-only results separately
 from on-board tests.
+
+### Writable SD and on-device scripting — 2026-09-26
+
+- Added writable SD bridge and `mkdir`, `cp`, `mv`, `rm`; copy/move refuse an
+  existing destination. Enabled the upstream editor with PSRAM buffering,
+  temporary-file saves, dirty-exit confirmation and serial TUI support.
+- Integrated the bundled MicroPython engine with a synchronous Teensy runtime,
+  512 KiB PSRAM heap, basic REPL, SD source files/imports, file streams,
+  exceptions/GC, and Ctrl-C interruption. GPIO/display/network Python APIs
+  remain outside this first integration.
+- Hardware suite passed editor create/save/replace/reopen, file operations,
+  interpreter imports and file modes, 300 KB allocation/GC, infinite-loop
+  interruption, error/exhaustion recovery, and 50 editor/Python lifecycle
+  cycles with unchanged reported free memory. See port notes for logs and
+  additional persistence/regression results.
+- Added manual serial geometry via `setterm size COLS ROWS`; terminal-size
+  negotiation and physical keyboard/display operation remain future work.
+- Saved files and Python execution survived a software reboot. Final 100-cycle
+  shell/calculator/read regression and recovery build passed. Cold power-cycle
+  testing of this writable profile remains separate from the earlier baseline.

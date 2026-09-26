@@ -1,3 +1,7 @@
+#ifndef SOLAR_OS_HEADLESS
+#define SOLAR_OS_HEADLESS 0
+#endif
+
 #include "solar_os_tui_widgets.h"
 
 #include <ctype.h>
@@ -14,7 +18,7 @@ static esp_err_t tui_screen_set_fullscreen(solar_os_tui_t *tui, bool fullscreen)
     if (tui == NULL || !tui->screen_active) return ESP_ERR_INVALID_STATE;
     if (tui->fullscreen == fullscreen) return ESP_OK;
 
-    if (tui->terminal != NULL) {
+    if (!SOLAR_OS_HEADLESS && tui->terminal != NULL) {
         const esp_err_t err = solar_os_terminal_set_status_bar_visible_transient(
             tui->terminal, fullscreen ? false : tui->saved_status_bar_visible);
         if (err != ESP_OK) return err;
@@ -123,7 +127,7 @@ esp_err_t solar_os_tui_screen_begin(solar_os_tui_t *tui, solar_os_context_t *ctx
     esp_err_t err = solar_os_tui_begin(tui, ctx);
     if (err == ESP_OK) {
         tui->screen_active = true;
-        tui->saved_status_bar_visible = tui->terminal != NULL &&
+        tui->saved_status_bar_visible = !SOLAR_OS_HEADLESS && tui->terminal != NULL &&
             solar_os_terminal_status_bar_visible(tui->terminal);
         const bool compact = solar_os_tui_screen_should_fullscreen(
             solar_os_tui_rows(tui));

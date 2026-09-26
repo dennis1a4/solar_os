@@ -67,6 +67,9 @@ int solar_os_shell_launch_path_arg(const char *app_name,
         return -1;
     }
 
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    if (strcmp(app_name, "python") == 0 && strcmp(argv[1], "-c") == 0) return -1;
+#endif
     if (app_has_first_path_arg(app_name)) {
         return 1;
     }

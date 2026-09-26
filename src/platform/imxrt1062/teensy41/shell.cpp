@@ -15,6 +15,14 @@ extern "C" {
 static solar_os_context_t shell_context;
 static solar_os_shell_session_t *session;
 static const solar_os_app_t *foreground;
+static solar_os_tui_t *active_tui;
+extern "C" void solar_os_sessions_attach_tui(solar_os_shell_io_t *io, solar_os_tui_t *tui) {
+    configASSERT(session && io == solar_os_shell_session_io(session));
+    active_tui = tui;
+}
+extern "C" void solar_os_sessions_detach_tui(solar_os_shell_io_t *io, const solar_os_tui_t *tui) {
+    if (session && io == solar_os_shell_session_io(session) && active_tui == tui) active_tui = nullptr;
+}
 extern "C" size_t solar_os_sessions_shell_count() { return session ? 1 : 0; }
 static const char *owner = "usb-shell";
 static esp_err_t usb_write(void *, const uint8_t *data, size_t length, size_t *written) {
@@ -30,8 +38,23 @@ static esp_err_t usb_read(void *, uint8_t *data, size_t length, uint32_t timeout
         vTaskDelay(pdMS_TO_TICKS(1));
     } while (true);
 }
+// The interpreter runs synchronously in this console task. Check for
+// interrupt bytes. Python has no stdin in this profile, so discard typeahead
+// while busy (including the LF following a CRLF submission).
+extern "C" bool sk_python_poll_cancel() {
+    if (!Serial) return true;
+    bool interrupted = false;
+    while (Serial.available()) {
+        const int ch = Serial.read();
+        interrupted |= ch == 3 || ch == 29;
+    }
+    return interrupted;
+}
+extern "C" uint32_t sk_python_random_seed() { return micros() ^ ARM_DWT_CYCCNT; }
 static void finish_app() {
+    const bool had_screen = active_tui != nullptr;
     solar_os_app_stop(foreground, &shell_context);
+    if (had_screen) solar_os_shell_io_clear(solar_os_shell_session_io(session));
     solar_os_app_registry_release(foreground, owner);
     foreground = nullptr;
     solar_os_shell_session_set_foreground_app(session, nullptr);
@@ -70,10 +93,11 @@ static void service_requests() {
 static bool emit_key(char ch, void *) {
     solar_os_event_t event{};
     event.type = SOLAR_OS_EVENT_CHAR;
-    event.data.ch = ch == 3 ? SOLAR_OS_KEY_ESCAPE : ch;
+    event.data.ch = ch == 3 && (!foreground || !strcmp(foreground->name, "calc"))
+        ? SOLAR_OS_KEY_ESCAPE : ch;
     if (foreground) {
-        if (static_cast<uint8_t>(ch) == SOLAR_OS_KEY_APP_EXIT) solar_os_context_finish(&shell_context, 0, nullptr);
-        else if (foreground->event) foreground->event(&shell_context, &event);
+        if (foreground->event) foreground->event(&shell_context, &event);
+        else if (static_cast<uint8_t>(ch) == SOLAR_OS_KEY_APP_EXIT) solar_os_context_finish(&shell_context, 0, nullptr);
     } else solar_os_shell_session_event(&shell_context, session, &event);
     service_requests();
     return true;

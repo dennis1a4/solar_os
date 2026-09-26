@@ -1,3 +1,7 @@
+#ifndef SOLAR_OS_HEADLESS
+#define SOLAR_OS_HEADLESS 0
+#endif
+
 #include "solar_os_tui.h"
 
 #include <stdbool.h>
@@ -482,7 +486,7 @@ static esp_err_t tui_write_codepoint(solar_os_tui_t *tui, uint32_t codepoint)
         return tui_buffer_put_codepoint(tui, codepoint);
     }
 
-    if (solar_os_shell_io_kind(tui->io) == SOLAR_OS_SHELL_IO_KIND_TERMINAL &&
+    if (!SOLAR_OS_HEADLESS && solar_os_shell_io_kind(tui->io) == SOLAR_OS_SHELL_IO_KIND_TERMINAL &&
         tui->terminal != NULL) {
         solar_os_terminal_put_codepoint(tui->terminal, codepoint);
         tui->io->cursor_row = solar_os_terminal_cursor_row(tui->terminal);
@@ -509,7 +513,7 @@ static esp_err_t tui_write_text(solar_os_tui_t *tui, const char *text)
         return tui_buffer_write_text(tui, text);
     }
 
-    if (solar_os_shell_io_kind(tui->io) == SOLAR_OS_SHELL_IO_KIND_TERMINAL &&
+    if (!SOLAR_OS_HEADLESS && solar_os_shell_io_kind(tui->io) == SOLAR_OS_SHELL_IO_KIND_TERMINAL &&
         tui->terminal != NULL) {
         solar_os_terminal_write_utf8(tui->terminal, text);
         tui->io->cursor_row = solar_os_terminal_cursor_row(tui->terminal);
@@ -583,7 +587,7 @@ void solar_os_tui_end(solar_os_tui_t *tui)
         solar_os_sessions_detach_tui(tui->io, tui);
         tui->screen_active = false;
     }
-    if (tui->status_bar_overridden && tui->terminal != NULL) {
+    if (!SOLAR_OS_HEADLESS && tui->status_bar_overridden && tui->terminal != NULL) {
         (void)solar_os_terminal_set_status_bar_visible_transient(
             tui->terminal, tui->saved_status_bar_visible);
         tui->status_bar_overridden = false;
@@ -958,7 +962,7 @@ esp_err_t solar_os_tui_vrule(solar_os_tui_t *tui,
         return err;
     }
 
-    if (solar_os_shell_io_kind(tui->io) == SOLAR_OS_SHELL_IO_KIND_TERMINAL &&
+    if (!SOLAR_OS_HEADLESS && solar_os_shell_io_kind(tui->io) == SOLAR_OS_SHELL_IO_KIND_TERMINAL &&
         tui->terminal != NULL) {
         return solar_os_terminal_add_vrule(tui->terminal,
                                            row,

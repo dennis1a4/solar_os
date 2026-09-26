@@ -251,7 +251,9 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #if SOLAR_OS_PACKAGE_APP_GAMEBOY
     APP_FILE_ENTRY("gameboy", "original Game Boy emulator", &solar_os_gameboy_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "gameboy <file.gb>", 2, 2, ".gb"),
 #endif
-#if SOLAR_OS_PACKAGE_APP_PYTHON
+#if SOLAR_OS_PACKAGE_APP_PYTHON && SOLAR_OS_PLATFORM_IMXRT1062
+    APP_FILE_ENTRY("python", "MicroPython runtime", &solar_os_python_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_PORT, "python [-c code | script.py [args...]]", 1, 0, ".py .pyw"),
+#elif SOLAR_OS_PACKAGE_APP_PYTHON
     APP_FILE_ENTRY("python", "MicroPython runtime", &solar_os_python_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "python [script.py [args...]]", 1, 0, ".py .pyw .mpy"),
 #endif
 #if SOLAR_OS_PACKAGE_APP_LUA
