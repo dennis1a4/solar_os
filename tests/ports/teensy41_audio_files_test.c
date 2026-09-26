@@ -29,6 +29,15 @@ esp_err_t sk_audio_output_write(const int16_t *pcm, size_t frames) {
     frames_written += frames; return ESP_OK;
 }
 esp_err_t sk_audio_output_finish(bool drain) { (void)drain; started = false; return ESP_OK; }
+static unsigned capture_count;
+esp_err_t sk_audio_capture_start(void) { capture_count=0; return ESP_OK; }
+esp_err_t sk_audio_capture_read(int16_t *data, size_t capacity, size_t *frames) {
+    *frames = capacity < 512 ? capacity : 512;
+    for (size_t i=0; i<*frames; ++i) data[i] = (++capture_count % 100 < 50) ? 1000 : -1000;
+    return ESP_OK;
+}
+uint32_t sk_audio_capture_stop(void) { return 0; }
+esp_err_t solar_os_storage_sync_file(FILE *f) { return fflush(f) == 0 ? ESP_OK : ESP_FAIL; }
 int main(int argc, char **argv) {
     assert(argc == 4);
     solar_os_audio_wav_info_t info;
@@ -75,5 +84,12 @@ int main(int argc, char **argv) {
     assert(!live && !started);
     assert(solar_os_audio_get_wav_info(argv[1], &info) != ESP_OK);
     assert(solar_os_audio_play_wav("/no/such/file.wav", 20, NULL, &info) != ESP_OK);
+    char recording[512]; snprintf(recording, sizeof(recording), "%s.recorded.wav", argv[3]);
+    assert(solar_os_audio_record_wav(recording, 100, NULL, &info) == ESP_OK);
+    assert(info.data_bytes == 8820 && info.duration_ms == 100 && !live);
+    assert(solar_os_audio_get_wav_info(recording, &info) == ESP_OK);
+    assert(info.channels == 1 && info.sample_rate == 44100 && info.data_bytes == 8820);
+    assert(solar_os_audio_record_wav(recording, 100, NULL, &info) == ESP_ERR_INVALID_STATE);
+    assert(!live);
     puts("Teensy audio files: real MP3/WAV decode, resampling, cancellation and allocation cleanup passed");
 }

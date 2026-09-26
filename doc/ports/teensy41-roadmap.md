@@ -33,7 +33,7 @@ step. Partial implementations and compile checks do not mean full integration.
 | 7 | Implement I²C/SPI/UART abstraction. | Initial adapters compile. Hardware tests and upstream service/resource integration remain. |
 | 8 | Implement expansion slots. | Initial pin descriptors and exclusive slot claims implemented. Manifest/driver registry integration and hardware tests remain. |
 | 9 | Add PSRAM allocation. | Allocation adapter and 4 KiB test implemented. Missing-PSRAM handling and fitted 8 MiB / repeated 4 KiB checks verified; full-capacity testing remains. |
-| 10 | Add audio. | Rev D shield headphone output and aplay MP3/WAV verified in teensy41_audio. Custom-board supply/wiring, recording and full audio services remain. |
+| 10 | Add audio. | Rev D shield headphone output and aplay MP3/WAV verified in teensy41_audio. Mic WAV capture verified with speaker tone; 60 Hz hum remains. Custom-board supply/wiring and full audio services remain. |
 | 11 | Add secondary display. | Optional ST7735 bring-up compiles. Controller confirmation, hardware tests and second-terminal support remain. |
 | 12 | Add USB functionality. | USB CDC console verified. Optional host keyboard support compiles but is untested; other USB roles/features need scope decisions and implementation. |
 | 13 | Start enabling higher-level SolarOS applications one at a time. | Calculator, upstream editor and a Teensy MicroPython adapter run through the registry/lifecycle. Graphics, hardware Python bindings and further applications remain. |
@@ -108,7 +108,9 @@ conflicts are handled predictably. External hardware is required.
 - [ ] Validate the primary display and integrate terminal/GFX rendering.
 - [ ] Validate the secondary display and define its terminal behavior.
 - [x] Validate Rev D shield output and upstream aplay MP3/WAV playback.
-- [ ] Validate custom-board audio wiring, input/recording and full stream services.
+- [x] Verify Rev D microphone WAV recording, cancellation and speaker-tone capture.
+- [ ] Investigate 60 Hz microphone hum and verify clean recording quality.
+- [ ] Validate custom-board audio wiring and full stream services.
 - [ ] Validate USB host wiring and keyboard input; integrate input events.
 - [x] Detect fitted 8 MiB PSRAM and pass repeated cache-flushed 4 KiB tests.
 - [ ] Test full-capacity PSRAM and define DMA-safe buffer handling where needed.

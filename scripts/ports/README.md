@@ -159,3 +159,19 @@ repeated app cleanup. Test files remain on SD. Someone must also listen and
 confirm both channels sound correct; software counters cannot prove analog
 output quality. This suite passed 20 playback cycles on the wired Rev D shield
 on 2026-09-26; see the port notes for the exact evidence and remaining limits.
+
+For microphone capture, connect an external mic to MIC/GND and Teensy pin 8
+to shield DOUT, with the speaker near the mic. Close the serial monitor. The
+following test needs NumPy and pyserial on the host:
+
+```sh
+python3 scripts/ports/test_teensy41_mic.py \
+  --log /tmp/teensy-mic.json --wav /tmp/teensy-mic.wav
+```
+
+It records four seconds around a 440 Hz speaker tone, checks the WAV format,
+cancellation header, overwrite protection and capture overruns, and requires
+a clear rise/fall in tone energy. It reports clipping and spectral measurements;
+a pass does not establish clean analog quality. Uniquely named WAVs remain on
+SD. The retrieved host WAV contains microphone audio, potentially including
+nearby conversation; keep it and the logs outside the repository.

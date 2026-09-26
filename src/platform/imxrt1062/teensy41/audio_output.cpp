@@ -7,6 +7,8 @@
 extern "C" {
 #include "solar_os_shell_commands.h"
 #include "solar_os_shell_io.h"
+#include "solar_os_audio.h"
+#include "solar_os_shell.h"
 }
 
 // One foreground producer, AudioStream ISR consumer. DMA only sees the Audio
@@ -59,9 +61,79 @@ static StereoSource source;
 static AudioOutputI2S output;
 static AudioConnection left(source, 0, output, 0), right(source, 1, output, 1);
 static AudioControlSGTL5000 codec;
+static constexpr unsigned capture_slots = 128;
+DMAMEM static int16_t captured[capture_slots][AUDIO_BLOCK_SAMPLES];
+static volatile unsigned capture_head, capture_tail;
+static volatile bool capture_enabled;
+static bool capture_test, test_tone_started;
+static volatile uint32_t capture_drops, capture_blocks;
+class MicCapture : public AudioStream {
+    audio_block_t *inputs[1];
+public:
+    MicCapture() : AudioStream(1, inputs) {}
+    void update() override {
+        audio_block_t *block = receiveReadOnly();
+        if (!block) return;
+        if (capture_enabled) {
+            unsigned next = (capture_head + 1) % capture_slots;
+            if (next == capture_tail) ++capture_drops;
+            else {
+                memcpy(captured[capture_head], block->data, sizeof(block->data));
+                __DMB(); capture_head = next; ++capture_blocks;
+            }
+        }
+        release(block);
+    }
+};
+static AudioInputI2S input;
+static MicCapture capture;
+static AudioConnection mic_connection(input, 0, capture, 0);
+extern "C" esp_err_t sk_audio_capture_start() {
+    if (!ready) return ESP_ERR_NOT_FOUND;
+    sk_audio_output_finish(false);
+    if (!sk_i2c_lock(0)) return ESP_ERR_TIMEOUT;
+    bool ok = codec.inputSelect(AUDIO_INPUT_MIC) && codec.micGain(20);
+    sk_i2c_unlock(0);
+    if (!ok) return ESP_FAIL;
+    AudioNoInterrupts();
+    test_tone_started = false;
+    capture_head = capture_tail = 0;
+    capture_drops = capture_blocks = 0;
+    capture_enabled = true;
+    AudioInterrupts();
+    return ESP_OK;
+}
+extern "C" esp_err_t sk_audio_capture_read(int16_t *mono, size_t capacity, size_t *frames) {
+    *frames = 0;
+    uint32_t started = millis();
+    while (capture_head == capture_tail) {
+        if (sk_audio_cancelled()) return ESP_ERR_TIMEOUT;
+        if (millis() - started > 1000) return ESP_FAIL;
+        vTaskDelay(1);
+    }
+    if (capture_test && !test_tone_started && capture_blocks >= 345) {
+        tone_until = millis() + 1000;
+        __DMB(); tone_on = true; test_tone_started = true;
+    }
+    if (capture_drops) return ESP_FAIL;
+    while (capture_head != capture_tail && *frames + AUDIO_BLOCK_SAMPLES <= capacity) {
+        unsigned t = capture_tail;
+        memcpy(mono + *frames, captured[t], sizeof(captured[t]));
+        __DMB(); capture_tail = (t + 1) % capture_slots;
+        *frames += AUDIO_BLOCK_SAMPLES;
+    }
+    return ESP_OK;
+}
+extern "C" uint32_t sk_audio_capture_stop() {
+    AudioNoInterrupts();
+    capture_enabled = false;
+    if (capture_test) tone_on = false;
+    AudioInterrupts();
+    return capture_drops;
+}
 
 void sk_audio_player_begin() {
-    AudioMemory(12);
+    AudioMemory(16);
     if (!sk_i2c_lock(0)) return;
     ready = codec.enable();
     if (ready) {
@@ -141,6 +213,8 @@ void sk_audio_player_tone(bool on) {
 extern "C" void sk_audio_output_status() {
     sk_console_printf("Audio: SGTL5000=%s rate=44100 stereo blocks=%lu underruns=%lu\r\n",
         ready ? "ready" : "missing", (unsigned long)played, (unsigned long)underruns);
+    sk_console_printf("Capture: mic gain=20dB blocks=%lu overruns=%lu\r\n",
+        (unsigned long)capture_blocks, (unsigned long)capture_drops);
 }
 extern "C" void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char **argv) {
     if (argc == 1 || (argc == 2 && !strcmp(argv[1], "status"))) {
@@ -149,10 +223,24 @@ extern "C" void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char
         sk_audio_player_tone(true);
         solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), ready ?
             "440 Hz test tone for one second, headphones at 20%" : "Audio shield missing");
+    } else if (argc == 3 && !strcmp(argv[1], "mictest")) {
+        char path[160];
+        auto *io = solar_os_context_shell_io(ctx);
+        if (solar_os_shell_resolve_path(ctx, argv[2], path, sizeof(path)) != ESP_OK) return;
+        solar_os_shell_io_writeln(io, "Recording 4 seconds; a one-second tone follows one second of silence.");
+        esp_err_t err = sk_audio_output_start(30);
+        solar_os_audio_wav_info_t info{};
+        if (err == ESP_OK) {
+            capture_test = true;
+            err = solar_os_audio_record_wav(path, 4000, nullptr, &info);
+            capture_test = false;
+        }
+        solar_os_shell_io_printf(io, "Mic test: %s, %lu bytes, %lu ms\n", esp_err_to_name(err),
+            (unsigned long)info.data_bytes, (unsigned long)info.duration_ms);
     } else if (argc == 2 && !strcmp(argv[1], "off")) {
         sk_audio_player_tone(false);
     } else {
-        solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), "usage: audio [status|tone|off]");
+        solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), "usage: audio [status|tone|off|mictest new.wav]");
     }
 }
 #endif

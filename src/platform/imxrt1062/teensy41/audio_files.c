@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include "solar_os_storage.h"
 #include "solar_os_audio.h"
 #include "solar_os_audio_codec.h"
 #include "solar_os_audio_pcm.h"
@@ -178,9 +181,50 @@ esp_err_t solar_os_audio_play_wav(const char *path, uint8_t volume,
     solar_os_memory_free(pcm); solar_os_memory_free(output); fclose(f);
     return err;
 }
+static void put32(uint8_t *p, uint32_t n) {
+    for (unsigned i=0; i<4; ++i) p[i] = n >> (i*8);
+}
+static bool write_wav_header(FILE *f, uint32_t bytes) {
+    uint8_t h[44] = {0};
+    memcpy(h, "RIFF", 4); put32(h+4, bytes+36); memcpy(h+8, "WAVEfmt ", 8);
+    put32(h+16, 16); h[20]=1; h[22]=1;
+    put32(h+24, 44100); put32(h+28, 88200); h[32]=2; h[34]=16;
+    memcpy(h+36, "data", 4); put32(h+40, bytes);
+    return fseek(f, 0, SEEK_SET) == 0 && fwrite(h, 1, sizeof(h), f) == sizeof(h);
+}
 esp_err_t solar_os_audio_record_wav(const char *path, uint32_t duration,
     const solar_os_audio_wav_options_t *options, solar_os_audio_wav_info_t *info) {
-    (void)path; (void)duration; (void)options; (void)info;
-    return ESP_ERR_NOT_SUPPORTED;
+    memset(info, 0, sizeof(*info));
+    if (options && options->capture_stream && strcmp(options->capture_stream, "mic"))
+        return ESP_ERR_NOT_SUPPORTED;
+    struct stat st;
+    if (stat(path, &st) == 0) return ESP_ERR_INVALID_STATE;
+    if (errno != ENOENT) return ESP_FAIL;
+    int16_t *buffer = solar_os_memory_alloc(4096, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "mic.record");
+    if (!buffer) return ESP_ERR_NO_MEM;
+    FILE *f = fopen(path, "wb");
+    if (!f) { solar_os_memory_free(buffer); return ESP_FAIL; }
+    info->sample_rate=44100; info->channels=1; info->bits_per_sample=16; info->block_align=2;
+    esp_err_t err = write_wav_header(f, 0) ? sk_audio_capture_start() : ESP_FAIL;
+    // Unbounded interactive recording stops at the existing one-hour limit.
+    uint64_t wanted = (uint64_t)(duration ? duration : SOLAR_OS_AUDIO_WAV_MAX_MS)*44100/1000;
+    while (err == ESP_OK && info->data_bytes/2 < wanted) {
+        if (cancelled(options)) { err = ESP_ERR_TIMEOUT; break; }
+        size_t frames = 0;
+        err = sk_audio_capture_read(buffer, 2048, &frames);
+        if (err != ESP_OK) break;
+        uint64_t remaining = wanted - info->data_bytes/2;
+        if (frames > remaining) frames = remaining;
+        size_t n = fwrite(buffer, 2, frames, f);
+        info->data_bytes += n*2;
+        if (n != frames) { err=ESP_FAIL; break; }
+    }
+    if (sk_audio_capture_stop() && err == ESP_OK) err=ESP_FAIL;
+    info->duration_ms=(uint64_t)info->data_bytes*1000/88200;
+    // Even cancellation leaves a properly sized, playable partial WAV.
+    if (!write_wav_header(f, info->data_bytes) || solar_os_storage_sync_file(f) != ESP_OK) err=ESP_FAIL;
+    if (fclose(f) != 0) err=ESP_FAIL;
+    solar_os_memory_free(buffer);
+    return err;
 }
 #endif

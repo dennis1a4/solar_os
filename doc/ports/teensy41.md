@@ -153,7 +153,8 @@ jack, with no charging connection; the user heard clear, quiet tones.
 This is separate from the custom SuperKeyboard codec circuit and its unresolved
 VDDIO issue below. Use the Rev D shield's **3.3V** and **GND**, plus matching
 Teensy/shield pins 18/19 (I²C), 7 (audio out), 20 (LRCLK), 21 (BCLK), and 23
-(MCLK). Pin 8 supplies the input path if recording is later integrated. Wire
+(MCLK). Pin 8 supplies the microphone input path. Connect the external microphone
+to the shield MIC/GND pads. Wire
 with power disconnected and keep clock wiring short. Keep the SD card in the
 Teensy's native SDIO socket. The shield's SPI SD socket is not used.
 
@@ -182,8 +183,25 @@ mono/stereo and sample-rate conversion to the fixed 44.1 kHz stereo output.
 Ctrl-C, Escape or Ctrl+] cancels playback. Default headphone volume is 20%;
 `-v` selects 0–100. Generated test files are deliberately attenuated and the
 hardware suite uses 10%, so its tones are quiet. Normal recordings may be much
-louder; increase the playback and speaker volume gradually. Recording, line-out selection, background playback and the
-full audio stream/device service are not enabled in this profile.
+louder; increase the playback and speaker volume gradually. Line-out selection,
+background playback and the full audio stream/device service are not enabled.
+
+Microphone recording is available as mono 44.1 kHz, 16-bit PCM WAV, with 20 dB
+mic gain:
+
+```text
+arecord -d 5 /voice.wav
+aplay -v 30 /voice.wav
+```
+
+Use a new filename: recording refuses to overwrite existing files. Without
+`-d`, recording continues until Ctrl-C or the one-hour limit. Cancellation
+finalizes the partial WAV. Only the `mic` capture source is supported. There is
+no live microphone monitoring. A 32 KiB capture ring absorbs short SD delays;
+capture overruns stop recording with an error. `audio status` reports overruns.
+`audio mictest /new-test.wav` records four seconds and plays a one-second
+440 Hz tone during capture, for a nearby speaker/microphone check. The tested
+setup captures the tone, but has strong 60 Hz hum that needs investigation.
 
 The implementation links the actual upstream `solar_os_audio_apps.c` with a
 synchronous execution option, the existing MP3 codec and PCM converter, and a
@@ -597,7 +615,7 @@ left/right channel separation or measured signal quality.
 Log: `/tmp/teensy-audio-20.json`. Retained fixture directory on SD:
 `/_solaros_audio_a6e6cf287a` (an earlier run retained its own test directory).
 The tested audio image is backed up under
-`../solar_os-baselines/2026-09-26-audio/`. Line-out and recording remain disabled;
+`../solar_os-baselines/2026-09-26-audio/`. In that image, line-out and recording are disabled;
 custom SuperKeyboard audio wiring is still a separate bring-up task.
 
 After audio playback, the shell/calculator/SD-read regression passed 50 cycles
@@ -605,3 +623,36 @@ in 8.659 seconds with stable reported free memory and the same 3,791-word stack
 low-water mark. Log: `/tmp/teensy-audio-shell-50.json`. No USB disconnect occurred
 during these playback or regression runs. This is a short validation, not a
 long-duration music/USB soak.
+
+### Microphone capture validation — 2026-09-26
+
+Enabled the upstream `arecord` app with synchronous SD recording and the Rev D
+I²S microphone input. Suppressed queued progress events in synchronous mode
+to prevent long recordings from filling the event queue. The main MP3 decoder
+runs from cached program flash to preserve internal RAM with capture enabled.
+
+The nearby battery-powered speaker supplied the test tone. A four-second WAV
+contained 176,400 mono samples; 440 Hz band energy rose 38.2 dB during the tone.
+No clipped samples or capture overruns were detected. Strong 60 Hz hum was
+present before, during and after the tone: capture works, but clean microphone
+quality is not yet verified. Cancellation, subsequent recording and existing-file
+protection passed. Host sanitizer tests also cover WAV headers and recording
+cleanup. Initial capture log/WAV: `/tmp/teensy-mic-first.json` and
+`/tmp/teensy-mic-first.wav`; these may contain ambient audio and are not committed.
+
+Playback regression passed all three formats, cancellation and ten further
+plays with stable memory: internal 43,212 / 82,464 bytes free and PSRAM
+8,385,240 / 8,388,608 bytes free. Console stack low-water mark: 3,793 words.
+Log: `/tmp/teensy-mic-playback-10.json`. Build size: RAM1 437,696 bytes,
+RAM2 69,588 bytes, flash 448,080 bytes.
+
+Uploaded HEX SHA-256:
+`aa705da1b56dd80b558ed45b2cb2d054a90ceb9fa1f05f065e065cb022e22a76`.
+Tested firmware backup: `../solar_os-baselines/2026-09-26-microphone/`.
+Long recording, full-card, interrupted-power and surprise-removal tests remain.
+
+A follow-up run verified that Ctrl-C leaves a WAV whose data length matches
+the file, with unchanged free memory and zero overruns. Its acoustic check
+failed: 440 Hz energy rose only 1.6 dB, and 60 Hz hum dominated. Speaker state
+and position need confirmation before treating acoustic capture as repeatable.
+Log/WAV: `/tmp/teensy-mic-final.json`, `/tmp/teensy-mic-final.wav`.

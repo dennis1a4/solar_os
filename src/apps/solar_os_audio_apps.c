@@ -297,7 +297,7 @@ static void audio_app_task(void *arg)
         .capture_stream = audio_app.capture_stream[0] != '\0' ?
             audio_app.capture_stream : NULL,
         .should_cancel = audio_app_should_cancel,
-        .progress = audio_app.mode == AUDIO_APP_MODE_RECORD ?
+        .progress = !SOLAR_OS_AUDIO_APP_SYNCHRONOUS && audio_app.mode == AUDIO_APP_MODE_RECORD ?
             audio_app_progress : NULL,
         .user = NULL,
         .progress_interval_ms = SOLAR_OS_AUDIO_WAV_DEFAULT_PROGRESS_MS,
