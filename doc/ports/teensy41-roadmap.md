@@ -33,7 +33,7 @@ step. Partial implementations and compile checks do not mean full integration.
 | 7 | Implement I²C/SPI/UART abstraction. | Initial adapters compile. Hardware tests and upstream service/resource integration remain. |
 | 8 | Implement expansion slots. | Initial pin descriptors and exclusive slot claims implemented. Manifest/driver registry integration and hardware tests remain. |
 | 9 | Add PSRAM allocation. | Allocation adapter and 4 KiB test implemented. Missing-PSRAM handling and fitted 8 MiB / repeated 4 KiB checks verified; full-capacity testing remains. |
-| 10 | Add audio. | Optional SGTL5000/I2S tone bring-up compiles. Wiring/supply checks, hardware tests and audio services remain. |
+| 10 | Add audio. | Rev D shield headphone output and aplay MP3/WAV verified in teensy41_audio. Custom-board supply/wiring, recording and full audio services remain. |
 | 11 | Add secondary display. | Optional ST7735 bring-up compiles. Controller confirmation, hardware tests and second-terminal support remain. |
 | 12 | Add USB functionality. | USB CDC console verified. Optional host keyboard support compiles but is untested; other USB roles/features need scope decisions and implementation. |
 | 13 | Start enabling higher-level SolarOS applications one at a time. | Calculator, upstream editor and a Teensy MicroPython adapter run through the registry/lifecycle. Graphics, hardware Python bindings and further applications remain. |
@@ -107,7 +107,8 @@ conflicts are handled predictably. External hardware is required.
   especially SGTL5000 supply voltage, display controllers, and GPIO9's role.
 - [ ] Validate the primary display and integrate terminal/GFX rendering.
 - [ ] Validate the secondary display and define its terminal behavior.
-- [ ] Validate audio output, then input/stream services.
+- [x] Validate Rev D shield output and upstream aplay MP3/WAV playback.
+- [ ] Validate custom-board audio wiring, input/recording and full stream services.
 - [ ] Validate USB host wiring and keyboard input; integrate input events.
 - [x] Detect fitted 8 MiB PSRAM and pass repeated cache-flushed 4 KiB tests.
 - [ ] Test full-capacity PSRAM and define DMA-safe buffer handling where needed.
@@ -222,3 +223,14 @@ from on-board tests.
   stability and listening confirmation must pass before marking audio done.
 - Next: confirm wiring and listening output, close the serial monitor, upload
   the audio profile, and run the generated-tone hardware suite.
+
+### Rev D audio output / aplay verified — 2026-09-26
+
+- Shield connected and detected; user heard clear, quiet tones through a
+  battery-only portable speaker on the headphone jack.
+- Flashed `teensy41_audio`; stereo MP3, resampled mono MP3 and WAV passed with
+  zero initial underruns. Cancellation/error recovery and 20 additional
+  playback cycles passed with stable memory and positive stack headroom.
+- The board is running the audio profile. The standard shell and its saved
+  recovery image remain available. Recording, line-out, full audio services
+  and custom SuperKeyboard codec hardware remain follow-up work.

@@ -145,9 +145,11 @@ See [the hardware tests](../../scripts/ports/README.md) for a repeatable upstrea
 shell check. The bootstrap test script expects a different prompt and must only
 be used with the original `teensy41` target.
 
-## Rev D audio shield and aplay — software prepared, hardware pending
+## Rev D audio shield and aplay — hardware verified
 
-The user has a PJRC Audio Adapter Rev D and is wiring it to the bare Teensy.
+The user wired a PJRC Audio Adapter Rev D to the bare Teensy. Output was
+verified through a battery-powered portable speaker connected to the headphone
+jack, with no charging connection; the user heard clear, quiet tones.
 This is separate from the custom SuperKeyboard codec circuit and its unresolved
 VDDIO issue below. Use the Rev D shield's **3.3V** and **GND**, plus matching
 Teensy/shield pins 18/19 (I²C), 7 (audio out), 20 (LRCLK), 21 (BCLK), and 23
@@ -166,8 +168,7 @@ Build the separate profile:
 pio run -e teensy41_audio
 ```
 
-**Not uploaded or acoustically verified yet.** Wait for wiring confirmation,
-then upload that environment and check:
+The audio profile was uploaded and hardware-tested on 2026-09-26. Commands:
 
 ```text
 audio status
@@ -179,7 +180,9 @@ aplay -v 10 /music/song.mp3
 `audio off` stops it early. `aplay` accepts 16-bit PCM WAV and MP3, including
 mono/stereo and sample-rate conversion to the fixed 44.1 kHz stereo output.
 Ctrl-C, Escape or Ctrl+] cancels playback. Default headphone volume is 20%;
-`-v` selects 0–100. Recording, line-out selection, background playback and the
+`-v` selects 0–100. Generated test files are deliberately attenuated and the
+hardware suite uses 10%, so its tones are quiet. Normal recordings may be much
+louder; increase the playback and speaker volume gradually. Recording, line-out selection, background playback and the
 full audio stream/device service are not enabled in this profile.
 
 The implementation links the actual upstream `solar_os_audio_apps.c` with a
@@ -198,9 +201,9 @@ The working SD/editor/Python shell is preserved in commit `4839f71` and
 profile keeps audio disabled. Host audio tests generate original quiet tones
 with FFmpeg, run actual MP3/WAV decode/resampling, and check cancellation,
 allocation failure, malformed/truncated inputs, output errors and cleanup
-under AddressSanitizer/UndefinedBehaviorSanitizer. Hardware codec detection,
-DMA/FreeRTOS coexistence, audible output, underruns and repeated playback remain
-unverified until the shield is connected.
+under AddressSanitizer/UndefinedBehaviorSanitizer. Hardware codec detection, audible tones, initial zero-underrun playback and
+20 repeated plays passed; see the detailed results below. Recording, line-out,
+channel separation and longer music/USB soak testing remain unverified.
 
 ## Hardware evidence
 
@@ -569,3 +572,36 @@ Extended audio host tests passed with sanitizers; quiet fixtures are retained
 in `/tmp/solaros-audio.Yi7JBp`. The regular shell builds and its host regression
 suite passes. Existing unused-function/truncation warnings remain in shared
 shell/calculator code. On-board playback and listening checks remain pending.
+
+### Rev D shield hardware validation — 2026-09-26
+
+Uploaded the prepared `teensy41_audio` HEX (hash above). Rev D was wired by the
+user; its SGTL5000 was detected. A portable speaker was connected to the 1/8-inch
+headphone jack on battery power only. User confirmed clear tones and noted the
+intentionally low level. This verifies audible output, not independent analog
+left/right channel separation or measured signal quality.
+
+- Generated fixtures transferred to SD through the board's Python interpreter;
+  SHA-256 comparisons matched for each file.
+- Stereo 44.1 kHz MP3: 1.131 s wall time, 369 output blocks, zero source underruns.
+- Mono 48 kHz MP3 converted to 44.1 kHz stereo: 1.110 s, 364 blocks, zero underruns.
+- Mono 22.05 kHz 16-bit WAV converted to stereo: 1.050 s, 345 blocks, zero underruns.
+- Ctrl-C interrupted active playback; the next playback succeeded. Missing-file
+  and invalid-volume errors returned to the shell. The first suite stopped on
+  an expected-text mismatch for the missing-file error; correcting the test
+  allowed the full suite to pass, without a firmware change.
+- 20 further alternating MP3/WAV plays passed with stable reported memory:
+  internal 44,364 / 83,616 bytes free; PSRAM 8,385,240 / 8,388,608 bytes free.
+  Console stack low-water mark after the run: 3,791 words (15,164 bytes).
+
+Log: `/tmp/teensy-audio-20.json`. Retained fixture directory on SD:
+`/_solaros_audio_a6e6cf287a` (an earlier run retained its own test directory).
+The tested audio image is backed up under
+`../solar_os-baselines/2026-09-26-audio/`. Line-out and recording remain disabled;
+custom SuperKeyboard audio wiring is still a separate bring-up task.
+
+After audio playback, the shell/calculator/SD-read regression passed 50 cycles
+in 8.659 seconds with stable reported free memory and the same 3,791-word stack
+low-water mark. Log: `/tmp/teensy-audio-shell-50.json`. No USB disconnect occurred
+during these playback or regression runs. This is a short validation, not a
+long-duration music/USB soak.

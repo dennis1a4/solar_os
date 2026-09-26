@@ -88,7 +88,7 @@ def main():
             time.sleep(.2)
             exchange(b'\x03', expected='ret=TIMEOUT')
             cmd(f'aplay -v 10 {root}/stereo.mp3', 'ret=OK')
-            cmd(f'aplay {root}/missing.mp3', 'cannot')
+            cmd(f'aplay {root}/missing.mp3', 'aplay: open failed:')
             cmd('aplay -v 101 bad.mp3', 'usage:')
             before = re.search(r'Internal heap:.*', cmd('mem'))[0]
             for i in range(args.repeat):

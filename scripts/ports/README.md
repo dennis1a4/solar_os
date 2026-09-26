@@ -131,7 +131,7 @@ This intentionally restarts the board, waits for USB to settle, and checks the
 saved file contents and Python execution. It is a software restart, not a
 physical power-cycle or interrupted-write test.
 
-## Rev D shield audio (hardware validation pending)
+## Rev D shield audio
 
 Generate quiet original test files and test the real decoder/SD transport on
 the host (requires FFmpeg and a C compiler):
@@ -157,4 +157,5 @@ SHA-256, then tests stereo 44.1 kHz MP3, mono 48 kHz MP3, mono 22.05 kHz WAV,
 playback duration, block/underrun counters, cancellation, input errors and
 repeated app cleanup. Test files remain on SD. Someone must also listen and
 confirm both channels sound correct; software counters cannot prove analog
-output quality. No playback passes are claimed until this runs on the shield.
+output quality. This suite passed 20 playback cycles on the wired Rev D shield
+on 2026-09-26; see the port notes for the exact evidence and remaining limits.
