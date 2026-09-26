@@ -18,6 +18,15 @@ It contains the complete command, application, job, board, expansion, Python,
 Lua, package, and workflow documentation. Edit the topic in `doc/manual/`;
 do not maintain a separate device or website copy.
 
+## Experimental Teensy 4.1 port
+
+The SuperKeyboard CPU v2 bring-up target builds with `pio run -e teensy41`.
+It currently runs a core subset and bootstrap console; full SolarOS shell and
+service integration are pending. See the [port status, hardware findings, and
+bring-up instructions](doc/ports/teensy41.md) before flashing.
+Track milestones, next actions, and future ideas in the
+[Teensy progress tracker](doc/ports/teensy41-roadmap.md).
+
 ## Build
 
 SolarOS uses PlatformIO with ESP-IDF through the pioarduino Espressif32

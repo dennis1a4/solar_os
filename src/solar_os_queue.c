@@ -1,8 +1,10 @@
 #include "solar_os_queue.h"
 
+#if !defined(SOLAR_OS_PLATFORM_IMXRT1062)
 #include "esp_heap_caps.h"
 #include "freertos/idf_additions.h"
 #include "sdkconfig.h"
+#endif
 
 #if defined(CONFIG_SPIRAM) && CONFIG_SPIRAM
 #define SOLAR_OS_FREERTOS_EXTERNAL_MEMORY 1

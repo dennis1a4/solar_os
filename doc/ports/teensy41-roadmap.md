@@ -1,0 +1,173 @@
+# Teensy 4.1 / SuperKeyboard progress tracker
+
+Last updated: 2026-09-26.
+
+This is the working plan and idea backlog for porting SolarOS from ESP32 to
+Teensy 4.1, then bringing up the SuperKeyboard hardware. Keep technical details
+and test evidence in the [port notes](teensy41.md).
+
+## Current position
+
+The baseline port runs on a bare Teensy 4.1 with an SD card. USB console,
+FreeRTOS heartbeat, calculator, and SD reads have passed short hardware tests.
+The full SolarOS shell, services, and applications are still pending.
+Current work is on the local `main` branch and is not yet committed.
+
+## Original 13-step plan
+
+Keep these numbers stable when referring to the original plan. The milestones
+below group the detailed work; this table records progress against each original
+step. Partial implementations and compile checks do not mean full integration.
+
+| Step | Original task | Current status |
+| --- | --- | --- |
+| 1 | Make an imxrt1062/teensy41 platform target and get the SolarOS core compiling. | Partial: target builds with upstream core lifecycle, queues, parser and expression engine. Full upstream core flavor/services are not yet ported. |
+| 2 | Boot FreeRTOS. | Verified on hardware: console task and heartbeat run. |
+| 3 | Get USB or Serial1 console output. | Verified over USB. Serial1 is implemented but not hardware-tested. |
+| 4 | Get the SolarOS shell prompt. | Partial: bootstrap `solaros[teensy41]>` prompt works. Full upstream shell/session integration remains. |
+| 5 | Implement SDIO and mount the SD card. | Basic mount, listing and reads verified. Startup mount failed once after reflashing; recovery, VFS integration and write support remain. |
+| 6 | Implement the primary display. | Optional RA8875 bring-up compiles. Controller/wiring confirmation, hardware testing and SolarOS terminal/GFX integration remain. |
+| 7 | Implement I²C/SPI/UART abstraction. | Initial adapters compile. Hardware tests and upstream service/resource integration remain. |
+| 8 | Implement expansion slots. | Initial pin descriptors and exclusive slot claims implemented. Manifest/driver registry integration and hardware tests remain. |
+| 9 | Add PSRAM allocation. | Allocation adapter and 4 KiB test implemented. Missing-PSRAM handling and fitted 8 MiB / repeated 4 KiB checks verified; full-capacity testing remains. |
+| 10 | Add audio. | Optional SGTL5000/I2S tone bring-up compiles. Wiring/supply checks, hardware tests and audio services remain. |
+| 11 | Add secondary display. | Optional ST7735 bring-up compiles. Controller confirmation, hardware tests and second-terminal support remain. |
+| 12 | Add USB functionality. | USB CDC console verified. Optional host keyboard support compiles but is untested; other USB roles/features need scope decisions and implementation. |
+| 13 | Start enabling higher-level SolarOS applications one at a time. | Started: expression engine runs through the app lifecycle and passes hardware tests. Full calculator UI and further applications remain. |
+
+## Next actions
+
+- [x] Test a cold power cycle with the SD card inserted (baseline passed).
+- [x] Repeat the cold power cycle with the new retry/diagnostic firmware
+  (first-attempt mount in 390 ms after removing the USB extension).
+- [ ] Investigate why automatic SD mounting failed after one reflash, while
+  a subsequent `mount` command succeeded.
+- [x] Test boot without an SD card; console/calculator remain usable.
+- [x] Test mounting a card inserted after boot (first attempt, 390 ms).
+- [x] Complete the 1,000-cycle console/calculator/SD-read test (2026-09-26).
+- [ ] Run a longer USB/SD soak; the passing 1,000-cycle run lasted 154 seconds.
+- [x] Repeat the unchanged firmware/SD workload with another USB data cable
+  and port: 1,000 cycles passed. Both changed together; the earlier disconnect
+  cause is still unconfirmed. Try another computer if failures recur.
+- [ ] Test PSRAM beyond the repeated 4 KiB allocation check.
+- [ ] Bring up the fitted W25Q128JVSIQ flash; no probe or storage test yet.
+- [ ] Preserve a reproducible known-working baseline in version control.
+
+## Milestones
+
+### 1. Establish a reliable bare-board baseline — in progress
+
+- [x] Add a separate Teensy 4.1 PlatformIO target and FreeRTOS runtime.
+- [x] Compile the SolarOS core subset and pass host regression tests.
+- [x] Flash the board and verify the USB bootstrap console.
+- [x] Verify heartbeat progress, queue operation, and positive stack headroom.
+- [x] Exercise calculator, parsing, editing, and input-error handling.
+- [x] Mount SD, list files, read an existing text file, and handle missing paths.
+- [x] Handle missing PSRAM without falling back for external-required memory.
+- [x] Fix heap accounting and pass 200 calculations with stable reported heap.
+- [x] Complete cold-start, missing-card, and 1,000-cycle stability checks above.
+- [x] Make hardware smoke tests repeatable without depending on personal SD files
+  (`scripts/ports/test_teensy41_serial.py`; see the adjacent README).
+
+Done when: boot and console are repeatable, SD failure/recovery behavior is
+understood, and a tested baseline is saved with reproduction instructions.
+
+### 2. Integrate the real SolarOS shell and storage — planned
+
+- [ ] Identify and extract platform hooks from shell/session/port services.
+- [ ] Bridge SD storage to SolarOS VFS/POSIX semantics.
+- [ ] Implement persistent configuration storage.
+- [ ] Integrate the upstream shell, command registry, and session manager.
+- [ ] Validate application launch/exit and error cleanup on hardware.
+- [ ] Replace the bootstrap console after the real shell passes tests.
+
+Done when: the upstream shell can launch commands and access SD files through
+the SolarOS storage APIs on Teensy.
+
+### 3. Integrate buses and expansion — planned
+
+- [x] Implement initial bus adapters, pin descriptors, and slot claims.
+- [ ] Connect bus adapters and slot ownership to the SolarOS resource model.
+- [ ] Test I²C, SPI, and UART using known devices or loopback fixtures.
+- [ ] Integrate expansion manifests and driver registration.
+- [ ] Validate shared-bus locking and conflicting resource requests.
+
+Done when: a known expansion device works through SolarOS services and resource
+conflicts are handled predictably. External hardware is required.
+
+### 4. Bring up SuperKeyboard peripherals — awaiting hardware checks
+
+- [ ] Resolve the wiring and component questions listed in the port notes,
+  especially SGTL5000 supply voltage, display controllers, and GPIO9's role.
+- [ ] Validate the primary display and integrate terminal/GFX rendering.
+- [ ] Validate the secondary display and define its terminal behavior.
+- [ ] Validate audio output, then input/stream services.
+- [ ] Validate USB host wiring and keyboard input; integrate input events.
+- [x] Detect fitted 8 MiB PSRAM and pass repeated cache-flushed 4 KiB tests.
+- [ ] Test full-capacity PSRAM and define DMA-safe buffer handling where needed.
+
+Done when: confirmed peripherals work through SolarOS APIs, individually and
+together. Optional peripheral compilation is not hardware validation.
+
+### 5. Enable useful applications — planned
+
+- [ ] Integrate the full calculator application.
+- [ ] Enable clock, file viewer/pager, and editor one at a time.
+- [ ] Check stack use, allocation failures, and missing-storage behavior per app.
+- [ ] Decide which further upstream apps and scripting features to prioritize.
+- [ ] Choose Ethernet/Wi-Fi hardware before planning network-dependent apps.
+
+Done when: the selected applications work reliably on the intended hardware.
+
+## Known issues and open decisions
+
+| Item | Status / next step |
+| --- | --- |
+| SD startup after warm restart | Original failure not reproduced in the first follow-up restart. Added bounded retries and `sdinfo` diagnostics; root cause remains unconfirmed. |
+| Missing-card startup delay | Three mount attempts take about 6.2 seconds with the tested firmware/card absent. Console then remains usable. |
+| Intermittent USB connection | Removing the USB extension restored enumeration, but two longer tests still lost USB while the board was untouched. Uptime continued across the first reconnection; Linux autosuspend was disabled. A different cable and host port passed 1,000 cycles on 2026-09-26; cause remains unconfirmed. |
+| USB console connection timing | Test client needed a one-second settling delay after opening the port. |
+| SD hot removal | Recovery after an already successful mount is not implemented. |
+| Hardware wiring/population | See unresolved items in the port notes before peripheral bring-up. |
+| Network transport | Undecided; not required for the bare-board baseline. |
+| Full upstream feature scope | Select incrementally after shell/storage integration. |
+
+## Future ideas inbox
+
+Add rough ideas here without committing them to the implementation plan. Move
+an idea into a milestone when its priority and hardware needs are clear.
+
+| Idea | Why it would be useful | Hardware/dependencies | Priority / decision |
+| --- | --- | --- | --- |
+| _Add ideas here_ | | | |
+
+## Progress log
+
+- **2026-09-20:** Initial port compiled; host tests and optional peripheral
+  compile checks passed. No hardware tests at that point.
+- **2026-09-24:** First bare-board flash and USB/SD/calculator tests passed.
+  Corrected heap accounting and reflashed; 200-calculation smoke test passed.
+  Recorded intermittent startup SD mount failure for follow-up.
+- **2026-09-24, follow-up:** Baseline cold boot with card, warm restart, and
+  cold boot without card passed. Added three-attempt mount limit and `sdinfo`;
+  flashed and verified missing-card failure/console operation. Added a reusable
+  read-only serial test script. Insertion after boot and manual mounting passed;
+  final cold start passed after removing the USB extension. Two longer stability
+  runs were interrupted by USB disconnects; a different cable is pending.
+- **2026-09-24, stopping point:** User has no other data-capable micro-USB cable
+  available today and plans to bring one tomorrow. Hardware stability testing
+  is waiting for that comparison; do not mark the longer runs as passed.
+
+- **2026-09-26:** Different cable and host port passed the unchanged 1,000-cycle
+  calculator/SD-read workload in 154 seconds. Fitted PSRAM detected as 8 MiB;
+  101 cache-flushed 4 KiB checks passed alongside 100 further SD/calculator
+  cycles, with stable reported free memory. Added `--psram` to the test client.
+  User reports fitted W25Q128JVSIQ flash; flash testing and broader RAM coverage
+  remain pending. No firmware upload or commit performed.
+
+## Keeping this useful
+
+Check items off only when their stated result has been verified. Add dated
+evidence to the port notes, update the next actions when priorities change,
+and keep uncommitted ideas in the inbox. Record compile-only results separately
+from on-board tests.

@@ -1,0 +1,567 @@
+{
+  "schematic_source": "/home/dennis/Documents/SuperKeyboard/SuperKeyboardCPU/SuperKeyboardCPU_v2/SuperKeyboardCPU.kicad_sch",
+  "pins_source": "/home/dennis/Documents/SuperKeyboard/Pins_v2.ods",
+  "pins_sha256": "210c792bae1c7f268d761449a2e2cd72663880fde839c6d9d189412985e9df16",
+  "pins": {
+    "0": {
+      "description": "Main Serial port RX1",
+      "label": "na",
+      "schematic_net": "Net-(J8-Pin_2)",
+      "symbol_pad": "2",
+      "connections": [
+        "J8.2",
+        "JP3.2",
+        "R1.2",
+        "R2.1"
+      ]
+    },
+    "1": {
+      "description": "Main Serial port TX1",
+      "label": "na",
+      "schematic_net": "Net-(J1-Pin_2)",
+      "symbol_pad": "3",
+      "connections": [
+        "J1.2",
+        "J8.3"
+      ]
+    },
+    "2": {
+      "description": "74595/NES Clock",
+      "label": "shiftClk",
+      "schematic_net": "shiftClk",
+      "symbol_pad": "4",
+      "connections": [
+        "J16.2",
+        "J8.4",
+        "U12.10"
+      ]
+    },
+    "3": {
+      "description": "NES Latch",
+      "label": "NESlatch",
+      "schematic_net": "NESlatch",
+      "symbol_pad": "5",
+      "connections": [
+        "J16.3",
+        "J8.5",
+        "U12.9"
+      ]
+    },
+    "4": {
+      "description": "NES Data",
+      "label": "NESdata",
+      "schematic_net": "NESdata",
+      "symbol_pad": "6",
+      "connections": [
+        "J8.6",
+        "JP12.2"
+      ]
+    },
+    "5": {
+      "description": "",
+      "label": "",
+      "schematic_net": "74595latch",
+      "symbol_pad": "7",
+      "connections": [
+        "J8.7"
+      ]
+    },
+    "6": {
+      "description": "",
+      "label": "",
+      "schematic_net": "74595data",
+      "symbol_pad": "8",
+      "connections": [
+        "J8.8"
+      ]
+    },
+    "7": {
+      "description": "Audio Data Out",
+      "label": "audioOut",
+      "schematic_net": "audioOut",
+      "symbol_pad": "9",
+      "connections": [
+        "J8.9",
+        "JP8.1"
+      ]
+    },
+    "8": {
+      "description": "Audio Data In",
+      "label": "audioIn",
+      "schematic_net": "audioIn",
+      "symbol_pad": "10",
+      "connections": [
+        "J8.10",
+        "JP7.1"
+      ]
+    },
+    "9": {
+      "description": "Display Light PWM",
+      "label": "slot2CS",
+      "schematic_net": "slot2CS",
+      "symbol_pad": "11",
+      "connections": [
+        "J31.7",
+        "J8.11"
+      ]
+    },
+    "10": {
+      "description": "Motor Driver Standby",
+      "label": "motorEn",
+      "schematic_net": "motorEn",
+      "symbol_pad": "12",
+      "connections": [
+        "J8.12"
+      ]
+    },
+    "11": {
+      "description": "MOSI Display",
+      "label": "slot2MOSI",
+      "schematic_net": "slot2MOSI",
+      "symbol_pad": "13",
+      "connections": [
+        "J31.8",
+        "J8.13"
+      ]
+    },
+    "12": {
+      "description": "MISO Display",
+      "label": "slot2MISO",
+      "schematic_net": "slot2MISO",
+      "symbol_pad": "14",
+      "connections": [
+        "J31.9",
+        "J8.14"
+      ]
+    },
+    "13": {
+      "description": "(LED) SCK Display",
+      "label": "slot2SCK",
+      "schematic_net": "slot2SCK",
+      "symbol_pad": "35",
+      "connections": [
+        "J31.10",
+        "J7.14"
+      ]
+    },
+    "14": {
+      "description": "Display port TX3 (reset)",
+      "label": "slot2TX3",
+      "schematic_net": "slot2TX3",
+      "symbol_pad": "36",
+      "connections": [
+        "J31.6",
+        "J7.13"
+      ]
+    },
+    "15": {
+      "description": "Display port RX3 (wait)",
+      "label": "slot2RX3",
+      "schematic_net": "slot2RX3",
+      "symbol_pad": "37",
+      "connections": [
+        "J31.5",
+        "J7.12"
+      ]
+    },
+    "16": {
+      "description": "SCL1",
+      "label": "SCL1",
+      "schematic_net": "SCL1",
+      "symbol_pad": "38",
+      "connections": [
+        "J12.4",
+        "J21.3",
+        "J29.12",
+        "J30.12",
+        "J7.11",
+        "U21.28",
+        "U3.7"
+      ]
+    },
+    "17": {
+      "description": "SDA1",
+      "label": "SDA1",
+      "schematic_net": "SDA1",
+      "symbol_pad": "39",
+      "connections": [
+        "J12.3",
+        "J21.4",
+        "J29.11",
+        "J30.11",
+        "J7.10",
+        "U21.27",
+        "U3.8"
+      ]
+    },
+    "18": {
+      "description": "Audio I2C",
+      "label": "audioI2Ca",
+      "schematic_net": "audioI2Ca",
+      "symbol_pad": "40",
+      "connections": [
+        "J7.9",
+        "R38.1",
+        "U10.27"
+      ]
+    },
+    "19": {
+      "description": "Audio I2C",
+      "label": "audioI2Cb",
+      "schematic_net": "audioI2Cb",
+      "symbol_pad": "41",
+      "connections": [
+        "J7.8",
+        "R39.1",
+        "U10.29"
+      ]
+    },
+    "20": {
+      "description": "Audio L/R clk",
+      "label": "audioLRclk",
+      "schematic_net": "audioLRclk",
+      "symbol_pad": "42",
+      "connections": [
+        "J7.7",
+        "U10.23"
+      ]
+    },
+    "21": {
+      "description": "Audio Bit Clk",
+      "label": "audioBitClk",
+      "schematic_net": "audioBitClk",
+      "symbol_pad": "43",
+      "connections": [
+        "J7.6",
+        "U10.24"
+      ]
+    },
+    "22": {
+      "description": "Relay",
+      "label": "relay",
+      "schematic_net": "relay",
+      "symbol_pad": "44",
+      "connections": [
+        "J7.5",
+        "R62.2"
+      ]
+    },
+    "23": {
+      "description": "Audio Master Clk",
+      "label": "audioMasterClk",
+      "schematic_net": "audioMasterClk",
+      "symbol_pad": "45",
+      "connections": [
+        "J7.4",
+        "R41.2"
+      ]
+    },
+    "24": {
+      "description": "SCL2",
+      "label": "SCL2",
+      "schematic_net": "SCL2",
+      "symbol_pad": "16",
+      "connections": [
+        "J13.4",
+        "J26.12",
+        "J27.12",
+        "J31.12",
+        "J8.16",
+        "JP30.1",
+        "JP42.1",
+        "R30.1",
+        "R31.1"
+      ]
+    },
+    "25": {
+      "description": "SDA2",
+      "label": "SDA2",
+      "schematic_net": "SDA2",
+      "symbol_pad": "17",
+      "connections": [
+        "J13.3",
+        "J26.11",
+        "J27.11",
+        "J31.11",
+        "J8.17",
+        "JP32.1",
+        "JP44.1",
+        "R32.1",
+        "R33.1"
+      ]
+    },
+    "26": {
+      "description": "MOSI1",
+      "label": "slot01MOSI1",
+      "schematic_net": "slot01MOSI1",
+      "symbol_pad": "18",
+      "connections": [
+        "J24.6",
+        "J26.8",
+        "J27.8",
+        "J29.8",
+        "J30.8",
+        "J32.8",
+        "J8.18",
+        "JP24.1",
+        "U18.3",
+        "U19.14"
+      ]
+    },
+    "27": {
+      "description": "SCK1",
+      "label": "slot01SCK1",
+      "schematic_net": "slot01SCK1",
+      "symbol_pad": "19",
+      "connections": [
+        "J24.5",
+        "J26.10",
+        "J27.10",
+        "J29.10",
+        "J30.10",
+        "J32.9",
+        "J8.19",
+        "JP22.1",
+        "U18.4",
+        "U19.13"
+      ]
+    },
+    "28": {
+      "description": "RX7 Slot 0",
+      "label": "slot0RX7",
+      "schematic_net": "slot0RX7",
+      "symbol_pad": "20",
+      "connections": [
+        "J24.4",
+        "J26.5",
+        "J27.5",
+        "J8.20",
+        "JP1.1",
+        "JP20.1",
+        "JP48.2",
+        "R28.1",
+        "R29.1",
+        "U18.14"
+      ]
+    },
+    "29": {
+      "description": "TX7 Slot 0",
+      "label": "slot0TX7",
+      "schematic_net": "slot0TX7",
+      "symbol_pad": "21",
+      "connections": [
+        "J24.8",
+        "J26.6",
+        "J27.6",
+        "J8.21",
+        "JP2.1",
+        "JP31.1",
+        "R100.2",
+        "U18.6",
+        "U19.17"
+      ]
+    },
+    "30": {
+      "description": "Second Display Reset",
+      "label": "displayReset",
+      "schematic_net": "displayReset",
+      "symbol_pad": "22",
+      "connections": [
+        "J21.5",
+        "J32.6",
+        "J8.22"
+      ]
+    },
+    "31": {
+      "description": "Second Display Command",
+      "label": "displayCMD",
+      "schematic_net": "displayCMD",
+      "symbol_pad": "23",
+      "connections": [
+        "J21.6",
+        "J32.7",
+        "J8.23"
+      ]
+    },
+    "32": {
+      "description": "Second Display CS",
+      "label": "displayCS",
+      "schematic_net": "displayCS",
+      "symbol_pad": "24",
+      "connections": [
+        "J21.7",
+        "J32.12",
+        "J8.24"
+      ]
+    },
+    "33": {
+      "description": "Second Display Backlight",
+      "label": "displayPWM",
+      "schematic_net": "displayPWM",
+      "symbol_pad": "25",
+      "connections": [
+        "J21.8",
+        "J7.24",
+        "R113.1"
+      ]
+    },
+    "34": {
+      "description": "RX8 Slot 1",
+      "label": "slot1RX8",
+      "schematic_net": "slot1RX8",
+      "symbol_pad": "26",
+      "connections": [
+        "C57.2",
+        "D39.1",
+        "J29.5",
+        "J30.5",
+        "J7.23",
+        "R25.1",
+        "U15.1"
+      ]
+    },
+    "35": {
+      "description": "TX8 Slot 1",
+      "label": "slot1TX8",
+      "schematic_net": "slot1TX8",
+      "symbol_pad": "27",
+      "connections": [
+        "C56.1",
+        "J29.6",
+        "J30.6",
+        "J7.22",
+        "R26.1",
+        "R77.1"
+      ]
+    },
+    "36": {
+      "description": "CS1 Slot 1",
+      "label": "slot1CS1",
+      "schematic_net": "slot1CS",
+      "symbol_pad": "28",
+      "connections": [
+        "J29.7",
+        "J30.7",
+        "J7.21"
+      ]
+    },
+    "37": {
+      "description": "CS1 Slot 0/3",
+      "label": "slot0CS1",
+      "schematic_net": "slot0CS",
+      "symbol_pad": "29",
+      "connections": [
+        "D43.1",
+        "J24.3",
+        "J26.7",
+        "J27.7",
+        "J7.20",
+        "JP23.1",
+        "R101.2",
+        "U18.5",
+        "U19.16"
+      ]
+    },
+    "38": {
+      "description": "Vin monitor (with jumper)",
+      "label": "analogIn",
+      "schematic_net": "analogIn",
+      "symbol_pad": "30",
+      "connections": [
+        "J7.19"
+      ]
+    },
+    "39": {
+      "description": "MISO1",
+      "label": "slot01MISO1",
+      "schematic_net": "slot01MISO1",
+      "symbol_pad": "31",
+      "connections": [
+        "J24.7",
+        "J26.9",
+        "J27.9",
+        "J29.9",
+        "J30.9",
+        "J7.18",
+        "JP21.1",
+        "R102.2",
+        "R103.1",
+        "U18.2"
+      ]
+    },
+    "40": {
+      "description": "Amp Enable",
+      "label": "ampEn",
+      "schematic_net": "ampEn",
+      "symbol_pad": "32",
+      "connections": [
+        "J7.17",
+        "R46.2",
+        "U11.1"
+      ]
+    },
+    "41": {
+      "description": "Volume Pot",
+      "label": "volume",
+      "schematic_net": "volume",
+      "symbol_pad": "33",
+      "connections": [
+        "C34.2",
+        "J7.16",
+        "RV1.2"
+      ]
+    },
+    "42": {
+      "description": "SD Card",
+      "label": ""
+    },
+    "43": {
+      "description": "SD Card",
+      "label": ""
+    },
+    "44": {
+      "description": "SD Card",
+      "label": ""
+    },
+    "45": {
+      "description": "SD Card",
+      "label": ""
+    },
+    "46": {
+      "description": "SD Card",
+      "label": ""
+    },
+    "47": {
+      "description": "SD Card",
+      "label": ""
+    },
+    "48": {
+      "description": "QSPI",
+      "label": ""
+    },
+    "49": {
+      "description": "QSPI",
+      "label": ""
+    },
+    "50": {
+      "description": "QSPI",
+      "label": ""
+    },
+    "51": {
+      "description": "QSPI",
+      "label": ""
+    },
+    "52": {
+      "description": "QSPI",
+      "label": ""
+    },
+    "53": {
+      "description": "QSPI",
+      "label": ""
+    },
+    "54": {
+      "description": "QSPI",
+      "label": ""
+    }
+  }
+}
