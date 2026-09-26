@@ -29,3 +29,12 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -D_GNU_SOURCE -DSK_UPSTREAM_SHELL=1 \
   tests/ports/teensy41_paths_test.c src/platform/imxrt1062/teensy41/shell_paths.c \
   -o "$sk_test_dir/paths"
 "$sk_test_dir/paths"
+
+# Render actual calculator output; text-only transcript checks miss cursor bugs.
+cc -std=c11 -O2 -Wall -Wextra -D_GNU_SOURCE -DSOLAR_OS_HEADLESS=1 \
+  -ffunction-sections -fdata-sections -include tests/host/compat.h \
+  -Itests/host -Isrc -Isrc/apps -Isrc/services -Isrc/shell -Icomponents/u8g2/src/clib \
+  tests/ports/teensy41_cursor_test.c src/solar_os.c src/apps/solar_os_calc.c \
+  src/services/solar_os_expr.c src/shell/solar_os_shell_io.c \
+  -Wl,--gc-sections -lm -o "$sk_test_dir/cursor"
+"$sk_test_dir/cursor"

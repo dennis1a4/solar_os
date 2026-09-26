@@ -893,10 +893,18 @@ esp_err_t solar_os_shell_io_redraw_line(solar_os_shell_io_t *io,
     /*
      * Keep the complete redraw in one port write.  Network-backed terminals
      * otherwise render the intermediate jump to the prompt before the final
-     * cursor-position sequence arrives.
+     * cursor-position sequence arrives. When editing the current line, use
+     * carriage return and horizontal motion: a serial terminal can have a
+     * different height from our configured geometry, so absolute row numbers
+     * may point into earlier output after scrolling. Other-row redraws retain
+     * absolute positioning for screen-oriented callers.
      */
     char sequence[SHELL_IO_REDRAW_TEXT_MAX + 67U];
-    const int prefix_len = snprintf(sequence,
+    const bool current_line = row == io->cursor_row;
+    const int prefix_len = current_line ?
+        (col == 0 ? snprintf(sequence, sizeof(sequence), "\r\x1b[K") :
+         snprintf(sequence, sizeof(sequence), "\r\x1b[%uC\x1b[K", (unsigned)col)) :
+        snprintf(sequence,
                                     sizeof(sequence),
                                     "\x1b[%u;%uH\x1b[K",
                                     (unsigned)(row + 1U),
@@ -910,7 +918,12 @@ esp_err_t solar_os_shell_io_redraw_line(solar_os_shell_io_t *io,
         memcpy(sequence + length, text, text_len);
         length += text_len;
     }
-    const int suffix_len = snprintf(sequence + length,
+    const size_t cursor_col = col + cursor_offset;
+    const int suffix_len = current_line ?
+        (cursor_col == 0 ? snprintf(sequence + length, sizeof(sequence) - length, "\r") :
+         snprintf(sequence + length, sizeof(sequence) - length,
+                  "\r\x1b[%uC", (unsigned)cursor_col)) :
+        snprintf(sequence + length,
                                     sizeof(sequence) - length,
                                     "\x1b[%u;%uH",
                                     (unsigned)(row + 1U),

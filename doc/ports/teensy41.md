@@ -54,10 +54,12 @@ HEX/ELF are also backed up outside the repository in
 ```sh
 pio run -e teensy41_shell
 pio run -e teensy41_shell -t upload
-pio device monitor --port /dev/ttyACM0 --baud 115200
+pio device monitor --port /dev/ttyACM0 --baud 115200 --raw --exit-char 28
 ```
 
-Use a VT100/ANSI-capable serial terminal, 80 columns by 24 rows. Close automated
+Use a VT100/ANSI-capable serial terminal, 80 columns by 24 rows. PlatformIO
+needs `--raw` to pass escape codes through to Konsole. `--exit-char 28` makes
+Ctrl+\ exit the monitor, leaving Ctrl-C available to the shell. Close automated
 tests before opening a monitor. The USB serial device number may change.
 Opening USB CDC starts a fresh shell session with this prompt:
 
@@ -374,3 +376,26 @@ paths, root listing, and repeated reads of the existing `/test.txt`.
 This validates the first upstream shell, not all commands/services or all
 hardware conditions. Shell-specific cold-start/missing-card checks, long soaks,
 full PSRAM coverage, writable storage and persistent settings remain pending.
+
+### Calculator cursor correction — 2026-09-26
+
+User testing in Konsole exposed a visual defect missed by the original serial
+test: the target tracked 24 rows but the host window could be taller. After
+sufficient output, calculator redraws used absolute row 24 while the actual
+prompt was farther down, overwriting earlier output. Stripping ANSI codes from
+test transcripts verified result text but could not detect misplaced text.
+
+Calculator input now uses the shared atomic line redraw helper. Redrawing the
+current port line uses carriage return and horizontal motion, preserving the
+actual terminal row regardless of a height mismatch. Explicit redraws of other
+rows retain absolute positioning. Backspace and left/right editing remain
+supported. The configured width is still 80 columns; keep at least 80 columns
+for this initial profile. This does not add terminal-size negotiation for future
+full-screen applications.
+
+A host regression renders output from the actual calculator and shell I/O code
+into simulated screens with 16, 24, 26, 40 and 60 rows, before and after scrolling.
+It reproduced the old failure and passes with the fix, checking input, backspace,
+arrow positioning, results and preservation of the surrounding output. It also
+checks column-zero redraw and explicit redraw of another row. The existing
+host suite and shell build pass.

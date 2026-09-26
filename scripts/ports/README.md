@@ -90,7 +90,13 @@ SD reads, stable internal/external free memory, uptime and stack headroom.
 Logs include selected file contents. Close other serial monitors first.
 
 For interactive use, open a VT100/ANSI serial terminal at 115200 with 80×24
-geometry. `calc -e "2 + 3 * 4"` returns 14; `calc` enters the calculator.
+geometry. In Konsole use `pio device monitor --baud 115200 --raw --exit-char 28`:
+`--raw` preserves ANSI controls, and Ctrl+\ exits the monitor so Ctrl-C can
+reach the shell. `calc -e "2 + 3 * 4"` returns 14; `calc` enters the calculator.
 Use `:quit` or Ctrl+] to return to `user@teensy41:/`. The initial SD bridge is
 read-only: saved history, persistent settings and calculator `:save` are not
 available. The original `test_teensy41_serial.py` remains for recovery firmware.
+
+The host suite also renders the real calculator's ANSI output at five terminal
+heights, covering typing, backspace, arrow keys, results and scrolling. This
+catches cursor placement errors that a text-only USB transcript cannot detect.

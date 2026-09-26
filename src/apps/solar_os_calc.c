@@ -316,11 +316,9 @@ static void calc_text_prompt(solar_os_context_t *ctx)
 static void calc_text_render_input(solar_os_context_t *ctx)
 {
     solar_os_shell_io_t *io = calc_io(ctx);
-    solar_os_shell_io_clear_line_from(io, calc->input_row, calc->input_col);
-    solar_os_shell_io_set_cursor(io, calc->input_row, calc->input_col);
-    solar_os_shell_io_write(io, calc->input);
-    solar_os_shell_io_set_cursor(io, calc->input_row,
-                                 calc->input_col + calc->input_cursor);
+    solar_os_shell_io_redraw_line(io, calc->input_row, calc->input_col,
+                                  calc->input, calc->input_len,
+                                  calc->input_cursor);
     solar_os_shell_io_flush(io);
 }
 
