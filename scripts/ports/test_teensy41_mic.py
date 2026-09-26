@@ -34,7 +34,9 @@ try:
         def cmd(s, expected=None): return exchange((s+'\r').encode(),expected=expected)
         def py(s, record=True): return exchange((s+'\r').encode(),suffix='>>> ',record=record)
         cmd(''); cmd('audio status','SGTL5000=ready')
-        cmd('audio mictest '+root+'.wav','Mic test: OK, 352800 bytes, 4000 ms')
+        tone_result = cmd('audio mictest '+root+'.wav','Mic test: OK, 352800 bytes, 4000 ms')
+        tone_count = re.search(r'Mic test tone: started=1 blocks=(\d+)', tone_result)
+        assert tone_count and 340 <= int(tone_count[1]) <= 350, tone_result
         cmd('audio status','overruns=0')
         # Cancellation must finalize a valid partial recording and return promptly.
         conn.write(('arecord '+root+'_cancel.wav\r').encode()); time.sleep(.3)

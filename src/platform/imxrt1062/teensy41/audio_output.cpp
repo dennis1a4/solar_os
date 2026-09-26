@@ -20,7 +20,7 @@ static volatile uint32_t played, underruns;
 static volatile bool consuming, tone_on;
 static bool ready;
 static unsigned partial;
-static uint32_t tone_until;
+static volatile uint32_t tone_until, tone_blocks;
 class StereoSource : public AudioStream {
 public:
     StereoSource() : AudioStream(0, nullptr) {}
@@ -36,6 +36,7 @@ public:
             return;
         }
         if (tone_on) {
+            ++tone_blocks;
             static float phase;
             if (int32_t(millis() - tone_until) >= 0) tone_on = false;
             for (unsigned i = 0; i < AUDIO_BLOCK_SAMPLES; ++i) {
@@ -159,7 +160,7 @@ extern "C" esp_err_t sk_audio_output_start(uint8_t volume) {
     if (!sk_i2c_lock(0)) return ESP_ERR_TIMEOUT;
     const bool configured = codec.volume((volume == 255 ? 20 : volume) / 100.0f);
     sk_i2c_unlock(0);
-    played = underruns = 0;
+    played = underruns = tone_blocks = 0;
     return configured ? ESP_OK : ESP_FAIL;
 }
 extern "C" esp_err_t sk_audio_output_write(const int16_t *data, size_t frames) {
@@ -237,6 +238,8 @@ extern "C" void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char
         }
         solar_os_shell_io_printf(io, "Mic test: %s, %lu bytes, %lu ms\n", esp_err_to_name(err),
             (unsigned long)info.data_bytes, (unsigned long)info.duration_ms);
+        solar_os_shell_io_printf(io, "Mic test tone: started=%u blocks=%lu\n",
+            unsigned(test_tone_started), (unsigned long)tone_blocks);
     } else if (argc == 2 && !strcmp(argv[1], "off")) {
         sk_audio_player_tone(false);
     } else {

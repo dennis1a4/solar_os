@@ -656,3 +656,20 @@ the file, with unchanged free memory and zero overruns. Its acoustic check
 failed: 440 Hz energy rose only 1.6 dB, and 60 Hz hum dominated. Speaker state
 and position need confirmation before treating acoustic capture as repeatable.
 Log/WAV: `/tmp/teensy-mic-final.json`, `/tmp/teensy-mic-final.wav`.
+
+Microphone follow-up: standalone playback was audible when the combined test
+was silent. Added an emitted-tone block counter and made the ISR-shared tone
+deadline volatile. After uploading that diagnostic build, two consecutive
+capture runs passed without rebooting between them: 345 tone blocks per run,
+440 Hz energy increases of 42.4 and 44.1 dB, zero clipped samples and overruns.
+Background RMS fell to roughly 41–49 sample units from thousands in the earlier
+recordings. The cause of the earlier silence/hum is not established; these
+results do not isolate a firmware fix from restart or physical setup changes.
+Logs: `/tmp/teensy-mic-counter.json`, `/tmp/teensy-mic-counter-repeat.json`.
+Diagnostic HEX SHA-256:
+`8137813c248321a22464e7e58c35c76818da6dbd8d57d12ef2322506d6d07ce4`.
+Backup: `../solar_os-baselines/2026-09-26-microphone-diagnostic/`.
+
+The user confirmed hearing these tones and reported moving the Teensy slightly.
+A physical connection issue is therefore plausible, but not confirmed. Inspect
+and secure the wiring with power disconnected if silence or hum returns.
