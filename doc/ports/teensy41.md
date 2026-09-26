@@ -399,3 +399,11 @@ It reproduced the old failure and passes with the fix, checking input, backspace
 arrow positioning, results and preservation of the surrounding output. It also
 checks column-zero redraw and explicit redraw of another row. The existing
 host suite and shell build pass.
+
+The cursor fix was uploaded and passed the USB shell suite plus 100
+calculator/SD-read cycles in 13.096 seconds. The board's captured
+interactive-calculator output now uses horizontal-only redraws. Reported free
+memory stayed unchanged; final stack headroom was 5,460 words.
+Log: `/tmp/teensy-cursor-fix-100.json`.
+Flashed HEX SHA-256:
+`130bc9660107186cdbf9adb10f9588e9de904b9ef4d22bf85549ef2b1e0ecf5a`.
