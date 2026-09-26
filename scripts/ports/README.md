@@ -190,3 +190,28 @@ Ethernet enabled. Optional `--resolve HOST` and `--connect HOST PORT` check
 one explicitly chosen DNS name/TCP endpoint; there is no LAN scan. Physical
 cable removal/reinsertion and networking alongside long audio/Python workloads
 need separate hardware checks. Logs include the board's MAC and LAN addresses.
+
+## MicroPython TCP clients
+
+With `teensy41_network` uploaded and Ethernet connected, close the monitor:
+
+```sh
+python3 scripts/ports/test_teensy41_python_network.py \
+  --board-ip 192.168.1.197 --log /tmp/teensy-python-network.json
+```
+
+Substitute the address shown by `network status`. The script starts a temporary
+HTTP fixture server on the host LAN interface, transfers the example to a new
+SD directory, and checks exact binary HTTP response bytes, exclusive-file
+creation, four-socket limits, GC/interpreter cleanup, timeout/nonblocking
+receive, Ctrl-C, repeated fetch memory stability and software network recovery.
+It also resolves example.com; it does not scan the LAN. Test SD files remain.
+
+Use `--cable` for an interactive blocked-receive cable-removal/reconnection test.
+Wait for its READY message before unplugging only Ethernet; reconnect when
+prompted. The test checks a link-loss exception and an exact HTTP transfer over
+a fresh socket afterward. Both actions have a 150-second test deadline.
+
+Add `--public` to also fetch example.com over plain HTTP and copy the tested
+example to `/http_fetch.py` if that destination is absent. Existing files are
+protected by the shell copy command; inspect the logged copy result.

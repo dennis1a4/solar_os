@@ -1,6 +1,9 @@
 #if SK_UPSTREAM_SHELL
 // Single-session MicroPython integration. No ESP services or worker tasks.
 #include <errno.h>
+#if SK_ETHERNET
+#include "network_socket.h"
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -90,6 +93,9 @@ static void python_stop(solar_os_context_t *ctx) {
         volatile uintptr_t top = 0;
         stack_boundary((void *)&top);
         gc_sweep_all(); // Close even file objects still referenced by globals.
+        #if SK_ETHERNET
+        sk_python_network_close_all();
+        #endif
         mp_deinit();
         initialized = false;
     }
@@ -119,6 +125,9 @@ static esp_err_t python_start(solar_os_context_t *ctx) {
         solar_os_context_finish(ctx, 1, NULL);
         return ESP_FAIL;
     }
+    #if SK_ETHERNET
+    sk_python_network_init();
+    #endif
     const int argc = solar_os_context_argc(ctx);
     const char *path = argc > 1 ? solar_os_context_argv(ctx, 1) : NULL;
     const bool command = path && !strcmp(path, "-c");

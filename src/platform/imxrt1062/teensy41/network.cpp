@@ -4,6 +4,7 @@
 #include <QNEthernet.h>
 #include <qnethernet/QNDNSClient.h>
 #include <cstdlib>
+#include "network_socket.h"
 #include <cstring>
 extern "C" {
 #include "solar_os_shell_commands.h"
@@ -40,6 +41,7 @@ static void status(Reply &reply) {
 static void network_task(void *) {
     for (;;) {
         if (running) Ethernet.loop();
+        sk_net_transport_poll(running && Ethernet.linkState() && uint32_t(Ethernet.localIP()));
         Request request;
         if (xQueueReceive(requests,&request,0)==pdTRUE) {
             Reply reply{}; reply.id=request.id;
@@ -48,6 +50,7 @@ static void network_task(void *) {
                 if (!running) snprintf(reply.text,sizeof(reply.text),"Ethernet start failed (check fitted PHY)\n");
                 else status(reply);
             } else if (request.op==Operation::Down) {
+                sk_net_transport_reset();
                 Ethernet.end(); running=false; status(reply);
             } else if (request.op==Operation::Status) status(reply);
             else if (!running || !Ethernet.linkState() || !uint32_t(Ethernet.localIP())) {
@@ -73,6 +76,7 @@ static void network_task(void *) {
     }
 }
 void sk_network_begin() {
+    sk_net_transport_begin();
     requests=xQueueCreateStatic(1,sizeof(Request),request_storage,&request_control);
     replies=xQueueCreateStatic(1,sizeof(Reply),reply_storage,&reply_control);
     configASSERT(requests && replies);

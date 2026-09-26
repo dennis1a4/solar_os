@@ -130,8 +130,10 @@ together. Optional peripheral compilation is not hardware validation.
 - [ ] Choose further apps and Python modules as needed.
 - [x] Choose native Teensy 4.1 Ethernet with the PJRC Ethernet kit.
 - [x] Verify Ethernet link, DHCP, DNS, TCP, software restart and short audio/shell coexistence.
-- [ ] Test physical Ethernet cable recovery and long DHCP/traffic soak.
-- [ ] Bridge Ethernet into the shared network registry/socket and Python APIs.
+- [x] Test Python blocked receive during physical cable removal and HTTP recovery after reconnection.
+- [ ] Run long Ethernet DHCP/traffic soak.
+- [x] Add and hardware-test MicroPython IPv4 TCP sockets, DNS, HTTP-to-SD and cleanup.
+- [ ] Bridge Ethernet into the full shared network registry and remaining service APIs.
 
 Done when: the selected applications work reliably on the intended hardware.
 
@@ -146,7 +148,7 @@ Done when: the selected applications work reliably on the intended hardware.
 | SD hot removal | Recovery after an already successful mount is not implemented. |
 | Hardware wiring/population | See unresolved items in the port notes before peripheral bring-up. |
 | Network transport | Native Ethernet with PJRC kit selected; teensy41_network link/DHCP/DNS/TCP and short audio/shell checks passed. Shared network/socket API integration remains. |
-| MicroPython scope | 512 KiB PSRAM heap, basic REPL and SD scripts/imports/files; no CircuitPython or hardware/network modules yet. |
+| MicroPython scope | 512 KiB PSRAM heap, basic REPL and SD scripts/imports/files; IPv4 TCP socket module in the network profile; no CircuitPython or hardware modules yet. |
 | Full upstream feature scope | Select incrementally after shell/storage integration. |
 
 ## Future ideas inbox

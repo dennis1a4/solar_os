@@ -126,8 +126,9 @@ and bundled modules including `math`, `json`, `gc`, `struct`, `binascii`,
 `hashlib` and `random` are enabled. The heap is 512 KiB and requires PSRAM;
 it does not expose all 8 MiB to a script. Source imports search the script's
 directory, shell working directory and root. This is MicroPython, not
-CircuitPython: `machine`, `board`, device drivers, networking, `input()` and
-SolarOS's ESP-specific Python bindings are not integrated. Busy execution
+CircuitPython: `machine`, `board`, device drivers, `input()` and
+SolarOS's ESP-specific Python bindings are not integrated. The network profile
+adds IPv4 TCP sockets as described below. Busy execution
 consumes serial typeahead to detect interruption. Direct `.mpy` app launch is
 not offered. The vendored interpreter sources and generated tables are reused
 without modifying the generated engine; `scripts/platformio_teensy_micropython.py`
@@ -711,7 +712,8 @@ for the console heap.
 This is the first transport adapter, not full compatibility with ESP-IDF. The
 shared network registry currently exposes `esp_netif` and ESP events; mapping
 it and the socket APIs is a subsequent step. Wi-Fi scanning, SSIDs, AP/router
-mode, TLS, MQTT, WireGuard and Python networking are not enabled by this profile.
+mode, TLS, MQTT and WireGuard are not enabled. The MicroPython TCP adapter
+described below is now available.
 Current Python and audio functionality remain compiled in.
 
 Build: `pio run -e teensy41_network`. Hardware link/DHCP and DNS/TCP validation
@@ -749,6 +751,82 @@ Logs: `/tmp/teensy-network-first.json`, `/tmp/teensy-network-audio.json`,
 `/tmp/teensy-network-shell.json`, `/tmp/teensy-network-after-apps.json`.
 Tested firmware backup: `../solar_os-baselines/2026-09-26-network/`.
 Uploaded SHA-256: `e88451b74e4fa0c26f8b4d45e3248fb9d0db13b2f96c545a4d869813de0e6ba5`.
-Physical cable removal/reinsertion, prolonged DHCP renewal/traffic and Python
-network APIs remain untested/unimplemented as applicable. No services listen
+At that stage physical cable removal/reinsertion, prolonged DHCP renewal/traffic
+and Python network APIs remained untested/unimplemented; subsequent results follow. No services listen
 for remote shell or file access.
+
+## MicroPython TCP client sockets
+
+The network profile now adds `import socket` to each interpreter session.
+Supported: IPv4 TCP `socket()`, `getaddrinfo(host, port)`, `connect((host, port))`,
+`send`, `sendall`, `recv`, `settimeout`, `close` and context managers.
+`AF_INET`, `SOCK_STREAM` and `IPPROTO_TCP` are available. Other families/types,
+getaddrinfo flags and named service ports are rejected. UDP, listening servers,
+TLS/HTTPS, socket streams/makefile and select/poll are not implemented.
+
+Four socket objects can be live at once. Default I/O timeout is five seconds;
+`settimeout(None)` waits indefinitely but remains interruptible. Zero timeout
+makes receive/send return EAGAIN if no progress is possible; asynchronous
+connect is not supported. DNS has a five-second maximum. `recv(n)` may return
+short reads (up to 512 bytes); an empty byte string means EOF. `sendall` handles
+partial writes. Use errno names rather than Linux error numbers on this port.
+
+The Ethernet task owns every client and DNS lookup; copied requests and replies
+keep interpreter buffers out of the worker. Nonblocking worker operations let
+the interpreter check Ctrl-C between attempts. Ctrl-C aborts all Python sockets
+in the current session. Explicit close, context-manager exit, GC finalizers and
+interpreter exit release resources. Handles include generations so a stale
+Python object cannot close a later socket. Link loss aborts existing connections;
+create a new socket after link/address recovery.
+
+See `examples/teensy41/http_fetch.py`. It resolves a host, reads a small plain
+HTTP response (including headers, maximum 32 KiB), then saves it using exclusive
+creation to avoid overwriting a file. It is a small HTTP/1.0 example, not a full
+HTTP client: redirects, chunk decoding and TLS are outside its scope.
+
+```text
+network up
+network status
+python /http_fetch.py example.com 80 / /http-response.txt
+```
+
+Copy the example to SD before using the path above. A failed network operation
+does not create the destination because the bounded response is collected in
+PSRAM first. SD write failures can still leave a partial destination file.
+
+### Python networking validation — 2026-09-26
+
+The hardware suite passed hostname lookup, a 4 KiB binary sendall/recv echo,
+byte-for-byte HTTP response-to-SD verification, refusal to overwrite an existing
+file, connection failure cleanup, receive timeout, nonblocking EAGAIN, Ctrl-C
+while blocked indefinitely, four-socket exhaustion, twenty GC cleanup cycles,
+and interpreter exit with live sockets. Five repeated script fetches had equal
+reported free memory: internal 36,284 / 75,552 bytes; PSRAM
+8,385,240 / 8,388,608 bytes. Software network down/up recovered successfully.
+
+The user physically unplugged Ethernet while Python was blocked in recv. It
+returned OSError and the shell remained responsive. After reconnection a new
+socket fetched the exact fixture response. This cable test ran before the final
+small pending-connect cleanup/partial-send changes; the complete software suite
+passed on the final firmware afterward.
+
+A public HTTP fetch from example.com returned HTTP/1.1 200 OK and saved 829 bytes
+including headers. The example was installed at `/http_fetch.py`; its host source
+is `examples/teensy41/http_fetch.py`. Test files are under
+`/_solaros_pynet_7e1a1739a5/`. Early development runs left other unique folders.
+The initial suite failed due to expecting Linux's timeout number (110 rather
+than the target errno value) and then assuming EMFILE was exported by the small
+errno module. Correcting these test expectations allowed the suite to pass.
+
+Logs: `/tmp/teensy-python-network-final.json`,
+`/tmp/teensy-python-network-cable.json`. Network stack low-water mark after the
+final suite: 1,370 words; console: 6,941 words before MP3 playback.
+Build size: RAM1 444,608 bytes, RAM2 147,008 bytes, flash 531,512 bytes.
+Final firmware SHA-256: `085e6b3e3acf213153b413cae326a35c5959c524d71b23f2c7696cb79c6b4e01`.
+Backup: `../solar_os-baselines/2026-09-26-python-network/`.
+Long-duration traffic/DHCP soak, send-buffer saturation and TLS remain outside
+this validation. Shared ESP-oriented network registry APIs remain unported.
+
+Final audio regression on the socket firmware passed stereo MP3, resampled
+mono MP3/WAV, cancellation/error recovery and three additional playback cycles
+with stable memory. Log: `/tmp/teensy-python-network-audio.json`.
