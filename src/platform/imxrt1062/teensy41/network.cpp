@@ -2,13 +2,14 @@
 #include <arduino_freertos.h>
 #include <queue.h>
 #include <QNEthernet.h>
-#include <qnethernet/QNDNSClient.h>
+
 #include <cstdlib>
 #include "network_socket.h"
 #include <cstring>
 extern "C" {
 #include "solar_os_shell_commands.h"
 #include "solar_os_shell_io.h"
+#include "solar_os_net_session.h"
 }
 using namespace qindesign::network;
 // QNEthernet is not thread-safe. Only this task may touch its APIs; automatic
@@ -38,9 +39,12 @@ static void status(Reply &reply) {
         running ? (uint32_t(Ethernet.localIP()) ? "bound" : "waiting") : "off",
         unsigned(uxTaskGetStackHighWaterMark(nullptr)));
 }
+void sk_network_registry_begin();
+void sk_network_registry_poll(bool started);
 static void network_task(void *) {
     for (;;) {
         if (running) Ethernet.loop();
+        sk_network_registry_poll(running);
         sk_net_transport_poll(running && Ethernet.linkState() && uint32_t(Ethernet.localIP()));
         Request request;
         if (xQueueReceive(requests,&request,0)==pdTRUE) {
@@ -53,37 +57,22 @@ static void network_task(void *) {
                 sk_net_transport_reset();
                 Ethernet.end(); running=false; status(reply);
             } else if (request.op==Operation::Status) status(reply);
-            else if (!running || !Ethernet.linkState() || !uint32_t(Ethernet.localIP())) {
-                snprintf(reply.text,sizeof(reply.text),"Network unavailable: use network up and wait for link/DHCP\n");
-            } else {
-                IPAddress ip;
-                if (!DNSClient::getHostByName(request.host,ip,3000)) {
-                    snprintf(reply.text,sizeof(reply.text),"DNS lookup failed\n");
-                } else {
-                    char text[16]; address(text,sizeof(text),ip);
-                    if (request.op==Operation::Resolve) snprintf(reply.text,sizeof(reply.text),"%s\n",text);
-                    else {
-                        EthernetClient client; client.setConnectionTimeout(3000);
-                        bool ok=client.connect(ip,request.port)==1;
-                        snprintf(reply.text,sizeof(reply.text),"TCP %s:%u %s\n",text,request.port,ok ? "connected" : "failed");
-                        client.stop();
-                    }
-                }
-            }
             xQueueOverwrite(replies,&reply);
         }
         vTaskDelay(pdMS_TO_TICKS(2));
     }
 }
 void sk_network_begin() {
+    sk_network_registry_begin();
     sk_net_transport_begin();
+    sk_net_resolver_begin();
     requests=xQueueCreateStatic(1,sizeof(Request),request_storage,&request_control);
     replies=xQueueCreateStatic(1,sizeof(Reply),reply_storage,&reply_control);
     configASSERT(requests && replies);
     configASSERT(xTaskCreateStatic(network_task,"ethernet",2048,nullptr,2,
         network_stack,&network_task_control));
 }
-extern "C" void solar_os_shell_cmd_network(solar_os_context_t *ctx,int argc,char **argv) {
+static void ethernet_command(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);
     static uint32_t sequence;
     Request request{}; request.id=++sequence;
@@ -104,6 +93,18 @@ extern "C" void solar_os_shell_cmd_network(solar_os_context_t *ctx,int argc,char
     if (!valid) {
         solar_os_shell_io_writeln(io,"usage: network [status|interfaces|up|down|resolve HOST|connect HOST PORT]"); return;
     }
+    if (request.op==Operation::Resolve || request.op==Operation::Connect) {
+        char ip[SOLAR_OS_NET_ADDR_MAX];
+        esp_err_t err=solar_os_net_resolve_host(request.host,ip,sizeof(ip));
+        if (err!=ESP_OK) { solar_os_shell_io_writeln(io,"DNS lookup failed or network unavailable"); return; }
+        if (request.op==Operation::Resolve) { solar_os_shell_io_writeln(io,ip); return; }
+        solar_os_net_session_t *session=nullptr; uint32_t handle=0;
+        err=solar_os_net_session_create("network.command",nullptr,nullptr,&session);
+        if (err==ESP_OK) err=solar_os_net_session_tcp_connect(session,ip,request.port,3000,&handle);
+        solar_os_shell_io_printf(io,"TCP %s:%u %s\n",ip,request.port,err==ESP_OK ? "connected" : "failed");
+        solar_os_net_session_destroy(session);
+        return;
+    }
     if (!requests || xQueueSend(requests,&request,0)!=pdTRUE) {
         solar_os_shell_io_writeln(io,"Network busy or unavailable"); return;
     }
@@ -115,5 +116,14 @@ extern "C" void solar_os_shell_cmd_network(solar_os_context_t *ctx,int argc,char
         }
     }
     solar_os_shell_io_writeln(io,"Network request timed out");
+}
+// Preserve the bring-up controls while the shared command owns OS status/routes.
+extern "C" bool solar_os_shell_network_transport_command(solar_os_context_t *ctx,int argc,char **argv) {
+    if (argc>1 && (!strcmp(argv[1],"up") || !strcmp(argv[1],"down") ||
+                  !strcmp(argv[1],"resolve") || !strcmp(argv[1],"connect"))) {
+        ethernet_command(ctx,argc,argv); return true;
+    }
+    if (argc==1 || (argc==2 && !strcmp(argv[1],"status"))) ethernet_command(ctx,argc,argv);
+    return false;
 }
 #endif

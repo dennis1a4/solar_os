@@ -41,20 +41,16 @@ static uint16_t get_port(mp_obj_t arg) {
     if (p<1 || p>65535) mp_raise_ValueError(MP_ERROR_TEXT("port must be 1..65535"));
     return p;
 }
+static bool resolve_cancel(void *user) { (void)user; return sk_python_poll_cancel(); }
 static void resolve(mp_obj_t host,uint8_t ip[4],int32_t timeout) {
     size_t len; const char *name=mp_obj_str_get_data(host,&len);
     if (!len || len>=254 || memchr(name,0,len)) mp_raise_ValueError(MP_ERROR_TEXT("invalid hostname"));
-    sk_net_request q={.op=SK_NET_DNS_START}; sk_net_reply r;
-    memcpy(q.host,name,len); check_cancel(); call(&q,&r);
-    q.op=SK_NET_DNS_POLL; q.handle=r.value;
-    uint32_t start=now_ms();
-    // DNS has a bounded five-second limit even for a blocking socket.
-    int32_t limit=timeout<0 || timeout>5000 ? 5000 : timeout;
-    for (;;) {
-        int err=sk_net_call(&q,&r);
-        if (err!=EAGAIN) { if (err) mp_raise_OSError(err); memcpy(ip,r.ip,4); return; }
-        check_wait(start,limit);
-    }
+    check_cancel();
+    char hostname[254]; memcpy(hostname,name,len); hostname[len]=0;
+    uint32_t limit=timeout<0 || timeout>5000 ? 5000 : timeout;
+    int err=sk_net_resolve(hostname,ip,limit,resolve_cancel,NULL);
+    if (err==EINTR) { sk_python_network_close_all(); mp_raise_type(&mp_type_KeyboardInterrupt); }
+    if (err) mp_raise_OSError(err);
 }
 static mp_obj_t socket_close(mp_obj_t obj) {
     socket_obj *s=MP_OBJ_TO_PTR(obj);

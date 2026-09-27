@@ -16,6 +16,7 @@ PYTHON_BINDINGS = PYTHON_SOURCE + (
 ).read_text(encoding="utf-8") + (
     REPOSITORY / "src/apps/solar_os_python_ble.inc"
 ).read_text(encoding="utf-8")
+PYTHON_BINDINGS += (REPOSITORY / "src/apps/solar_os_python_net.inc").read_text(encoding="utf-8")
 LUA_BINDINGS = LUA_SOURCE + (
     REPOSITORY / "src/apps/solar_os_lua_dsp.inc"
 ).read_text(encoding="utf-8") + (

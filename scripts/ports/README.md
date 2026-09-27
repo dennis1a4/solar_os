@@ -215,3 +215,22 @@ a fresh socket afterward. Both actions have a 150-second test deadline.
 Add `--public` to also fetch example.com over plain HTTP and copy the tested
 example to `/http_fetch.py` if that destination is absent. Existing files are
 protected by the shell copy command; inspect the logged copy result.
+
+
+## Shared SolarOS network services
+
+With the Ethernet firmware and DHCP LAN connected, close the serial monitor and run:
+
+```sh
+bash scripts/ports/test_teensy41_net_service_host.sh
+python3 scripts/ports/test_teensy41_net_service.py --log /tmp/teensy-net-service.json
+```
+
+The host test compiles the real managed session service against a deterministic
+transport with the undefined-behavior sanitizer. The hardware test uses the
+existing `solaros.net` API, local TCP/UDP fixtures, shared interface/route commands,
+timeouts/cancellation, quotas, stale handles, interpreter cleanup and network
+restart. It creates no SD files. Use `--board-ip IP` if the board is on a different
+LAN; this selects the host interface for the fixture servers, not a fixed board
+address. No LAN scan is performed. Keep the standard Python socket/HTTP-to-SD
+suite as a separate regression check.

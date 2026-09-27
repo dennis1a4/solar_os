@@ -9,6 +9,9 @@ assert script.count(marker) == 1, "Pinned Teensy linker layout changed"
 script = script.replace(marker, marker + "\n\t\t*libQNEthernet.a:*(.text* .rodata*)"
                         + "\n\t\t*network_socket.cpp.o(.text* .rodata*)"
                         + "\n\t\t*python_network.c.o(.text* .rodata*)")
+for obj in ("network.cpp", "net_transport.c", "network_registry.cpp", "python_solaros_net.c",
+            "solar_os_net_session.c", "solar_os_network.c", "solar_os_shell_network_status.c"):
+    script = script.replace(marker, marker + "\n\t\t*" + obj + ".o(.text* .rodata*)")
 output = Path(env.subst("$BUILD_DIR")) / "teensy41_network.ld"
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(script)

@@ -6,7 +6,9 @@
 #include "esp_netif_net_stack.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#if !SOLAR_OS_NETWORK_VOLATILE
 #include "nvs.h"
+#endif
 
 #define NETWORK_NVS_NAMESPACE "network"
 #define NETWORK_NVS_PRIORITIES_KEY "priorities"
@@ -118,6 +120,7 @@ static void priority_store_load_locked(void)
     priority_store_loaded = true;
     memset(&priority_store, 0, sizeof(priority_store));
 
+#if !SOLAR_OS_NETWORK_VOLATILE
     nvs_handle_t nvs;
     if (nvs_open(NETWORK_NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) {
         return;
@@ -141,6 +144,7 @@ static void priority_store_load_locked(void)
         }
     }
     priority_store = stored;
+#endif
 }
 
 static bool priority_store_find_locked(const char *name, int *priority)
@@ -159,6 +163,10 @@ static bool priority_store_find_locked(const char *name, int *priority)
 
 static esp_err_t priority_store_save(const network_priority_store_t *store)
 {
+#if SOLAR_OS_NETWORK_VOLATILE
+    (void)store;
+    return ESP_ERR_NOT_SUPPORTED;
+#else
     nvs_handle_t nvs = 0;
     esp_err_t ret = nvs_open(NETWORK_NVS_NAMESPACE, NVS_READWRITE, &nvs);
     if (ret == ESP_OK) {
@@ -174,6 +182,7 @@ static esp_err_t priority_store_save(const network_priority_store_t *store)
         nvs_close(nvs);
     }
     return ret;
+#endif
 }
 
 static network_path_entry_t *select_preferred_locked(void)

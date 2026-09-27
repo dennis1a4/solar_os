@@ -14,6 +14,10 @@
 #include "solar_os_wireguard.h"
 #endif
 
+#if SOLAR_OS_NETWORK_TRANSPORT_COMMAND
+bool solar_os_shell_network_transport_command(solar_os_context_t *ctx, int argc, char **argv);
+#endif
+
 static solar_os_shell_io_t *terminal(solar_os_context_t *ctx)
 {
     return solar_os_shell_command_io(ctx);
@@ -260,7 +264,13 @@ static void network_print_usage(solar_os_shell_io_t *term)
 void solar_os_shell_cmd_network(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
+#if SOLAR_OS_NETWORK_TRANSPORT_COMMAND
+    if (solar_os_shell_network_transport_command(ctx, argc, argv)) return;
+#endif
     if (argc == 1) {
+#if SOLAR_OS_SHELL_CORE_ONLY
+        network_print_status(term);
+#else
         const esp_err_t ret = solar_os_shell_launch_network_tui(ctx);
         if (ret != ESP_OK) {
             solar_os_shell_io_printf(term,
@@ -269,6 +279,7 @@ void solar_os_shell_cmd_network(solar_os_context_t *ctx, int argc, char **argv)
         } else {
             solar_os_shell_session_prepare_foreground_launch(ctx, true);
         }
+    #endif
         return;
     }
     if (argc == 2 && strcmp(argv[1], "status") == 0) {

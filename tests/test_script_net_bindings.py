@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -6,6 +7,8 @@ REPOSITORY = Path(__file__).resolve().parents[1]
 PYTHON_SOURCE = (REPOSITORY / "src/apps/solar_os_python.c").read_text(
     encoding="utf-8"
 )
+PYTHON_SOURCE += (REPOSITORY / "src/apps/solar_os_python_net.inc").read_text(encoding="utf-8")
+
 LUA_SOURCE = (REPOSITORY / "src/apps/solar_os_lua.c").read_text(encoding="utf-8")
 NET_HEADER = (REPOSITORY / "src/services/solar_os_net_session.h").read_text(
     encoding="utf-8"
@@ -22,6 +25,14 @@ API_DESCRIPTOR = (REPOSITORY / "src/apps/solar_os_script_api.inc").read_text(
 
 
 class ScriptNetBindingsTest(unittest.TestCase):
+    def test_teensy_uses_shared_bindings_and_registers_the_complete_net_api(self):
+        port = (REPOSITORY / "src/platform/imxrt1062/teensy41/python_solaros_net.c").read_text()
+        self.assertIn('#include "solar_os_python_net.inc"', port)
+        self.assertIn('#include "solar_os_python_net.inc"', PYTHON_SOURCE)
+        expected = set(re.findall(r'SOLAR_OS_SCRIPT_API_FUNCTION\(net, (\w+),', API_DESCRIPTOR))
+        actual = set(re.findall(r'\bMETHOD\((\w+)\)', port)) - {"name"}
+        self.assertEqual(expected, actual)
+
     def test_python_and_lua_register_the_same_managed_methods(self):
         methods = (
             "tcp_connect",

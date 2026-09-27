@@ -15,6 +15,9 @@ REPL/SD scripts with writable SD access. A reduced command table and single USB
 session are implemented; storage hot-removal recovery, persistent settings and
 the complete multi-session/service integration remain.
 Fitted PSRAM is detected as 8 MiB. Current work is on local `main`.
+Compatibility is the next priority: keep application logic shared and put board
+changes below OS services. The Ethernet profile now uses the shared network
+registry, managed TCP/UDP sessions and the existing `solaros.net` bindings.
 
 ## Original 13-step plan
 
@@ -133,7 +136,10 @@ together. Optional peripheral compilation is not hardware validation.
 - [x] Test Python blocked receive during physical cable removal and HTTP recovery after reconnection.
 - [ ] Run long Ethernet DHCP/traffic soak.
 - [x] Add and hardware-test MicroPython IPv4 TCP sockets, DNS, HTTP-to-SD and cleanup.
-- [ ] Bridge Ethernet into the full shared network registry and remaining service APIs.
+- [x] Connect Ethernet to the shared network registry and managed TCP/UDP socket service.
+- [x] Reuse the existing `solaros.net` Python binding implementation and verify its API on hardware.
+- [ ] Port direct BSD/lwIP socket consumers, TLS/WebSockets and further network services.
+- [ ] Enable additional upstream apps through shared services, minimizing app-specific changes.
 
 Done when: the selected applications work reliably on the intended hardware.
 
@@ -147,8 +153,8 @@ Done when: the selected applications work reliably on the intended hardware.
 | USB console connection timing | Test client needed a one-second settling delay after opening the port. |
 | SD hot removal | Recovery after an already successful mount is not implemented. |
 | Hardware wiring/population | See unresolved items in the port notes before peripheral bring-up. |
-| Network transport | Native Ethernet with PJRC kit selected; teensy41_network link/DHCP/DNS/TCP and short audio/shell checks passed. Shared network/socket API integration remains. |
-| MicroPython scope | 512 KiB PSRAM heap, basic REPL and SD scripts/imports/files; IPv4 TCP socket module in the network profile; no CircuitPython or hardware modules yet. |
+| Network transport | Native Ethernet with PJRC kit selected; teensy41_network link/DHCP/DNS/TCP and short audio/shell checks passed. Shared interface registry, managed TCP/UDP services and solaros.net now work; direct POSIX/ESP networking and TLS remain. |
+| MicroPython scope | 512 KiB PSRAM heap, basic REPL and SD scripts/imports/files; IPv4 TCP socket module plus shared solaros.net TCP/UDP APIs in the network profile; no CircuitPython or hardware modules yet. |
 | Full upstream feature scope | Select incrementally after shell/storage integration. |
 
 ## Future ideas inbox
@@ -241,3 +247,25 @@ from on-board tests.
 - The board is running the audio profile. The standard shell and its saved
   recovery image remain available. Recording, line-out, full audio services
   and custom SuperKeyboard codec hardware remain follow-up work.
+
+### Ethernet connected to shared OS services — 2026-09-26
+
+- Built the actual upstream interface registry and managed socket session service
+  into `teensy41_network`. Ethernet publishes link/address/DNS readiness as `eth0`;
+  shared `network interfaces` and `network routes` expose the selected path.
+- Removed the socket service's Wi-Fi-only readiness dependency. Added a transport
+  boundary below its existing ownership, quotas, timeout and cleanup logic.
+- Extracted the existing Python network handlers into a shared include used by
+  both runtimes. The Teensy runtime registers the same `solaros.net` API;
+  unsupported WebSockets, ping and router operations explicitly report errors.
+- Hardware tests passed TCP, UDP (including empty/fragmented/truncated datagrams),
+  timeouts, Ctrl-C, stale handles, quotas, repeated interpreter cleanup and restart.
+  Existing standard Python TCP/HTTP-to-SD behavior also passed.
+- This is source/API compatibility for the enabled services. Native apps still
+  compile into firmware; arbitrary ESP binaries, direct ESP/lwIP/POSIX networking,
+  TLS, persistent route settings and other SolarOS Python namespaces are not enabled.
+
+- Final network and shell-only builds passed. MP3/WAV and three repeat audio
+  cycles also passed with Ethernet active. Saved the tested image under
+  `../solar_os-baselines/2026-09-26-network-services/`; see the port notes for
+  exact build sizes, SHA-256 and test logs.

@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#if !SOLAR_OS_NET_PORT_TRANSPORT
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -17,7 +18,19 @@
 #include "esp_transport_ws.h"
 #include "freertos/FreeRTOS.h"
 #include "lwip/inet.h"
-#include "solar_os_wifi.h"
+#else
+#include "solar_os_net_transport.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_timer.h"
+typedef void *esp_transport_handle_t;
+#endif
+#include "solar_os_network.h"
+#if SOLAR_OS_NET_PORT_TRANSPORT
+typedef struct { char ip[SOLAR_OS_NET_ADDR_MAX]; uint16_t port; } net_address_t;
+#else
+typedef struct sockaddr_in net_address_t;
+#endif
 
 #define SOLAR_OS_NET_WS_URL_MAX 384U
 #define SOLAR_OS_NET_WS_PATH_MAX 256U
@@ -46,7 +59,14 @@ typedef struct {
     bool tls;
 } solar_os_net_ws_endpoint_t;
 
+#if SOLAR_OS_NET_PORT_TRANSPORT
+#define net_lock() taskENTER_CRITICAL()
+#define net_unlock() taskEXIT_CRITICAL()
+#else
 static portMUX_TYPE net_channel_lock = portMUX_INITIALIZER_UNLOCKED;
+#define net_lock() portENTER_CRITICAL(&net_channel_lock)
+#define net_unlock() portEXIT_CRITICAL(&net_channel_lock)
+#endif
 static size_t net_global_open_channels;
 
 static bool net_cancelled(const solar_os_net_session_t *session)
@@ -62,9 +82,7 @@ static esp_err_t net_validate_timeout(uint32_t timeout_ms)
 
 static esp_err_t net_require_ip(void)
 {
-    solar_os_wifi_status_t status;
-    solar_os_wifi_get_status(&status);
-    return status.has_ip ? ESP_OK : ESP_ERR_INVALID_STATE;
+    return solar_os_network_path_get_preferred(NULL) ? ESP_OK : ESP_ERR_INVALID_STATE;
 }
 
 static esp_err_t net_errno_error(int value)
@@ -114,6 +132,9 @@ static int net_wait_fd(const solar_os_net_session_t *session,
         if (slice_ms > (int)SOLAR_OS_NET_POLL_SLICE_MS) {
             slice_ms = SOLAR_OS_NET_POLL_SLICE_MS;
         }
+#if SOLAR_OS_NET_PORT_TRANSPORT
+        const int ready = solar_os_net_transport_wait(fd, write_ready, slice_ms);
+#else
         fd_set readfds;
         fd_set writefds;
         FD_ZERO(&readfds);
@@ -128,6 +149,7 @@ static int net_wait_fd(const solar_os_net_session_t *session,
                                  write_ready ? &writefds : NULL,
                                  NULL,
                                  &timeout);
+#endif
         if (ready > 0) {
             return 1;
         }
@@ -154,30 +176,51 @@ static esp_err_t net_wait_error(int wait_result)
 
 static esp_err_t net_set_nonblocking(int fd)
 {
+#if SOLAR_OS_NET_PORT_TRANSPORT
+    (void)fd;
+    return ESP_OK;
+#else
     const int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
         return net_errno_error(errno);
     }
     return ESP_OK;
+#endif
 }
 
-static esp_err_t net_resolve_ipv4(const char *host,
+static esp_err_t net_resolve_ipv4(const solar_os_net_session_t *session,
+                                  int64_t deadline_us,
+                                  const char *host,
                                   uint16_t port,
-                                  struct sockaddr_in *address)
+                                  net_address_t *address)
 {
     if (host == NULL || host[0] == '\0' || port == 0 || address == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     char resolved[SOLAR_OS_NET_ADDR_MAX];
+#if SOLAR_OS_NET_PORT_TRANSPORT
+    if (solar_os_net_transport_resolve(host, resolved, sizeof(resolved),
+            net_remaining_ms(deadline_us), session->should_cancel, session->cancel_user) < 0) {
+        return errno == EINTR ? ESP_ERR_INVALID_STATE : net_errno_error(errno);
+    }
+#else
+    (void)session; (void)deadline_us;
     esp_err_t err = solar_os_net_resolve_host(host, resolved, sizeof(resolved));
     if (err != ESP_OK) {
         return err;
     }
+#endif
+#if SOLAR_OS_NET_PORT_TRANSPORT
+    strlcpy(address->ip, resolved, sizeof(address->ip));
+    address->port = port;
+    return ESP_OK;
+#else
     memset(address, 0, sizeof(*address));
     address->sin_family = AF_INET;
     address->sin_port = htons(port);
     return inet_pton(AF_INET, resolved, &address->sin_addr) == 1 ?
         ESP_OK : ESP_ERR_NOT_FOUND;
+#endif
 }
 
 static solar_os_net_channel_t *net_reserve_channel(solar_os_net_session_t *session,
@@ -189,7 +232,7 @@ static solar_os_net_channel_t *net_reserve_channel(solar_os_net_session_t *sessi
     }
 
     size_t index = SOLAR_OS_NET_SESSION_MAX_CHANNELS;
-    portENTER_CRITICAL(&net_channel_lock);
+    net_lock();
     if (net_global_open_channels < SOLAR_OS_NET_GLOBAL_MAX_CHANNELS) {
         for (size_t i = 0; i < SOLAR_OS_NET_SESSION_MAX_CHANNELS; i++) {
             if (!session->channels[i].open) {
@@ -200,7 +243,7 @@ static solar_os_net_channel_t *net_reserve_channel(solar_os_net_session_t *sessi
             }
         }
     }
-    portEXIT_CRITICAL(&net_channel_lock);
+    net_unlock();
     if (index == SOLAR_OS_NET_SESSION_MAX_CHANNELS) {
         return NULL;
     }
@@ -240,6 +283,9 @@ static void net_release_channel(solar_os_net_channel_t *channel)
     if (channel == NULL || !channel->open) {
         return;
     }
+#if SOLAR_OS_NET_PORT_TRANSPORT
+    if (channel->fd >= 0) solar_os_net_transport_close(channel->fd);
+#else
     if (channel->kind == SOLAR_OS_NET_CHANNEL_WEBSOCKET) {
         if (channel->transport != NULL) {
             (void)esp_transport_close(channel->transport);
@@ -251,17 +297,18 @@ static void net_release_channel(solar_os_net_channel_t *channel)
     } else if (channel->fd >= 0) {
         (void)close(channel->fd);
     }
+#endif
     channel->fd = -1;
     channel->transport = NULL;
     channel->parent_transport = NULL;
     channel->kind = 0;
 
-    portENTER_CRITICAL(&net_channel_lock);
+    net_lock();
     channel->open = false;
     if (net_global_open_channels > 0) {
         net_global_open_channels--;
     }
-    portEXIT_CRITICAL(&net_channel_lock);
+    net_unlock();
 }
 
 static esp_err_t net_validate_transfer(const void *data, size_t data_len, size_t maximum)
@@ -319,8 +366,8 @@ esp_err_t solar_os_net_session_tcp_connect(solar_os_net_session_t *session,
         return err != ESP_OK ? err : ESP_ERR_INVALID_STATE;
     }
     const int64_t deadline_us = net_deadline(timeout_ms);
-    struct sockaddr_in address;
-    if ((err = net_resolve_ipv4(host, port, &address)) != ESP_OK) {
+    net_address_t address;
+    if ((err = net_resolve_ipv4(session, deadline_us, host, port, &address)) != ESP_OK) {
         return err;
     }
     if (net_cancelled(session)) {
@@ -333,16 +380,24 @@ esp_err_t solar_os_net_session_tcp_connect(solar_os_net_session_t *session,
     if (channel == NULL) {
         return ESP_ERR_NO_MEM;
     }
+#if SOLAR_OS_NET_PORT_TRANSPORT
+    channel->fd = solar_os_net_transport_open(false, 0);
+#else
     channel->fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#endif
     if (channel->fd < 0 || (err = net_set_nonblocking(channel->fd)) != ESP_OK) {
         err = channel->fd < 0 ? net_errno_error(errno) : err;
         net_release_channel(channel);
         return err;
     }
 
+#if SOLAR_OS_NET_PORT_TRANSPORT
+    int connected = solar_os_net_transport_connect(channel->fd, address.ip, address.port);
+#else
     int connected = connect(channel->fd,
                             (const struct sockaddr *)&address,
                             sizeof(address));
+#endif
     if (connected < 0 && errno != EINPROGRESS) {
         err = net_errno_error(errno);
         net_release_channel(channel);
@@ -359,6 +414,7 @@ esp_err_t solar_os_net_session_tcp_connect(solar_os_net_session_t *session,
             net_release_channel(channel);
             return err;
         }
+#if !SOLAR_OS_NET_PORT_TRANSPORT
         int socket_error = 0;
         socklen_t error_len = sizeof(socket_error);
         if (getsockopt(channel->fd, SOL_SOCKET, SO_ERROR, &socket_error, &error_len) != 0 ||
@@ -367,6 +423,7 @@ esp_err_t solar_os_net_session_tcp_connect(solar_os_net_session_t *session,
             net_release_channel(channel);
             return err;
         }
+#endif
     }
     return ESP_OK;
 }
@@ -388,12 +445,17 @@ esp_err_t solar_os_net_session_udp_open(solar_os_net_session_t *session,
     if (channel == NULL) {
         return ESP_ERR_NO_MEM;
     }
+#if SOLAR_OS_NET_PORT_TRANSPORT
+    channel->fd = solar_os_net_transport_open(true, local_port);
+#else
     channel->fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+#endif
     if (channel->fd < 0 || (err = net_set_nonblocking(channel->fd)) != ESP_OK) {
         err = channel->fd < 0 ? net_errno_error(errno) : err;
         net_release_channel(channel);
         return err;
     }
+#if !SOLAR_OS_NET_PORT_TRANSPORT
     if (local_port != 0) {
         const struct sockaddr_in local = {
             .sin_family = AF_INET,
@@ -406,9 +468,11 @@ esp_err_t solar_os_net_session_udp_open(solar_os_net_session_t *session,
             return err;
         }
     }
+#endif
     return ESP_OK;
 }
 
+#if !SOLAR_OS_NET_PORT_TRANSPORT
 static esp_err_t net_parse_ws_url(const char *url, solar_os_net_ws_endpoint_t *endpoint)
 {
     if (url == NULL || endpoint == NULL || strlen(url) >= SOLAR_OS_NET_WS_URL_MAX) {
@@ -539,6 +603,14 @@ esp_err_t solar_os_net_session_websocket_connect(solar_os_net_session_t *session
     return ESP_OK;
 }
 
+#else
+esp_err_t solar_os_net_session_websocket_connect(solar_os_net_session_t *s,
+    const char *url, const char *protocol, uint32_t timeout, uint32_t *handle) {
+    (void)s; (void)url; (void)protocol; (void)timeout; (void)handle;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+#endif
+
 esp_err_t solar_os_net_session_tcp_send(solar_os_net_session_t *session,
                                         uint32_t handle,
                                         const void *data,
@@ -563,10 +635,15 @@ esp_err_t solar_os_net_session_tcp_send(solar_os_net_session_t *session,
         if (ready != 1) {
             return net_wait_error(ready);
         }
+#if SOLAR_OS_NET_PORT_TRANSPORT
+        const ssize_t sent = solar_os_net_transport_send(channel->fd,
+            (const uint8_t *)data + offset, data_len - offset);
+#else
         const ssize_t sent = send(channel->fd,
                                   (const uint8_t *)data + offset,
                                   data_len - offset,
                                   0);
+#endif
         if (sent < 0 && (errno == EAGAIN || errno == EINTR)) {
             continue;
         }
@@ -594,8 +671,8 @@ esp_err_t solar_os_net_session_udp_send(solar_os_net_session_t *session,
         return channel == NULL ? ESP_ERR_INVALID_ARG : err;
     }
     const int64_t deadline_us = net_deadline(timeout_ms);
-    struct sockaddr_in address;
-    if ((err = net_resolve_ipv4(host, port, &address)) != ESP_OK || net_cancelled(session)) {
+    net_address_t address;
+    if ((err = net_resolve_ipv4(session, deadline_us, host, port, &address)) != ESP_OK || net_cancelled(session)) {
         return err != ESP_OK ? err : ESP_ERR_INVALID_STATE;
     }
     const int remaining = net_remaining_ms(deadline_us);
@@ -606,18 +683,24 @@ esp_err_t solar_os_net_session_udp_send(solar_os_net_session_t *session,
     if (ready != 1) {
         return net_wait_error(ready);
     }
+#if SOLAR_OS_NET_PORT_TRANSPORT
+    const ssize_t sent = solar_os_net_transport_sendto(channel->fd, address.ip,
+        address.port, data, data_len);
+#else
     const ssize_t sent = sendto(channel->fd,
                                 data,
                                 data_len,
                                 0,
                                 (const struct sockaddr *)&address,
                                 sizeof(address));
+#endif
     if (sent < 0) {
         return net_errno_error(errno);
     }
     return (size_t)sent == data_len ? ESP_OK : ESP_FAIL;
 }
 
+#if !SOLAR_OS_NET_PORT_TRANSPORT
 esp_err_t solar_os_net_session_websocket_send(solar_os_net_session_t *session,
                                               uint32_t handle,
                                               const void *data,
@@ -660,6 +743,14 @@ esp_err_t solar_os_net_session_websocket_send(solar_os_net_session_t *session,
     return (size_t)sent == data_len ? ESP_OK : ESP_FAIL;
 }
 
+#else
+esp_err_t solar_os_net_session_websocket_send(solar_os_net_session_t *s,
+    uint32_t h, const void *data, size_t len, bool text, uint32_t timeout) {
+    (void)s; (void)h; (void)data; (void)len; (void)text; (void)timeout;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+#endif
+
 static esp_err_t net_prepare_receive(solar_os_net_session_t *session,
                                      void *buffer,
                                      size_t buffer_len,
@@ -699,7 +790,11 @@ esp_err_t solar_os_net_session_tcp_receive(solar_os_net_session_t *session,
     if (ready != 1) {
         return net_wait_error(ready);
     }
+#if SOLAR_OS_NET_PORT_TRANSPORT
+    const ssize_t received = solar_os_net_transport_recv(channel->fd, buffer, buffer_len);
+#else
     const ssize_t received = recv(channel->fd, buffer, buffer_len, 0);
+#endif
     if (received < 0) {
         return net_errno_error(errno);
     }
@@ -730,6 +825,10 @@ esp_err_t solar_os_net_session_udp_receive(solar_os_net_session_t *session,
     if (ready != 1) {
         return net_wait_error(ready);
     }
+#if SOLAR_OS_NET_PORT_TRANSPORT
+    const ssize_t received = solar_os_net_transport_recvfrom(channel->fd, buffer,
+        buffer_len, result->address, sizeof(result->address), &result->port);
+#else
     struct sockaddr_in source;
     socklen_t source_len = sizeof(source);
     const ssize_t received = recvfrom(channel->fd,
@@ -738,19 +837,23 @@ esp_err_t solar_os_net_session_udp_receive(solar_os_net_session_t *session,
                                       MSG_TRUNC,
                                       (struct sockaddr *)&source,
                                       &source_len);
+#endif
     if (received < 0) {
         return net_errno_error(errno);
     }
     result->message_len = (size_t)received;
     result->data_len = result->message_len > buffer_len ? buffer_len : result->message_len;
     result->truncated = result->message_len > buffer_len;
+#if !SOLAR_OS_NET_PORT_TRANSPORT
     result->port = ntohs(source.sin_port);
     if (inet_ntop(AF_INET, &source.sin_addr, result->address, sizeof(result->address)) == NULL) {
         strlcpy(result->address, "0.0.0.0", sizeof(result->address));
     }
+#endif
     return ESP_OK;
 }
 
+#if !SOLAR_OS_NET_PORT_TRANSPORT
 esp_err_t solar_os_net_session_websocket_receive(solar_os_net_session_t *session,
                                                  uint32_t handle,
                                                  void *buffer,
@@ -821,6 +924,14 @@ esp_err_t solar_os_net_session_websocket_receive(solar_os_net_session_t *session
     return net_cancelled(session) ? ESP_ERR_INVALID_STATE : ESP_OK;
 }
 
+#else
+esp_err_t solar_os_net_session_websocket_receive(solar_os_net_session_t *s,
+    uint32_t h, void *buf, size_t len, uint32_t timeout, solar_os_net_receive_result_t *r) {
+    (void)s; (void)h; (void)buf; (void)len; (void)timeout; (void)r;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+#endif
+
 esp_err_t solar_os_net_session_close(solar_os_net_session_t *session,
                                      uint32_t handle)
 {
@@ -863,9 +974,9 @@ void solar_os_net_session_get_status(const solar_os_net_session_t *session,
             status->open_channels += session->channels[i].open ? 1U : 0U;
         }
     }
-    portENTER_CRITICAL(&net_channel_lock);
+    net_lock();
     status->global_open_channels = net_global_open_channels;
-    portEXIT_CRITICAL(&net_channel_lock);
+    net_unlock();
 }
 
 const char *solar_os_net_ws_opcode_name(solar_os_net_ws_opcode_t opcode)

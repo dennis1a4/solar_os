@@ -710,14 +710,14 @@ data are placed in cached flash by a generated linker script, preserving RAM1
 for the console heap.
 
 This is the first transport adapter, not full compatibility with ESP-IDF. The
-shared network registry currently exposes `esp_netif` and ESP events; mapping
-it and the socket APIs is a subsequent step. Wi-Fi scanning, SSIDs, AP/router
+initial build did not connect the shared registry/socket APIs. That integration
+is now implemented for managed TCP/UDP; see the shared-services section below. Wi-Fi scanning, SSIDs, AP/router
 mode, TLS, MQTT and WireGuard are not enabled. The MicroPython TCP adapter
 described below is now available.
 Current Python and audio functionality remain compiled in.
 
-Build: `pio run -e teensy41_network`. Hardware link/DHCP and DNS/TCP validation
-remain pending until the kit is connected. The saved audio-only firmware remains
+Build: `pio run -e teensy41_network`. The kit is connected and hardware
+link/DHCP/DNS/TCP validation passed as recorded below. The saved audio-only firmware remains
 available under `../solar_os-baselines/2026-09-26-microphone-diagnostic/`.
 
 Ethernet preparation build passed: RAM1 444,352 bytes (84.8%), RAM2 145,696
@@ -825,8 +825,129 @@ Build size: RAM1 444,608 bytes, RAM2 147,008 bytes, flash 531,512 bytes.
 Final firmware SHA-256: `085e6b3e3acf213153b413cae326a35c5959c524d71b23f2c7696cb79c6b4e01`.
 Backup: `../solar_os-baselines/2026-09-26-python-network/`.
 Long-duration traffic/DHCP soak, send-buffer saturation and TLS remain outside
-this validation. Shared ESP-oriented network registry APIs remain unported.
+this validation. The shared network registry was not yet connected in this baseline;
+see the subsequent integration below.
 
 Final audio regression on the socket firmware passed stereo MP3, resampled
 mono MP3/WAV, cancellation/error recovery and three additional playback cycles
 with stable memory. Log: `/tmp/teensy-python-network-audio.json`.
+
+
+## Shared OS networking over Ethernet — 2026-09-26
+
+`teensy41_network` now compiles the real `solar_os_network.c` registry and
+`solar_os_net_session.c` service. Applications using the SolarOS managed IPv4
+TCP/UDP session APIs use the same service implementation on both platforms.
+The low-level transport boundary is `solar_os_net_transport.h`; the Teensy
+implementation marshals operations to the one Ethernet owner task. The service
+checks the OS-selected network path instead of Wi-Fi status.
+
+The Ethernet adapter publishes `eth0`, IPv4/DNS metadata, link/DHCP readiness and
+path-change events through a narrow netif/event compatibility layer. Callbacks
+run on a separate task so they can query network services without blocking the
+Ethernet worker. Unregister synchronizes with an in-flight callback. The shared
+shell command now supplies interface/route/router status; the existing
+`network up`, `down`, `resolve HOST` and `connect HOST PORT` controls remain.
+DNS/TCP diagnostics also use the service adapters rather than blocking the worker.
+
+```text
+network up
+network interfaces
+network routes
+python
+>>> import solaros
+>>> solaros.net.limits()
+```
+
+The Python runtime uses the **same binding implementation** as upstream SolarOS
+(`src/apps/solar_os_python_net.inc`). A registration test catches differences
+between the Teensy method list and the common Python/Lua API descriptor. Supported:
+
+- `tcp_connect`, `tcp_send`, `tcp_receive`
+- `udp_open`, `udp_send`, `udp_receive`
+- `close`, `close_all`, `limits`
+
+For example, inside Python after DHCP completes:
+
+```python
+import solaros
+n = solaros.net
+h = n.tcp_connect("example.com", 80, 5000)
+n.tcp_send(h, b"GET / HTTP/1.0\r\nHost: example.com\r\n\r\n", 3000)
+print(n.tcp_receive(h, 1024, 3000))
+n.close(h)
+```
+
+Arguments and return shapes match SolarOS: timeout arguments are milliseconds;
+receive returns `None` for timeout, TCP `b""` for EOF, and UDP returns a dictionary
+with `data`, `address`, `port`, `truncated` and `datagram_bytes`. TCP can return
+short reads; loop until EOF for a complete response. The shared limits are four
+channels per session, eight globally, 64 KiB per TCP transfer, 65,507 bytes per
+UDP datagram, and 60 seconds maximum timeout. These are API ceilings, not resource
+reservations: lwIP pool/packet allocation may fail earlier, especially for large
+UDP sends. TCP/DNS waits remain interruptible. DNS has a five-second driver limit.
+
+Each UDP channel allocates two 65,507-byte PSRAM staging buffers and queues one
+received datagram; additional datagrams can be dropped until it is consumed.
+Datagram length/source and truncation are retained, including for empty packets.
+All lwIP access stays on the Ethernet task. A caller waits for each worker
+acknowledgment so scheduling delays cannot abandon an open/close operation and
+leak its handle. Link loss invalidates existing channels; close them and create
+new ones after recovery. Interpreter exit destroys its managed session. The
+existing standard `socket` module remains usable alongside `solaros.net` and has
+its own four-client allowance and cleanup.
+
+Remaining compatibility boundaries:
+
+- This is not a general BSD socket/VFS shim or full ESP-IDF emulation. Apps using
+  direct POSIX/lwIP/ESP/Wi-Fi APIs need additional service/transport work. Native
+  apps are rebuilt into firmware; ESP binaries cannot run on the Teensy.
+- WebSockets/TLS, ICMP ping and AP/router functionality are unsupported and return
+  explicit errors. Persistent route priorities report `NOT_SUPPORTED`; Ethernet's
+  runtime priority is 10. Other `solaros` Python namespaces remain unported.
+- The Teensy resolver does not yet consult SolarOS's hosts file. The current
+  netif/event compatibility layer implements only the subset used by the registry.
+- Physical cable loss was tested on the previous standard-socket baseline; this
+  integration's new API was tested with software down/up. Long DHCP/traffic soak,
+  concurrent multi-app stress and ESP-target rebuild/hardware regression remain.
+
+### Shared-service validation
+
+Host tests run the real session service against a deterministic transport and
+verify failed-open/connect cleanup, per-session/global quotas, stale handles,
+independent session destruction, partial sends, timeout, cancellation, TCP EOF,
+UDP truncation/source metadata and explicit unsupported WebSockets. Undefined
+behavior sanitizer passes. Existing binding/descriptor and network-shell tests
+also pass.
+
+The live `solaros.net` suite passed 4 KiB binary TCP echo and EOF; empty, 1-, 511-,
+512-, 1,024-, 2,048- and 4,096-byte UDP echo; truncation and source metadata;
+zero/150 ms receive timeouts; Ctrl-C; wrong-kind/stale handles; four-channel
+exhaustion; coexistence with four standard Python sockets; repeated close and
+interpreter-exit cleanup; unsupported-feature errors; and Ethernet down/up with
+registry/route updates and a fresh UDP transfer. Five repeated interpreter exits
+with four live UDP channels had equal reported internal and PSRAM free memory.
+
+Reproduce with `bash scripts/ports/test_teensy41_net_service_host.sh` and
+`python3 scripts/ports/test_teensy41_net_service.py --log /tmp/teensy-net-service.json`.
+The hardware suite binds temporary TCP/UDP servers only on the selected host LAN
+address, does not scan the LAN, and does not write SD files.
+
+Final network and shell-only builds passed. The existing Python socket suite
+passed DNS, 4 KiB TCP echo, exact HTTP-to-SD bytes, timeout/nonblocking behavior,
+Ctrl-C, GC/interpreter cleanup and restart on the final network image. MP3/WAV
+playback, cancellation/error recovery and three extra audio cycles passed with
+Ethernet active. These are short functional checks, not a long traffic soak.
+
+Logs: `/tmp/teensy-net-service-final.json`,
+`/tmp/teensy-net-service-standard-final.json`, `/tmp/teensy-net-service-audio.json`.
+After the standard-socket and audio suites, reported free memory was 33,276 /
+72,544 internal bytes and 8,385,240 / 8,388,608 PSRAM bytes. Network task low-water
+mark was 1,394 words; console after MP3 playback was 3,793 words. The separate
+managed-UDP cleanup test was stable at 27,308 internal free bytes during that
+workload; these readings are not a claim of identical heap usage across workloads.
+Final image: RAM1 447,616 bytes, RAM2 153,828 bytes, flash 549,444 bytes.
+HEX SHA-256: `09aca5d28b28179ffd75b7f0caedc7c84565c238aa380a930ff998dcfdf5a41c`.
+Backup: `../solar_os-baselines/2026-09-26-network-services/`.
+The board is running this image; Ethernet is enabled in the tested session.
+After reboot, use `network up` again.

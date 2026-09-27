@@ -3,6 +3,8 @@
 #include <errno.h>
 #if SK_ETHERNET
 #include "network_socket.h"
+void sk_python_solaros_net_init(void);
+void sk_python_solaros_net_destroy(void);
 #endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -94,6 +96,7 @@ static void python_stop(solar_os_context_t *ctx) {
         stack_boundary((void *)&top);
         gc_sweep_all(); // Close even file objects still referenced by globals.
         #if SK_ETHERNET
+        sk_python_solaros_net_destroy();
         sk_python_network_close_all();
         #endif
         mp_deinit();
@@ -127,6 +130,7 @@ static esp_err_t python_start(solar_os_context_t *ctx) {
     }
     #if SK_ETHERNET
     sk_python_network_init();
+    sk_python_solaros_net_init();
     #endif
     const int argc = solar_os_context_argc(ctx);
     const char *path = argc > 1 ? solar_os_context_argv(ctx, 1) : NULL;
