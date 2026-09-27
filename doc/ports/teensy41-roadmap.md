@@ -296,3 +296,6 @@ from on-board tests.
 - Final recursion/file stress retained 1,969 stack words; reboot persistence and
   shared TCP/UDP regression passed. Tested firmware and logs are saved in
   `../solar_os-baselines/2026-09-26-flash-storage/`.
+
+- Root listing corrected: `/` shows mounts only; SD files are listed under `/sd`.
+  Legacy SD file paths still resolve. Hardware listing/read regression passed.

@@ -74,7 +74,8 @@ extern "C" DIR *opendir(const char *path) {
         sk_flash_acquire(); return dir;
     }
 #endif
-    if (r.root && !sk_sd_is_mounted()) return dir;
+    // The namespace root lists mounts only. SD entries belong under /sd.
+    if (r.root) return dir;
     dir->file=SD.open(r.path,FILE_READ);
     if (!dir->file || !dir->file.isDirectory()) {
         errno=dir->file ? ENOTDIR : ENOENT; delete dir; return nullptr;
@@ -104,8 +105,6 @@ extern "C" struct dirent *readdir(DIR *dir) {
     for (;;) {
         File entry=dir->file.openNextFile(FILE_READ);
         if (!entry) return nullptr;
-        // Physical SD names hidden by mount points remain accessible via /sd.
-        if (dir->root && (!strcasecmp(entry.name(),"sd") || !strcasecmp(entry.name(),"flash"))) continue;
         dir->entry.d_type=entry.isDirectory() ? DT_DIR : DT_REG;
         strlcpy(dir->entry.d_name,entry.name(),sizeof(dir->entry.d_name)); return &dir->entry;
     }

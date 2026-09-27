@@ -969,7 +969,7 @@ profiles keep SD-only storage.
 | `/flash/...` | Files on the added QSPI flash |
 | `/sd/...` | Files on the native SDIO card |
 | `/file`, `/directory/...` | Existing SD paths, preserved for compatibility |
-| `/` | Root view of SD entries plus the available `sd` and `flash` mounts |
+| `/` | Available `sd` and `flash` mounts only |
 
 `/sd` and `/flash` are reserved, case-sensitive mount names. If the SD card
 already contains names `sd` or `flash`, those entries are still accessible as
@@ -1091,3 +1091,7 @@ This is not a full-capacity write test, endurance test, power-cut recovery test
 or missing-SD hardware validation. Flash-root protection was exercised immediately
 after blank-chip initialization, when only test data existed there; later runs
 never issue recursive deletion against a pre-existing flash root.
+
+Root listing correction: `/` now enumerates mounts only; use `ls /sd` for SD
+files. Legacy absolute SD file paths still resolve for existing scripts. Verified
+mount-only listing and saved SD/flash file hashes in `/tmp/teensy-root-check.json`.

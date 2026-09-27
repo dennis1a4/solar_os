@@ -78,6 +78,9 @@ try:
                 assert time.monotonic()<deadline,'USB did not reappear'; time.sleep(.2)
             cmd('')
         status=cmd('flash status','16777216 bytes')
+        listing=cmd('ls /')
+        assert re.findall(r'<DIR> ([^\n]+)',listing)==['sd/','flash/'],listing
+        assert len(listing.splitlines()[1:-1])==2,listing
         if a.probe:
             report['status']=status
             report['mount']=cmd('flash mount')
