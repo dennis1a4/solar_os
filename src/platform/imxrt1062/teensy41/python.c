@@ -66,8 +66,16 @@ static void stack_boundary(void *top) {
     TaskStatus_t task;
     vTaskGetInfo(NULL, &task, pdFALSE, eInvalid);
     size_t bytes = (uintptr_t)top - (uintptr_t)task.pxStackBase;
-    configASSERT(bytes > 2048);
-    mp_cstack_init_with_top(top, bytes - 1024);
+    // Python's recursion guard does not bound native storage/network frames.
+    // Keep room for LittleFS even when a script catches its recursion error
+    // and performs file I/O before unwinding.
+#if SK_QSPI_FLASH
+    const size_t native_reserve = 8192;
+#else
+    const size_t native_reserve = 1024;
+#endif
+    configASSERT(bytes > native_reserve + 1024);
+    mp_cstack_init_with_top(top, bytes - native_reserve);
 }
 static bool execute(const char *text, bool file, bool repl) {
     volatile uintptr_t top = 0;

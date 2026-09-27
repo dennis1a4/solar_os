@@ -115,6 +115,10 @@ static void shell_task(void *) {
         vTaskSuspend(nullptr);
     }
     sk_console_printf("SDIO: %s\r\n", esp_err_to_name(sk_sd_mount()));
+    #if SK_QSPI_FLASH
+    extern void sk_flash_begin();
+    sk_flash_begin();
+    #endif
     sk_memory_print();
     sk_displays_begin();
     sk_audio_begin();
@@ -163,7 +167,9 @@ void setup() {
     heartbeat_queue = solar_os_queue_create_internal(1, sizeof(uint32_t));
     configASSERT(heartbeat_queue);
     configASSERT(xTaskCreate(heartbeat, "heartbeat", 256, nullptr, 1, nullptr) == pdPASS);
-    #if SK_AUDIO_PLAYER
+    #if SK_QSPI_FLASH
+    constexpr unsigned console_stack = 10240; // Python/network plus nested LittleFS frames.
+#elif SK_AUDIO_PLAYER
     constexpr unsigned console_stack = 8192; // MP3 decoder scratch plus shell frames.
 #elif SK_UPSTREAM_SHELL
     constexpr unsigned console_stack = 6144;

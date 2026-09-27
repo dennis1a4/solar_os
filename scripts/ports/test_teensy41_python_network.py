@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Test Teensy Python TCP clients against a temporary local fixture server.
-Creates unique SD files. No LAN scan; server binds only the chosen LAN address.
+Creates unique storage files. No LAN scan; server binds only the chosen LAN address.
 """
 import argparse
 import base64
@@ -19,6 +19,8 @@ from test_teensy41_shell import ANSI, PROMPT
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--board-ip', default='192.168.1.197')
 parser.add_argument('--log', type=Path, required=True)
+parser.add_argument('--volume', choices=('/', '/sd', '/flash'), default='/',
+                    help='Storage root for the unchanged HTTP example and downloaded files')
 parser.add_argument('--public', action='store_true', help='Also fetch example.com and install /http_fetch.py if absent')
 parser.add_argument('--cable', action='store_true', help='Interactive unplug/replug test instead of the main suite')
 a = parser.parse_args()
@@ -56,7 +58,7 @@ class Server(socketserver.ThreadingTCPServer):
 server = Server((host, 0), Handler)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 port = server.server_address[1]
-root = '/_solaros_pynet_'+uuid.uuid4().hex[:10]
+root = a.volume.rstrip('/')+'/_solaros_pynet_'+uuid.uuid4().hex[:10]
 r = {'passed': False, 'directory': root, 'commands': []}
 try:
     ports = [p.device for p in list_ports.comports() if (p.vid,p.pid)==(0x16c0,0x0483)]
@@ -176,7 +178,7 @@ try:
                 r['example_install']=cmd('cp '+root+'/http_fetch.py /http_fetch.py')
             r['status']=cmd('network status'); r['uptime']=cmd('uptime')
             r['passed']=True
-            print('PASS: Python DNS/TCP, exact HTTP-to-SD bytes, timeout, Ctrl-C, GC/session cleanup and restart')
+            print('PASS: Python DNS/TCP, exact HTTP-to-file bytes, timeout, Ctrl-C, GC/session cleanup and restart')
             print(root)
 
 finally:

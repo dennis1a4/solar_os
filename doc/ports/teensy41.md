@@ -88,7 +88,8 @@ calculator. The single USB runtime uses the upstream port/stream registry,
 VT100 decoder, shell session API and app lifecycle; it does not yet implement
 the full multi-session `solar_os_port_shell` scheduler or background workers.
 
-SD is mounted at `/`. The adapter supplies `funopen` streams, directory
+SD is mounted at `/`. The network profile additionally supplies explicit `/sd`
+and `/flash` paths; see the QSPI storage section below. The adapter supplies `funopen` streams, directory
 iteration, and a 16-slot descriptor table shared with MicroPython. Supported
 operations include read/write/append/update modes, seek, flush, mkdir, copy,
 rename and removal. `mkdir`, `cp`, `mv` and `rm` use the upstream shell handlers;
@@ -139,8 +140,9 @@ Shell history can now persist under `/.shell/history`; persistent configuration
 still reports unsupported, identity remains `user@teensy41`, and automatic
 startup scripts are disabled. A reconnect starts a fresh shell and closes the
 foreground app, discarding unsaved editor changes. Manual SD mount/recovery
-commands remain in the recovery console. Added QSPI flash and Serial1 shell
-input remain outside this target.
+commands remain in the recovery console. The shell-only profile does not mount
+added QSPI flash; the network profile now does. Serial1 shell input remains outside
+these targets.
 
 See [the hardware tests](../../scripts/ports/README.md) for a repeatable upstream
 shell check. The bootstrap test script expects a different prompt and must only
@@ -951,3 +953,141 @@ HEX SHA-256: `09aca5d28b28179ffd75b7f0caedc7c84565c238aa380a930ff998dcfdf5a41c`.
 Backup: `../solar_os-baselines/2026-09-26-network-services/`.
 The board is running this image; Ethernet is enabled in the tested session.
 After reboot, use `network up` again.
+
+
+## Fitted QSPI flash and SD/flash file operations — 2026-09-26
+
+The current `teensy41_network` profile enables `SK_QSPI_FLASH` and mounts the
+soldered flash as LittleFS. The user supplied part number W25Q128JVSIQ; the PJRC
+JEDEC lookup reports `W25Q128JV*M (DTR)`, capacity 16,777,216 bytes. This records
+the observed driver identification rather than reconciling the package marking.
+Both fitted PSRAM and flash remain usable. The separate shell/audio recovery
+profiles keep SD-only storage.
+
+| Path | Meaning in the flash-enabled profile |
+| --- | --- |
+| `/flash/...` | Files on the added QSPI flash |
+| `/sd/...` | Files on the native SDIO card |
+| `/file`, `/directory/...` | Existing SD paths, preserved for compatibility |
+| `/` | Root view of SD entries plus the available `sd` and `flash` mounts |
+
+`/sd` and `/flash` are reserved, case-sensitive mount names. If the SD card
+already contains names `sd` or `flash`, those entries are still accessible as
+`/sd/sd` and `/sd/flash`. A missing flash mount returns an error rather than
+silently writing a same-named SD directory. Path normalization occurs before
+volume selection; `cd ..` from `/flash` returns to `/`.
+
+```text
+flash status
+ls /flash
+cp /sd/test.txt /flash/test.txt
+cp /flash/test.txt /sd/test-copy.txt
+edit /flash/hello.py
+python /flash/hello.py
+```
+
+These examples use existing files or new names; `cp` and `mv` still refuse to
+replace an existing destination. Ordinary `ls`, `cat`, `mkdir`, `rm`, same-volume
+`mv`, editor/hex editor, Python files and audio file access go through the shared
+adapter. File opens preserve read/write/append/update, exclusive creation, seek,
+flush/sync and close errors. The 16-descriptor limit is shared across volumes;
+an exhausted table is detected before truncation. LittleFS's raw C API is used
+for file descriptors so Arduino `File` cannot hide read/write/sync errors.
+
+Cross-volume **file** `mv` copies and closes/syncs the destination before removing
+the source. It is not atomic: a failure while removing the source leaves both
+copies. Cross-volume directory moves are unsupported. Raw POSIX `rename()` still
+returns `EXDEV` across volumes; the higher-level OS move service performs the
+copy/remove operation. Mount roots are protected before recursive deletion can
+traverse their children. Other storage limitations remain: one owner task,
+synthetic metadata/permissions, bounded paths/offsets and no SD hot-removal recovery.
+
+### Mounting and initialization policy
+
+PJRC's `LittleFS_QSPIFlash::begin()` normally attempts formatting after a failed
+mount. This profile links `--wrap=lfs_format` to reject that fallback. The only
+permitted initialization path first reads **every byte** of the configured chip
+and requires all bytes to be `0xFF`. Read failure or any existing data rejects
+initialization before erase/program operations. Existing mounted/open files also
+block initialization. No erase/reformat command is exposed.
+
+- `flash status`: detected chip, capacity, mount state, filesystem usage, open handles.
+- `flash mount`: retry mounting an existing filesystem; no automatic formatting.
+- `flash scan`: read-only full-chip blank check; an initialized filesystem contains data.
+- `flash init`: explicitly initialize a completely erased, unmounted chip only.
+
+The fitted chip was confirmed blank and then initialized during this session.
+It now mounts automatically at boot. **Do not run `flash init` during normal use**;
+it will refuse the existing filesystem. Program firmware flash is separate from
+this added storage. No PSRAM filesystem or persistent NVS settings were enabled.
+
+LittleFS code and the storage adapter are placed in cached program flash to
+preserve RAM1. The QSPI driver uses the library's flash command slots on FlexSPI2,
+coexisting with memory-mapped PSRAM. Mount wrapping installs 256-byte internal-RAM
+staging callbacks before the first LittleFS read. Caller buffers in PSRAM are
+copied before/after the IP transfer; short critical sections cover each read or
+page program, not whole files or block erases. Directory/file leases prevent reinitializing
+an in-use filesystem. Each backend stays beneath the existing OS/app file APIs;
+no flash-specific editor, Python or player implementation was introduced.
+
+### Flash validation
+
+Host tests use the actual LittleFS implementation with a NOR-like memory device.
+They verify failed-mount fallback cannot format, a nonblank byte at the very end
+of the device blocks initialization, read failures prevent initialization, and
+an explicitly initialized filesystem preserves a saved file after remount.
+Undefined-behavior sanitizer passes. Existing host parser/core/path/calculator
+checks and the shell-only build also passed; path tests cover leaving a mount
+with `..` and mount-prefix lookalikes.
+
+Initial read-only hardware log: `/tmp/teensy-flash-probe.json`. The first hardware
+suite verified blank-only initialization, binary file operations and root
+protection but stopped on a test-client error: Ctrl-A selects all, so its second
+editor save replaced the program with just a comment. The corrected suite passed
+(`/tmp/teensy-flash-files-recheck.json`). The reboot test client also needed to
+handle a transient `termios` error during USB reconnect. Persistence verification
+then passed in `/tmp/teensy-flash-persistence.json` after reflash and software reboot.
+
+A subsequent combined test with Ethernet active hit an imprecise BusFault during
+a large flash read into a Python PSRAM buffer. The fault PC was in the audio input
+ISR, so it does not identify the faulting instruction. The original QSPI driver
+transferred directly into the caller buffer while servicing the FlexSPI2 FIFO;
+flash IP transfers and PSRAM share that controller. Internal-RAM staging and
+short critical sections address that overlap. The combined rerun passed 20
+65,806-byte read/write/hash cycles, editor/Python operations, and stereo MP3,
+mono MP3 and WAV playback from flash while Ethernet remained started.
+
+The unchanged Python HTTP example also ran from flash and saved hash-verified
+downloads there. The SD suite's deliberate recursion test left a historical
+console stack low-water mark of 448 words. The flash profile now allocates
+10,240 words instead of 8,192 and reserves 8 KiB below Python's recursion limit
+for native storage/network calls. Increasing the allocation alone would merely
+allow deeper Python recursion. The flash suite exercises file I/O while handling
+a recursion error before unwinding. SD-only profiles keep their original limits.
+
+Final build: 447,968 bytes RAM1, 153,828 bytes RAM2 and 582,268 bytes program
+flash. The final combined run retained 23,940 internal heap bytes, 8,385,240
+PSRAM bytes and 1,969 words of console stack after recursion/file stress. Flash
+reported zero open handles. Logs:
+
+- `/tmp/teensy-flash-combined-final.json`: 20 large-buffer cycles, recursion-limit
+  file I/O, copy/move/modes, editor/Python, and three flash audio fixtures.
+- `/tmp/teensy-flash-python-final.json`: unchanged Python HTTP example on flash,
+  hash-verified downloads, network errors/cancellation and session cleanup.
+- `/tmp/teensy-flash-persistence-final.json`: software reboot and hashes/script
+  verified in `_solaros_flash_d42e398fc7` on both volumes.
+- `/tmp/teensy-flash-network-final.json`: shared registry/TCP/UDP, timeout/cancel,
+  channel quotas, cleanup and restart after reboot; Ethernet left up.
+- `/tmp/teensy-flash-sd-regression.json` and `/tmp/teensy-flash-python-sd.json`:
+  existing SD/editor/Python and HTTP-to-SD suites on the staged-I/O build before
+  the final stack-reserve adjustment.
+
+Firmware HEX SHA-256:
+`bfd23b205650e2360bb2d343dc909f431f0d3b9eccb3d143b5faba9b4f795a09`.
+Firmware, test logs and recovery notes are preserved outside the repository in
+`../solar_os-baselines/2026-09-26-flash-storage/`.
+
+This is not a full-capacity write test, endurance test, power-cut recovery test
+or missing-SD hardware validation. Flash-root protection was exercised immediately
+after blank-chip initialization, when only test data existed there; later runs
+never issue recursive deletion against a pre-existing flash root.

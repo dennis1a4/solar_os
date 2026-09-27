@@ -108,11 +108,10 @@ esp_err_t solar_os_storage_normalize_path(const char *path, char *out, size_t ou
         return ESP_ERR_INVALID_ARG;
     }
 
-    char root[SOLAR_OS_STORAGE_MOUNT_POINT_MAX];
-    esp_err_t ret = solar_os_storage_path_mount_point(path, root, sizeof(root));
-    if (ret != ESP_OK) {
-        return ret;
-    }
+    // One namespace: /sd and /flash are mount points, and .. can leave either.
+    if (path[0] != '/') return ESP_ERR_INVALID_ARG;
+    const char root[] = "/";
+    esp_err_t ret = ESP_OK;
 
     const size_t root_len = strlen(root);
     if (root_len >= out_len) {

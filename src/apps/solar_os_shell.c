@@ -516,6 +516,9 @@ static bool shell_prepare_app_launch_args(
 
 /* Small serial-only profile for platforms bringing up the shared shell.
  * Default builds retain the complete command and service completion tables. */
+#if SK_QSPI_FLASH
+void solar_os_shell_cmd_flash(solar_os_context_t *ctx, int argc, char **argv);
+#endif
 static const shell_command_t shell_builtin_commands[] = {
 #if SOLAR_OS_SHELL_CORE_ONLY
     {"help", "list shell commands", cmd_commands},
@@ -527,6 +530,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"uptime", "show time since boot", solar_os_shell_cmd_uptime},
     {"clear", "clear the screen", solar_os_shell_cmd_clear},
     {"setterm", "set serial terminal size", solar_os_shell_cmd_setterm},
+#if SK_QSPI_FLASH
+    {"flash", "QSPI flash status, mount and blank-chip initialization", solar_os_shell_cmd_flash},
+#endif
 #if SK_ETHERNET
     {"network", "network interfaces, routes and Ethernet controls", solar_os_shell_cmd_network},
 #endif

@@ -234,3 +234,42 @@ restart. It creates no SD files. Use `--board-ip IP` if the board is on a differ
 LAN; this selects the host interface for the fixture servers, not a fixed board
 address. No LAN scan is performed. Keep the standard Python socket/HTTP-to-SD
 suite as a separate regression check.
+
+
+## Added QSPI flash
+
+The flash-enabled `teensy41_network` build exposes `flash status`, `mount`, `scan`
+and blank-only `init`. Startup cannot format the chip. With the monitor closed:
+
+```sh
+bash scripts/ports/test_teensy41_flash_host.sh
+python3 scripts/ports/test_teensy41_flash.py --probe --log /tmp/teensy-flash-probe.json
+python3 scripts/ports/test_teensy41_flash.py --log /tmp/teensy-flash-files.json
+```
+
+The file suite requires a mounted filesystem, or explicit `--initialize-blank`
+for a new chip. That option still refuses any nonblank media. It creates unique
+`/sd/_solaros_flash_<id>` and `/flash/_solaros_flash_<id>` test directories, checks
+65,806-byte binary transfers both ways, 20 PSRAM-buffer read/write/hash cycles,
+file I/O at Python's recursion limit, file moves/modes, editor save/replacement,
+Python execution, handle exhaustion and cleanup. Files remain for persistence
+checks. It never overwrites unrelated paths. Optional `--audio-fixtures
+/_solaros_audio_<id>` copies the previously generated tone fixtures onto flash
+and plays them at 10% volume through the existing aplay app.
+
+Use the printed directory name to verify after a software reboot:
+
+```sh
+python3 scripts/ports/test_teensy41_flash.py --verify-existing _solaros_flash_<id> \
+  --reboot --log /tmp/teensy-flash-persistence.json
+```
+
+This does not replace a cold power-cycle or power-loss test. Existing SD tests
+remain applicable because their root paths retain the SD interpretation.
+Run the existing socket/HTTP suite with `--volume /flash` to execute the same
+example from flash and verify downloads there:
+
+```sh
+python3 scripts/ports/test_teensy41_python_network.py --volume /flash \
+  --log /tmp/teensy-flash-python-flash.json
+```

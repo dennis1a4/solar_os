@@ -17,7 +17,8 @@ the complete multi-session/service integration remain.
 Fitted PSRAM is detected as 8 MiB. Current work is on local `main`.
 Compatibility is the next priority: keep application logic shared and put board
 changes below OS services. The Ethernet profile now uses the shared network
-registry, managed TCP/UDP sessions and the existing `solaros.net` bindings.
+registry, managed TCP/UDP sessions and the existing `solaros.net` bindings. It
+also mounts the fitted QSPI flash at `/flash`, with SD at `/sd` and legacy `/` paths.
 
 ## Original 13-step plan
 
@@ -56,7 +57,7 @@ step. Partial implementations and compile checks do not mean full integration.
   and port: 1,000 cycles passed. Both changed together; the earlier disconnect
   cause is still unconfirmed. Try another computer if failures recur.
 - [ ] Test PSRAM beyond the repeated 4 KiB allocation check.
-- [ ] Bring up the fitted W25Q128JVSIQ flash; no probe or storage test yet.
+- [x] Detect the fitted 16 MiB Winbond QSPI flash, initialize only verified-blank media, and test LittleFS storage.
 - [x] Preserve the tested bring-up baseline in version control (`b46367f`).
 
 ## Milestones
@@ -83,6 +84,7 @@ understood, and a tested baseline is saved with reproduction instructions.
 - [x] Add a core shell profile, headless I/O, and one USB session adapter.
 - [x] Bridge read-only SD files/directories to upstream shell filesystem calls.
 - [x] Add writable SD streams/descriptors and test file operations, editor saves and Python I/O.
+- [x] Add SD/flash routing beneath common file APIs, including cross-volume file copy/move.
 - [ ] Add storage hot-removal recovery and remaining VFS semantics.
 - [ ] Implement persistent configuration storage.
 - [x] Integrate the upstream shell and application registry with one USB session.
@@ -269,3 +271,28 @@ from on-board tests.
   cycles also passed with Ethernet active. Saved the tested image under
   `../solar_os-baselines/2026-09-26-network-services/`; see the port notes for
   exact build sizes, SHA-256 and test logs.
+
+### Fitted QSPI flash / shared storage — 2026-09-26
+
+- The driver detects 16 MiB of Winbond flash (reported label `W25Q128JV*M (DTR)`).
+  A read-only full-chip scan found it erased. Explicit blank-only initialization
+  created LittleFS; startup never automatically formats after a failed mount.
+- `teensy41_network` routes existing file APIs to `/sd` or `/flash` while keeping
+  legacy SD paths under `/`. Editor, Python and copy/move commands use the common
+  storage adapter. Cross-volume file moves copy/close before deleting the source;
+  raw POSIX rename and cross-volume directory moves remain unsupported.
+- Hardware verified binary copies in both directions, cross-volume file moves,
+  append/update/truncate/exclusive-open modes, descriptor exhaustion protection,
+  editor save/replacement, Python execution and cleanup. Files survived a firmware
+  update and software reboot; no initialization was needed afterward.
+- Full-capacity write/erase endurance, cold power-cycle/power-loss tests and
+  missing-SD operation of this new profile remain separate follow-up checks.
+- Combined Ethernet/flash testing exposed a BusFault during a large Python
+  PSRAM-buffer read. Added internal-RAM staging around QSPI transfers; the rerun
+  passed 20 large read/write/hash cycles and MP3/WAV playback from flash.
+  The same HTTP example runs from either volume and saves verified downloads.
+  Increased the flash profile's console stack and native-call reserve beneath
+  Python's recursion limit for nested Python/network/LittleFS operations.
+- Final recursion/file stress retained 1,969 stack words; reboot persistence and
+  shared TCP/UDP regression passed. Tested firmware and logs are saved in
+  `../solar_os-baselines/2026-09-26-flash-storage/`.

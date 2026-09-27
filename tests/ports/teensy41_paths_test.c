@@ -23,5 +23,13 @@ int main(void) {
     assert(solar_os_storage_normalize_path(NULL, path, sizeof(path)) == ESP_ERR_INVALID_ARG);
     assert(solar_os_storage_resolve_path_at("/one", NULL, path, sizeof(path)) == ESP_OK);
     assert(strcmp(path, "/one") == 0);
+    assert(solar_os_storage_resolve_path_at("/flash", "..", path, sizeof(path)) == ESP_OK);
+    assert(strcmp(path, "/") == 0);
+    assert(solar_os_storage_normalize_path("/flash/../sd/data.bin", path, sizeof(path)) == ESP_OK);
+    assert(strcmp(path, "/sd/data.bin") == 0);
+    assert(solar_os_storage_normalize_path("//sd///flash/./data.bin", path, sizeof(path)) == ESP_OK);
+    assert(strcmp(path, "/sd/flash/data.bin") == 0);
+    assert(solar_os_storage_normalize_path("/flashish/data.bin", path, sizeof(path)) == ESP_OK);
+    assert(strcmp(path, "/flashish/data.bin") == 0);
     puts("Teensy storage paths: cwd, absolute paths, traversal bounds and length errors passed");
 }

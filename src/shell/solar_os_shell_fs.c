@@ -650,8 +650,11 @@ static bool paths_equal_trimmed(const char *a, const char *b)
 
 static bool shell_path_is_protected_root(const char *path)
 {
+    char mount[SOLAR_OS_STORAGE_MOUNT_POINT_MAX];
     return paths_equal_trimmed(path, "/") ||
-           paths_equal_trimmed(path, solar_os_storage_mount_point());
+           paths_equal_trimmed(path, solar_os_storage_mount_point()) ||
+           (solar_os_storage_path_mount_point(path, mount, sizeof(mount)) == ESP_OK &&
+            paths_equal_trimmed(path, mount));
 }
 
 static bool shell_remove_file(solar_os_shell_io_t *term,
