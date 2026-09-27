@@ -273,3 +273,69 @@ example from flash and verify downloads there:
 python3 scripts/ports/test_teensy41_python_network.py --volume /flash \
   --log /tmp/teensy-flash-python-flash.json
 ```
+
+## Teensy SSH client
+
+`teensy41_ssh` extends Ethernet/flash with the upstream SSH client and pinned
+libssh2/Mbed TLS. `scripts/ports/test_teensy41_ssh.py` requires Paramiko and
+pyserial, starts a temporary server on one LAN address and a random port, and
+uses disposable password credentials. It never executes commands on the host
+or changes the system SSH service. SolarOS retains the fixture's public host
+key in its normal `.ssh/known_hosts` file, scoped to the random port.
+
+```sh
+python3 -m venv --system-site-packages /tmp/solaros-ssh-testenv
+/tmp/solaros-ssh-testenv/bin/pip install paramiko pyserial
+/tmp/solaros-ssh-testenv/bin/python scripts/ports/test_teensy41_ssh.py \
+  --log /tmp/teensy-ssh-full.json
+```
+
+The full test covers password auth, 4 KiB terminal output, input/backspace/Ctrl-C,
+wrong-password and changed-host-key rejection, normal/abrupt disconnection,
+Ctrl-] cancellation (including a silent handshake peer), repeated sessions,
+and memory recovery. `--smoke` runs just the successful login/I/O/exit path.
+
+### Teensy Files integration
+
+Use the `teensy41_files` profile for the combined SSH and Files firmware.
+The fixture needs `pyserial` and `pyte` in a host virtual environment:
+
+```sh
+python scripts/ports/test_teensy41_files.py --log /tmp/teensy-files.json
+bash scripts/ports/test_teensy41_children_host.sh
+```
+
+The serial monitor must be closed. The device test creates unique
+`_solaros_files_<random>` directories on SD and flash and retains them. It drives
+the real two-pane TUI through a terminal emulator, checks editor return, copy,
+move in both directions, recursive copy, mkdir/delete, ZIP payloads, copy
+cancellation and partial cleanup, failed Python child return, numeric sizes and
+memory/handle cleanup. Use `files /` on the board; Q exits. Build/upload with
+`PLATFORMIO_BUILD_DIR=/tmp/solaros-files-build pio run -e teensy41_files`
+(add `-t upload` for upload).
+
+### Teensy settings and text apps
+
+`teensy41_apps` extends the combined Files profile with flash-backed preferences
+and the shared `less`, `notes`, and `sheet` applications. Build separately:
+
+```sh
+PLATFORMIO_BUILD_DIR=/tmp/solaros-apps-build pio run -e teensy41_apps
+bash scripts/ports/test_teensy41_settings_host.sh
+python scripts/ports/test_teensy41_apps.py --log /tmp/teensy-apps.json
+```
+
+The hardware suite requires pyserial and pyte, a closed serial monitor, SD and
+mounted flash. It tests saved identity/geometry/startup selection across reboot,
+both storage volumes, pager search, Notes save/reopen, Sheet formulas, Files child
+return, and repeated lifecycle/memory cleanup. Unique `_apps_<random>` fixtures
+remain. Original preferences are restored. A temporary startup script is created
+only if none exists, then removed; an existing script is preserved. If interrupted,
+use `--restore-from <previous-log>` with a different `--log` path to recover the
+original preferences before retrying. The test waits for the reboot acknowledgement
+before dropping USB DTR. Serial tests must run one at a time.
+
+Settings host tests inject sync/rename failure, validate corrupt/truncated data,
+check staged writes, type/length/capacity bounds, read-only and stale handles,
+and unchanged-value write suppression under ASAN/UBSAN. Sanitizers require
+execution outside the restricted sandbox on this host.

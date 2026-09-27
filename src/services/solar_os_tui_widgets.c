@@ -450,7 +450,7 @@ solar_os_tui_input_action_t solar_os_tui_input_key(
     if (len >= capacity) return SOLAR_OS_TUI_INPUT_NONE;
     if (state->cursor > len) state->cursor = len;
     solar_os_tui_input_action_t action = SOLAR_OS_TUI_INPUT_NONE;
-    if (key == SOLAR_OS_KEY_ENTER) return SOLAR_OS_TUI_INPUT_SUBMIT;
+    if (key == SOLAR_OS_KEY_ENTER || key == '\r') return SOLAR_OS_TUI_INPUT_SUBMIT;
     if (key == SOLAR_OS_KEY_ESCAPE) return SOLAR_OS_TUI_INPUT_CANCEL;
     if (key == SOLAR_OS_KEY_LEFT) state->cursor = tui_widget_previous(text, state->cursor);
     else if (key == SOLAR_OS_KEY_RIGHT) state->cursor = tui_widget_next(text, state->cursor);

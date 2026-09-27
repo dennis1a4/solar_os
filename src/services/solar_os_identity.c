@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include "nvs.h"
 #include "solar_os_log.h"
 #include "solar_os_storage.h"

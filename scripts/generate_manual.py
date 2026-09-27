@@ -42,6 +42,7 @@ DERIVED_ALIAS_OWNERS = {
     ("command.commands", "commands"): "commands",
     ("command.control", "control"): "controls",
     ("command.expansion", "expansion"): "expansion",
+    ("command.flash", "flash"): "flash",
     ("command.gpio", "gpio"): "gpio.analog",
     ("command.help", "help"): "help",
     ("command.i2c", "i2c"): "compatibility.io",
@@ -110,6 +111,10 @@ def registry_conditions(
     """Read the actual preprocessor gate for each registry entry."""
     conditions: dict[str, str] = {}
     stack: list[str] = []
+    branches: list[tuple[int, int]] = []
+    alternatives: list[list[str]] = []
+    entry_branches: dict[str, list[dict[int, int]]] = {}
+    branch_id = 0
     inside = False
     closed = False
     pattern = re.compile(entry_pattern)
@@ -123,22 +128,51 @@ def registry_conditions(
             break
         if line.startswith("#if "):
             stack.append(line[4:].strip())
+            branch_id += 1
+            branches.append((branch_id, 0))
+            alternatives.append([line[4:].strip()])
             continue
         if line == "#endif":
             if not stack:
                 raise ValueError(f"{path}: unmatched #endif in {array_declaration}")
             stack.pop()
+            branches.pop()
+            alternatives.pop()
             continue
-        if line == "#else" or line.startswith(("#ifdef ", "#ifndef ", "#elif ")):
+        if line == "#else" or line.startswith("#elif "):
+            if not branches or branches[-1][1] == -1:
+                raise ValueError(f"{path}: unmatched or repeated #else in {array_declaration}")
+            excluded = " || ".join(f"({item})" for item in alternatives[-1])
+            stack[-1] = f"!({excluded})"
+            if line.startswith("#elif "):
+                expression = line[6:].strip()
+                stack[-1] += f" && ({expression})"
+                alternatives[-1].append(expression)
+                branches[-1] = (branches[-1][0], branches[-1][1] + 1)
+            else:
+                branches[-1] = (branches[-1][0], -1)
+            continue
+        if line.startswith(("#ifdef ", "#ifndef ")):
             raise ValueError(
                 f"{path}: unsupported conditional {line!r} in {array_declaration}"
             )
         match = pattern.search(line)
         if match is not None:
             name = match.group(1)
+            condition = " && ".join(f"({item})" for item in stack)
+            current = dict(branches)
             if name in conditions:
-                raise ValueError(f"{path}: duplicate registry entry {name}")
-            conditions[name] = " && ".join(f"({item})" for item in stack)
+                # The reduced port table and full table intentionally repeat
+                # names, but only opposite arms of a common #if are exclusive.
+                if not all(any(key in current and current[key] != arm
+                               for key, arm in previous.items())
+                           for previous in entry_branches[name]):
+                    raise ValueError(f"{path}: duplicate registry entry {name}")
+                conditions[name] = f"({conditions[name]}) || ({condition})"
+                entry_branches[name].append(current)
+            else:
+                conditions[name] = condition
+                entry_branches[name] = [current]
     if not inside or not closed or stack:
         raise ValueError(f"{path}: malformed registry {array_declaration}")
     return conditions

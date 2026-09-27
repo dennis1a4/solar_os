@@ -195,6 +195,8 @@ static void test_input(void)
     assert(text[0] == '\0');
     assert(solar_os_tui_input_key(text, sizeof(text), &state,
                                   SOLAR_OS_KEY_ENTER, 2) == SOLAR_OS_TUI_INPUT_SUBMIT);
+    assert(solar_os_tui_input_key(text, sizeof(text), &state,
+                                  '\r', 2) == SOLAR_OS_TUI_INPUT_SUBMIT);
 }
 
 static void test_masked_input_draw(void)

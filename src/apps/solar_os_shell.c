@@ -530,6 +530,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"uptime", "show time since boot", solar_os_shell_cmd_uptime},
     {"clear", "clear the screen", solar_os_shell_cmd_clear},
     {"setterm", "set serial terminal size", solar_os_shell_cmd_setterm},
+#if SK_SETTINGS
+    {"identity", "show or save user and hostname", solar_os_shell_cmd_identity},
+#endif
 #if SK_QSPI_FLASH
     {"flash", "QSPI flash status, mount and blank-chip initialization", solar_os_shell_cmd_flash},
 #endif

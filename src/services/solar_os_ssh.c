@@ -430,6 +430,10 @@ done:
     }
 
     UBaseType_t stack_free_words = uxTaskGetStackHighWaterMark(NULL);
+#if !defined(ESP_PLATFORM)
+    // ESP-IDF reports bytes; upstream FreeRTOS reports StackType_t elements.
+    stack_free_words *= sizeof(StackType_t);
+#endif
     SOLAR_OS_LOGI(TAG,
                   "SSH task stopped stack_min_free=%u bytes",
                   (unsigned)stack_free_words);

@@ -1095,3 +1095,229 @@ never issue recursive deletion against a pre-existing flash root.
 Root listing correction: `/` now enumerates mounts only; use `ls /sd` for SD
 files. Legacy absolute SD file paths still resolve for existing scripts. Verified
 mount-only listing and saved SD/flash file hashes in `/tmp/teensy-root-check.json`.
+
+## SSH client integration — 2026-09-26
+
+The separate `teensy41_ssh` profile extends the tested Ethernet/flash profile.
+It builds the existing SSH app, session service, authentication/key storage and
+crypto services. A headless guard discards the app's display-only renderer;
+serial terminal output uses its existing raw port path. The console now delivers
+periodic foreground events so background network output appears without typing.
+
+The shared SSH transport has an optional `SOLAR_OS_SSH_PORT_TRANSPORT` branch
+using the same nonblocking DNS/TCP/wait adapter as OS network sessions. The SSH
+app does not reference Teensy Ethernet APIs. Its connection prerequisite checks
+the shared preferred network path instead of ESP Wi-Fi. Crypto/session buffers
+use PSRAM; a foreground worker uses an internal OCRAM stack. The single-console
+runtime serializes foreground file access while that worker owns SSH files.
+Critical internal allocations now follow the shared OS policy: they may use
+reserved memory, while optional/fallback allocations must preserve the reserve.
+
+Dependencies are pinned by commit in `scripts/platformio_teensy_ssh.py` and
+cached under `.pio/teensy-ssh-deps/`: libssh2
+`2e1717456b8dd4c980e8e48d6dbfec524c2e62d1` and Mbed TLS 3.6.7
+`068ff080b369adfac81509f9b57b2afabaf82dc5`. Sources come from the official
+[libssh2 repository](https://github.com/libssh2/libssh2) and
+[Mbed TLS repository](https://github.com/Mbed-TLS/mbedtls/tree/v3.6.7).
+Crypto requests i.MX RT hardware TRNG bytes from the existing Ethernet worker.
+That worker remains the sole owner of QNEthernet's entropy pool; the SSH task
+does not reinitialize or access the generator independently. Requests consume
+only available bytes with a bounded retry wait and no clock-seeded fallback. The libraries are placed in cached program
+flash. SSH uses nonblocking I/O; generic POSIX socket/select support is not added.
+
+Known hosts use the existing trust-on-first-use policy and reject changed keys.
+Non-default ports are saved as `[host]:port`, matching OpenSSH's known-host format.
+Configuration files use the common storage service's `.ssh` directory on SD.
+
+Hardware password login passed against an isolated Paramiko server with an ECDSA
+host key. The fixture verifies 4 KiB output, keyboard/backspace/Ctrl-C forwarding,
+normal exit, wrong-password rejection, changed-host-key rejection, repeated
+Ctrl-] cancellation, abrupt server disconnect and cancellation during a stalled
+handshake. `/tmp/teensy-ssh-full-fixed.json` records the passing run. Internal
+heap returned to 12,132 bytes and PSRAM to 8,385,240 bytes after the repeated
+sessions; the worker retained at least 5,520 bytes of stack.
+
+Two integration failures were resolved before that pass: critical queue
+allocations were incorrectly denied by the port's reserve policy, and ignoring
+nonblocking cleanup's EAGAIN leaked sessions after cancellation. TCP shutdown now
+precedes final session freeing. The latter fix is in the shared SSH transport.
+
+```text
+network up
+ssh youruser@yourhost
+ssh youruser@yourhost 2222
+```
+
+Enter the server password at the prompt. Ctrl-C is forwarded to the remote
+terminal; Ctrl-] closes SSH and returns to SolarOS. This is an outbound IPv4
+client. Public-key authentication is compiled but has not yet been hardware
+validated; this does not add an SSH server, SFTP app or port forwarding UI.
+
+Build: `pio run -e teensy41_ssh`; upload with `-t upload` while the serial monitor
+is closed. It retains root mount-only listing, SD/flash, Python and audio.
+Initial SSH candidate footprint: RAM1 459,776 bytes, RAM2 182,580 bytes,
+program flash 757,416 bytes. HEX SHA-256:
+`8cf7771b6738938c655f1e510147cd85bcba87b07310a02ca3a89f2e70bd6725`.
+
+### Heap-boundary regression investigation — 2026-09-27
+
+The SSH candidate passed its SSH, SD and flash/audio tests but stalled in the
+shared TCP regression. A clean-boot repeat captured a MemManage fault in
+QNEthernet's buffered-data copy: address `0x2002e000` was the core's MPU main-stack
+guard. The pinned Teensy startup reserves the guard at `_estack - 8192`, while
+FreeRTOS defaults its main-stack/heap reservation to 4096 bytes. The build now
+sets `configMAIN_STACK_DEPTH=8192`, and memory initialization asserts that the
+heap ends before that guard. Another run still stalled with the reduced free
+heap; additional shell/TUI code has been placed in cached program flash to free
+internal RAM. That candidate has RAM1 421,888 bytes, RAM2 182,580 bytes and
+758,520 bytes of program flash. The full shared TCP/UDP hardware regression now passes in
+`/tmp/teensy-ssh-network-headroom.json`, including cancellation, quotas, repeated
+cleanup and restart. Internal free heap is stable at 39,956 / 94,176 bytes.
+The guard fix prevents allocations into the protected region. The second stall
+disappeared with additional headroom, consistent with TCP buffer allocation
+pressure; that second failure did not produce a diagnostic proving its cause. Full SSH revalidation also passed in `/tmp/teensy-ssh-headroom.json`.
+The tested SSH HEX/ELF and logs are preserved in
+`../solar_os-baselines/2026-09-27-ssh/`. Its HEX SHA-256 is
+`b24b88892b45e561acc4b97c1d4a4e2e1f59d5099f85f775aba09cf2d3b07a2b`.
+
+### Files integration — 2026-09-27
+
+`teensy41_files` extends the SSH profile with the existing Files app and ZIP
+service. Its miniz dependency is pinned to 3.1.2, commit
+`77d0dce8627735138c51770d1799a1ef48f2117d`, from the
+[official miniz repository](https://github.com/richgel999/miniz/tree/3.1.2).
+Only the caller-buffer compression/decompression and checksum code is built;
+SolarOS owns ZIP container handling and file I/O.
+
+The port now exposes mounted-volume enumeration and identifies `/` as a virtual
+root. The single-console runtime retains up to four app frames in PSRAM, so a
+resumable app can launch a child and regain its context, arguments and TUI when
+the child exits. Duplicate active instances are rejected. Completed Files copy
+and ZIP jobs use the shared task-wait helper before releasing worker resources.
+
+Host lifecycle tests cover repeated child return, failed allocation/start,
+duplicate rejection, replacement and cleanup under address/undefined-behavior
+sanitizers. The expanded hardware TUI test passed in `/tmp/teensy-files.json`:
+mount/root navigation, numeric file sizes, copy and move in both SD/flash
+directions, recursive directory copy, mkdir/delete, ZIP contents verified by
+Python's host ZIP reader, cancellation of a 1 MiB copy with partial-destination
+cleanup, return from a Python syntax error, repeated editor return and app exit.
+Internal heap returned to 45,892 / 94,144 bytes and PSRAM to 8,385,240 / 8,388,608
+bytes; flash reported zero open handles.
+
+Two additional port issues surfaced in these tests. Newlib-nano does not support
+the apps' long-long integer formatting, producing `luB` file sizes. The Files
+profile removes nano specs from compilation and linking, using full newlib with
+matching runtime headers. The initial copy worker also outranked the USB task;
+Escape was handled only after copying finished. The single-core worker adapter
+now caps app workers at priority 1, below the priority-2 USB and Ethernet tasks.
+Cancellation and partial-file cleanup passed with this mapping.
+The combined SSH regression also exposed a lost exit message when an app frame
+was freed. Root app exit results/messages now transfer through the shared shell
+session API before frame cleanup; a host test checks both the code and message.
+
+Run `files /` to browse mounts, or `files /sd` / `files /flash`. Tab switches
+panes; arrows navigate, Enter opens, Backspace goes up, C copies, M moves,
+N creates a folder, D deletes after confirmation, Z creates a ZIP, E opens the
+editor, and Q exits. Escape cancels a running copy; Ctrl-] exits a child app.
+This remains a single USB console with one shared foreground worker, not full
+multi-session support. Cross-volume regular-file moves and directory copies
+are verified; cross-volume directory moves remain unsupported.
+
+Combined build footprint: RAM1 421,920 bytes, RAM2 182,656 bytes, program flash
+801,100 bytes. HEX SHA-256:
+`5aa3e410abbef9e40fa068861f5afa7d7c55c9517ffbb09062e5164e5a6c1478`.
+The same image passed the full SSH suite (`/tmp/teensy-files-ssh.json`) and
+shared TCP/UDP suite (`/tmp/teensy-files-network.json`), including negative login,
+changed host keys, cancellation, repeated cleanup, channel limits and network
+restart. `/tmp/teensy-files-flash-audio.json` also passed SD/flash file modes,
+copy/move hashes, 20 large PSRAM-buffer read/write cycles, file I/O at Python's
+recursion limit, editor saves, descriptor protection/cleanup, and playback of
+stereo MP3, 48 kHz mono MP3 and 22 kHz mono WAV from flash. The console retained
+1,957 stack words after the deliberate recursion stress; internal heap/PSRAM
+returned to their pre-test values and flash handles returned to zero.
+
+The tested image, ELF, build/upload logs, hardware/host results and an uncommitted
+source snapshot are saved under `../solar_os-baselines/2026-09-27-files/`.
+Changes remain uncommitted at the user's request. Existing SD/flash test fixtures
+are retained; only unique directories were created during these tests.
+
+### Persistent settings and terminal apps — 2026-09-27
+
+The `teensy41_apps` profile extends `teensy41_files` with a bounded flash-backed
+NVS adapter and the unchanged upstream `less`, Notes, and Sheet applications.
+Use a separate `/tmp/solaros-apps-build` build directory. Settings live under
+`/flash/.solar-settings`; there is no SD fallback and no automatic formatting.
+
+```text
+identity                         # current user@hostname
+identity user dennis
+identity hostname superkeyboard
+setterm                          # dimensions, startup selection and path
+setterm size 100 30               # saves and applies USB geometry
+setterm startup flash            # auto, flash, or sd
+less /sd/example.txt
+less man:app.notes
+notes /flash/checklist.md
+sheet /sd/readings.csv
+```
+
+The shared identity service also supplies SSH's default username. Hostname here
+changes OS identity; it does not reconfigure Ethernet DHCP or mDNS. Startup
+selection uses the shared policy: auto selects mounted SD, otherwise flash;
+explicit selections do not fall back. The selected `/.shell/startup` file runs
+once per boot on the first USB shell connection, not on each reconnect. No startup
+file is created automatically. Timezone/network/audio/display preferences and the
+full NVS inspection/backup command remain outside this profile.
+
+The adapter supports u8, u16 and strings of at most 63 bytes, sixteen keys per
+namespace, and four handles; namespace/key names are 1–15 ASCII identifier
+characters. It is owned by the single console task and rejects simultaneous
+opens of the same namespace. Close discards uncommitted changes. Commit skips
+unchanged values, syncs a checksummed versioned snapshot to a temporary file,
+then uses LittleFS atomic replacement. General filesystem rename retains its
+existing no-clobber behavior. Missing flash or invalid snapshots produce errors;
+bad snapshots are never silently overwritten. Startup readers use defaults if
+settings cannot be read. Actual power-loss/endurance testing remains separate.
+
+Notes supports Markdown checklists/categories; Sheet is a CSV viewer with column
+formulas, not a cell editor. Both use the existing terminal widgets and storage
+bridge. A shared widget fix accepts serial CR as well as LF for Enter. Files can
+launch Sheet for CSV files and `less` via F3/View, returning to its retained TUI.
+The embedded manual includes focused references for the enabled apps. Its
+generator now handles mutually exclusive reduced/full command registries and
+the existing Python #elif gate, while still rejecting overlapping duplicates.
+
+The installed command-line loader rejected the initial 1,315,332-byte image at
+the 1 MiB Intel HEX boundary. Embedding only the relevant app reference pages
+reduced the image to 848,396 bytes. This uploader limitation still needs attention
+before a future image exceeds that boundary; the board itself has more flash.
+
+Validation on the final installed image:
+
+- `/tmp/teensy-apps.json`: saved identity, 100×30 geometry and startup selection
+  survived reboot; restore/reboot and a once-per-boot startup fixture passed.
+  less navigation/search and manual page, Notes add/check/category/save/reopen,
+  and Sheet quoted CSV/formulas/error handling passed on SD and flash. Files
+  returned from both Sheet and less. Twenty cycles of all three apps plus settings
+  writes left heap/PSRAM unchanged (44,556 / 8,385,240 free) and flash handles zero.
+- `/tmp/teensy-apps-files.json`: full Files copy/move/recursive copy/ZIP,
+  cancellation, editor/Python child return and memory cleanup passed.
+- `/tmp/teensy-apps-ssh.json`: full SSH login, terminal I/O, negative auth/host key,
+  cancellation, peer drop and repeated cleanup passed.
+- `/tmp/teensy-apps-network.json`: managed TCP/UDP, timeout/cancel, quotas,
+  stale handles, VM cleanup and network restart passed.
+- `/tmp/teensy-apps-flash-audio.json`: file modes/copy/move, PSRAM transfer stress,
+  recursive Python file I/O, editor, descriptor cleanup and MP3/WAV playback from
+  flash with Ethernet active passed. Final heap 44,772 / 93,024 bytes free; PSRAM
+  8,385,240 / 8,388,608 free; zero flash handles. The recursion stress retained
+  1,925 console stack words.
+- Settings transaction/failure/bounds tests and child lifecycle tests passed
+  under ASAN/UBSAN. All 14 manual-generator tests, the shared widget tests and
+  core/parser/path/cursor tests passed. The prior Files profile still builds.
+
+HEX SHA256: `2c87fe4d743aa13c3298b222cadb0df6da604174e8df37895e3208f88dc5aafb`.
+RAM1 423,040, RAM2 182,672, program flash 848,396 bytes. Saved under
+`../solar_os-baselines/2026-09-27-apps/` with ELF, logs and uncommitted source
+snapshot. Original preferences (`user@teensy41`, 80×24, startup auto) were restored;
+the temporary startup script was removed. Test directories remain. No commit/push.

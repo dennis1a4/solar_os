@@ -1504,6 +1504,10 @@ static esp_err_t files_run_zip_task(files_zip_request_t *request)
     while (!request->done) {
         vTaskDelay(poll_ticks);
     }
+    // Reclaim worker resources before another archive or foreground app starts.
+    if (!solar_os_task_wait_done(task, &request->done, SOLAR_OS_TASK_STOP_WAIT_MS)) {
+        return ESP_ERR_TIMEOUT;
+    }
     return request->result;
 }
 
@@ -1754,6 +1758,10 @@ static void files_worker_poll(solar_os_context_t *ctx)
     }
     files_worker_apply_progress();
     if (files.worker.task_done) {
+        if (!solar_os_task_wait_done(files.worker.task, &files.worker.task_done,
+                                     SOLAR_OS_TASK_STOP_WAIT_MS)) {
+            return;
+        }
         files_worker_finish();
     }
     files_render(ctx);

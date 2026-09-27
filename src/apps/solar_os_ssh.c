@@ -774,7 +774,10 @@ static void ssh_feed_output_char(solar_os_terminal_t *term, char ch)
 static void ssh_write_output(solar_os_context_t *ctx, const char *data, size_t len)
 {
     solar_os_shell_io_t *io = ssh_io(ctx);
-    if (solar_os_shell_io_kind(io) == SOLAR_OS_SHELL_IO_KIND_PORT) {
+    #if !SOLAR_OS_HEADLESS
+    if (solar_os_shell_io_kind(io) == SOLAR_OS_SHELL_IO_KIND_PORT)
+    #endif
+    {
         solar_os_shell_io_write_raw(io, data, len);
         ssh_flush(ctx);
         return;

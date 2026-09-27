@@ -14,16 +14,36 @@
 #include <unistd.h>
 
 #include "solar_os_log.h"
+#if !SOLAR_OS_SSH_PORT_TRANSPORT
 #include "lwip/netdb.h"
+#else
+#include "solar_os_net_transport.h"
+#include "solar_os_network.h"
+#include "solar_os_memory.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
 #include "solar_os_ssh.h"
 #include "solar_os_ssh_keys.h"
 #include "solar_os_storage.h"
+#if !SOLAR_OS_SSH_PORT_TRANSPORT
 #include "solar_os_wifi.h"
+#endif
 
 #define SOLAR_OS_SSH_TRANSPORT_SOCKET_WAIT_MS 100
 #define SOLAR_OS_SSH_TRANSPORT_DIR ".ssh"
 #define SOLAR_OS_SSH_TRANSPORT_KNOWN_HOSTS "known_hosts"
 #define SOLAR_OS_SSH_TRANSPORT_HOSTS "hosts"
+
+#if SOLAR_OS_SSH_PORT_TRANSPORT
+static void *ssh_alloc(size_t n, void **ctx) {
+    (void)ctx; return solar_os_memory_alloc(n, SOLAR_OS_MEMORY_TRANSIENT, "ssh.crypto");
+}
+static void ssh_free(void *p, void **ctx) { (void)ctx; solar_os_memory_free(p); }
+static void *ssh_realloc(void *p, size_t n, void **ctx) {
+    (void)ctx; return solar_os_memory_realloc(p, n, SOLAR_OS_MEMORY_TRANSIENT, "ssh.crypto");
+}
+#endif
 
 static bool transport_should_stop(const solar_os_ssh_transport_config_t *config)
 {
@@ -225,6 +245,13 @@ int solar_os_ssh_transport_wait_socket(const solar_os_ssh_transport_config_t *co
                                        int socket_fd,
                                        LIBSSH2_SESSION *session)
 {
+#if SOLAR_OS_SSH_PORT_TRANSPORT
+    if (transport_should_stop(config)) return -1;
+    int direction = session ? libssh2_session_block_directions(session) : LIBSSH2_SESSION_BLOCK_OUTBOUND;
+    return solar_os_net_transport_wait(socket_fd,
+        (direction & LIBSSH2_SESSION_BLOCK_OUTBOUND) != 0,
+        SOLAR_OS_SSH_TRANSPORT_SOCKET_WAIT_MS);
+#else
     while (!transport_should_stop(config)) {
         struct timeval timeout = {
             .tv_sec = 0,
@@ -265,6 +292,7 @@ int solar_os_ssh_transport_wait_socket(const solar_os_ssh_transport_config_t *co
     }
 
     return -1;
+#endif
 }
 
 static esp_err_t transport_connect_socket(const solar_os_ssh_transport_config_t *config,
@@ -277,6 +305,33 @@ static esp_err_t transport_connect_socket(const solar_os_ssh_transport_config_t 
         return ESP_ERR_INVALID_ARG;
     }
 
+#if SOLAR_OS_SSH_PORT_TRANSPORT
+    char host[SOLAR_OS_SSH_HOST_MAX], ip[48];
+    esp_err_t lookup = transport_lookup_hosts_file(config, host, sizeof(host));
+    if (lookup != ESP_OK && lookup != ESP_ERR_NOT_FOUND) return lookup;
+    transport_send_status(config, "resolving host");
+    if (solar_os_net_transport_resolve(host, ip, sizeof(ip), 10000,
+                                      config->should_stop, config->user)) {
+        transport_send_error(config, "host resolution failed"); return ESP_FAIL;
+    }
+    int fd = solar_os_net_transport_open(false, 0);
+    if (fd < 0) return ESP_FAIL;
+    transport_send_status(config, "connecting");
+    int rc = solar_os_net_transport_connect(fd, ip, config->port);
+    TickType_t started = xTaskGetTickCount();
+    while (rc < 0 && errno == EINPROGRESS && !transport_should_stop(config) &&
+           (xTaskGetTickCount()-started)*portTICK_PERIOD_MS < 10000) {
+        int ready = solar_os_net_transport_wait(fd, true, 50);
+        if (ready > 0) { rc = 0; break; }
+        if (ready < 0) break;
+        errno = EINPROGRESS;
+    }
+    if (rc < 0 || transport_should_stop(config)) {
+        solar_os_net_transport_close(fd);
+        transport_send_error(config, "TCP connect failed"); return ESP_FAIL;
+    }
+    *socket_fd = fd; return ESP_OK;
+#else
     char port_str[8];
     struct addrinfo hints = {
         .ai_family = AF_INET,
@@ -377,6 +432,7 @@ static esp_err_t transport_connect_socket(const solar_os_ssh_transport_config_t 
         transport_send_error(config, "TCP connect failed");
     }
     return ret;
+#endif
 }
 
 static int transport_knownhost_key_type(int hostkey_type)
@@ -487,8 +543,11 @@ static esp_err_t transport_verify_host_key(const solar_os_ssh_transport_config_t
     }
 
     const char comment[] = "SolarOS";
+    char known_host_name[SOLAR_OS_SSH_HOST_MAX + 10];
+    if (config->port == 22) snprintf(known_host_name, sizeof(known_host_name), "%s", config->host);
+    else snprintf(known_host_name, sizeof(known_host_name), "[%s]:%u", config->host, (unsigned)config->port);
     int rc = libssh2_knownhost_addc(known_hosts,
-                                    config->host,
+                                    known_host_name,
                                     NULL,
                                     hostkey,
                                     key_len,
@@ -694,12 +753,21 @@ esp_err_t solar_os_ssh_transport_open(const solar_os_ssh_transport_config_t *con
         .socket_fd = -1,
     };
 
+#if SOLAR_OS_SSH_PORT_TRANSPORT
+    solar_os_network_path_info_t path;
+    if (!solar_os_network_path_get_preferred(&path) || !path.ready) {
+        transport_send_error(config, "network is not connected");
+        return ESP_ERR_INVALID_STATE;
+    }
+#else
     solar_os_wifi_status_t wifi_status;
     solar_os_wifi_get_status(&wifi_status);
     if (!wifi_status.has_ip) {
         transport_send_error(config, "WiFi is not connected");
         return ESP_ERR_INVALID_STATE;
     }
+
+#endif
 
     if (libssh2_init(0) != 0) {
         transport_send_error(config, "libssh2 init failed");
@@ -713,7 +781,11 @@ esp_err_t solar_os_ssh_transport_open(const solar_os_ssh_transport_config_t *con
         return ret != ESP_OK ? ret : ESP_ERR_INVALID_STATE;
     }
 
+#if SOLAR_OS_SSH_PORT_TRANSPORT
+    transport->session = libssh2_session_init_ex(ssh_alloc, ssh_free, ssh_realloc, NULL);
+#else
     transport->session = libssh2_session_init();
+#endif
     if (transport->session == NULL) {
         transport_send_error(config, "SSH session allocation failed");
         solar_os_ssh_transport_close(transport, NULL);
@@ -746,12 +818,26 @@ void solar_os_ssh_transport_close(solar_os_ssh_transport_t *transport,
     if (transport->session != NULL) {
         (void)libssh2_session_disconnect(transport->session,
                                          disconnect_message != NULL ? disconnect_message : "SolarOS shutdown");
+        // Session/channel free may return EAGAIN while TCP is live. Shut down
+        // the transport first so cancellation cannot abandon allocated state.
+        if (transport->socket_fd >= 0) {
+#if SOLAR_OS_SSH_PORT_TRANSPORT
+            solar_os_net_transport_close(transport->socket_fd);
+            transport->socket_fd = -1;
+#else
+            (void)shutdown(transport->socket_fd, SHUT_RDWR);
+#endif
+        }
         (void)libssh2_session_free(transport->session);
         transport->session = NULL;
     }
     if (transport->socket_fd >= 0) {
+#if SOLAR_OS_SSH_PORT_TRANSPORT
+        solar_os_net_transport_close(transport->socket_fd);
+#else
         (void)shutdown(transport->socket_fd, SHUT_RDWR);
         close(transport->socket_fd);
+#endif
         transport->socket_fd = -1;
     }
     if (transport->libssh2_ready) {

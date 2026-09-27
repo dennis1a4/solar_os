@@ -1,4 +1,9 @@
 #pragma once
+#if SK_TEXT_APPS
+#define SOLAR_OS_PACKAGE_APP_LESS 1
+#define SOLAR_OS_PACKAGE_APP_NOTES 1
+#define SOLAR_OS_PACKAGE_APP_SHEET 1
+#endif
 /* Incremental USB shell profile; enable only integrated applications. */
 #define SOLAR_OS_PACKAGE_CORE_FS_COMMANDS 1
 #define SOLAR_OS_PACKAGE_APP_CALC 1
@@ -14,4 +19,12 @@
 #if SK_ETHERNET
 #define SOLAR_OS_PACKAGE_SERVICE_NETWORK 1
 #define SOLAR_OS_PACKAGE_SERVICE_NET 1
+#endif
+
+#if SK_SSH
+#define SOLAR_OS_PACKAGE_APP_SSH 1
+#endif
+
+#if SK_FILES
+#define SOLAR_OS_PACKAGE_APP_FILES 1
 #endif

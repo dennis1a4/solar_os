@@ -17,6 +17,8 @@ extern "C" const char *esp_err_to_name(esp_err_t error) {
     case ESP_ERR_NOT_FOUND: return "NOT_FOUND";
     case ESP_ERR_NOT_SUPPORTED: return "NOT_SUPPORTED";
     case ESP_ERR_TIMEOUT: return "TIMEOUT";
+    case ESP_ERR_INVALID_CRC: return "INVALID_CRC";
+    case ESP_ERR_NOT_ALLOWED: return "NOT_ALLOWED";
     default: return "UNKNOWN";
     }
 }

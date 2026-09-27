@@ -9,6 +9,10 @@ extern "C" {
 }
 #include <QNEthernet.h>
 #include <qnethernet/QNDNSClient.h>
+#if SK_SSH
+extern "C" size_t qnethernet_hal_entropy_available();
+extern "C" size_t qnethernet_hal_fill_entropy(void *,size_t);
+#endif
 #include <cerrno>
 #include <cstring>
 #include "network_socket.h"
@@ -84,6 +88,21 @@ extern "C" void sk_net_transport_poll(int ready) {
     Slot *s=nullptr;
     for (auto &slot:slots) if (slot.handle==q.handle && q.handle>0) s=&slot;
     switch(q.op) {
+#if SK_SSH
+    case SK_NET_ENTROPY: {
+        // Ethernet and SSH share one TRNG owner. Never reinitialize it from
+        // the SSH task, or race the Ethernet stack's entropy pool.
+        if (TRNG_MCTL & TRNG_MCTL_ERR) { r.error=EIO; break; }
+        size_t n=qnethernet_hal_entropy_available();
+        if (q.length<0 || q.length>SK_NET_CHUNK) { r.error=EINVAL; break; }
+        if (n>size_t(q.length)) n=q.length;
+        if (n) {
+            r.value=qnethernet_hal_fill_entropy(r.data,n);
+            if (size_t(r.value)!=n) r.error=EIO;
+        }
+        break;
+    }
+#endif
     case SK_NET_OPEN:
     case SK_NET_SERVICE_OPEN: {
         unsigned legacy=0;

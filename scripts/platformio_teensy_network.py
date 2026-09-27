@@ -10,7 +10,12 @@ script = script.replace(marker, marker + "\n\t\t*libQNEthernet.a:*(.text* .rodat
                         + "\n\t\t*network_socket.cpp.o(.text* .rodata*)"
                         + "\n\t\t*python_network.c.o(.text* .rodata*)")
 script = script.replace(marker, marker + "\n\t\t*libLittleFS.a:*(.text* .rodata*)")
-for obj in ("flash_storage.cpp", "flash_policy.c", "shell_storage.cpp", "network.cpp", "net_transport.c", "network_registry.cpp", "python_solaros_net.c",
+script = script.replace(marker, marker + "\n\t\t*libssh2.a:*(.text* .rodata*)\n\t\t*libmbedcrypto.a:*(.text* .rodata*)")
+script = script.replace(marker, marker + "\n\t\t*libminiz.a:*(.text* .rodata*)\n\t\t*solar_os_files.c.o(.text* .rodata*)\n\t\t*solar_os_zip.c.o(.text* .rodata*)")
+for obj in ("settings.c", "solar_os_identity.c", "solar_os_less.c", "solar_os_notes.c", "solar_os_sheet.c", "solar_os_manual.c",
+            "ssh_platform.cpp", "solar_os_ssh.c", "solar_os_ssh_transport.c", "solar_os_ssh_keys.c", "solar_os_crypto.c", "flash_storage.cpp", "flash_policy.c", "shell_storage.cpp", "network.cpp", "net_transport.c", "network_registry.cpp", "python_solaros_net.c",
+            "solar_os_tui.c", "solar_os_tui_widgets.c", "solar_os_edit.c", "solar_os_calc.c",
+            "solar_os_shell.c", "solar_os_shell_fs.c", "solar_os_shell_io.c", "solar_os_expr.c",
             "solar_os_net_session.c", "solar_os_network.c", "solar_os_shell_network_status.c"):
     script = script.replace(marker, marker + "\n\t\t*" + obj + ".o(.text* .rodata*)")
 output = Path(env.subst("$BUILD_DIR")) / "teensy41_network.ld"

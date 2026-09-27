@@ -321,6 +321,19 @@ extern "C" int __wrap_rename(const char *oldpath,const char *newpath) {
 #endif
     if (!SD.sdfs.rename(a.path,b.path)) { errno=EIO; return -1; } return 0;
 }
+#if SK_SETTINGS
+// LittleFS rename atomically replaces a regular destination. Keep general shell
+// rename's no-clobber policy; only the settings transaction uses replacement.
+extern "C" esp_err_t sk_settings_replace(const char *source, const char *dest) {
+    constexpr const char *prefix="/flash/.solar-settings/";
+    Route a,b;
+    if (!route_path(source,a) || !route_path(dest,b) || !a.flash || !b.flash ||
+        strncmp(source,prefix,strlen(prefix)) || strncmp(dest,prefix,strlen(prefix)) ||
+        strncmp(a.path,"/.solar-settings/",17) || strncmp(b.path,"/.solar-settings/",17))
+        return ESP_ERR_INVALID_ARG;
+    return flash_result(lfs_rename(sk_flash_fs(),a.path,b.path))==0 ? ESP_OK : ESP_FAIL;
+}
+#endif
 extern "C" bool solar_os_storage_flash_is_mounted() {
 #if SK_QSPI_FLASH
     return sk_flash_mounted();
@@ -330,7 +343,36 @@ extern "C" bool solar_os_storage_flash_is_mounted() {
 }
 extern "C" bool solar_os_storage_is_mounted() { return sk_sd_is_mounted() || solar_os_storage_flash_is_mounted(); }
 extern "C" bool solar_os_storage_sd_is_mounted() { return sk_sd_is_mounted(); }
-extern "C" bool solar_os_storage_root_is_mounted() { return solar_os_storage_is_mounted(); }
+extern "C" bool solar_os_storage_root_is_mounted() {
+#if SK_QSPI_FLASH
+    return false; // Root is the mount list; no filesystem owns it.
+#else
+    return sk_sd_is_mounted();
+#endif
+}
+extern "C" size_t solar_os_storage_mount_count() {
+    return size_t(sk_sd_is_mounted()) + size_t(solar_os_storage_flash_is_mounted());
+}
+extern "C" bool solar_os_storage_get_mount(size_t index, solar_os_storage_mount_info_t *out) {
+    if (!out) return false;
+    memset(out, 0, sizeof(*out));
+    if (sk_sd_is_mounted()) {
+        if (!index) {
+            strlcpy(out->mount_point, solar_os_storage_sd_mount_point(), sizeof(out->mount_point));
+            strlcpy(out->name, "SD", sizeof(out->name));
+            out->type = SOLAR_OS_STORAGE_MOUNT_SD;
+            return true;
+        }
+        --index;
+    }
+    if (!index && solar_os_storage_flash_is_mounted()) {
+        strlcpy(out->mount_point, "/flash", sizeof(out->mount_point));
+        strlcpy(out->name, "QSPI flash", sizeof(out->name));
+        out->type = SOLAR_OS_STORAGE_MOUNT_FLASH;
+        return true;
+    }
+    return false;
+}
 extern "C" const char *solar_os_storage_mount_point() { return "/"; }
 extern "C" const char *solar_os_storage_sd_mount_point() {
 #if SK_QSPI_FLASH

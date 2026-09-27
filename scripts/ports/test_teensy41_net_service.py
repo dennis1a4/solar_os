@@ -73,11 +73,15 @@ try:
             while time.monotonic() < deadline:
                 data.extend(conn.read(8192))
                 text = ANSI.sub('', data.decode(errors='replace')).replace('\r', '')
+                if 'Fault IRQ:' in text:
+                    result['fault'] = text
+                    raise RuntimeError(text)
                 if text.endswith(suffix):
                     result['commands'].append({'input': raw.decode(errors='replace'), 'output': text})
                     if expected is not None:
                         assert expected in text, text
                     return text
+            result['timeout'] = {'input': raw.decode(errors='replace'), 'output': data.decode(errors='replace')}
             raise RuntimeError(f'Timeout: {data[-1500:]!r}')
 
         def cmd(s, expected=None):

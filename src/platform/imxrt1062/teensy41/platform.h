@@ -1,4 +1,7 @@
 #pragma once
+#ifndef SK_SETTINGS
+#define SK_SETTINGS 0
+#endif
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>

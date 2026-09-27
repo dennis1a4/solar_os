@@ -1,6 +1,6 @@
 # Teensy 4.1 / SuperKeyboard progress tracker
 
-Last updated: 2026-09-26.
+Last updated: 2026-09-27.
 
 This is the working plan and idea backlog for porting SolarOS from ESP32 to
 Teensy 4.1, then bringing up the SuperKeyboard hardware. Keep technical details
@@ -12,11 +12,13 @@ The bring-up baseline is preserved in local commit `b46367f`. The separate
 `teensy41_shell` build now runs the real upstream USB shell, app registry and
 calculator (interactive text mode and `-e`), upstream editor, and MicroPython
 REPL/SD scripts with writable SD access. A reduced command table and single USB
-session are implemented; storage hot-removal recovery, persistent settings and
-the complete multi-session/service integration remain.
+session are implemented; storage hot-removal recovery and the complete
+multi-session/service integration remain. `teensy41_apps` now adds persistent
+USB geometry, identity and startup selection, plus less, Notes and Sheet.
 Fitted PSRAM is detected as 8 MiB. Current work is on local `main`.
-Compatibility is the next priority: keep application logic shared and put board
-changes below OS services. The Ethernet profile now uses the shared network
+Compatibility remains the priority: keep application logic shared and put board
+changes below OS services. The combined `teensy41_files` profile now runs SSH and
+the Files manager, including returning to Files from a child editor or Python app. The Ethernet profile now uses the shared network
 registry, managed TCP/UDP sessions and the existing `solaros.net` bindings. It
 also mounts the fitted QSPI flash at `/flash`, with SD at `/sd` and legacy `/` paths.
 
@@ -86,14 +88,15 @@ understood, and a tested baseline is saved with reproduction instructions.
 - [x] Add writable SD streams/descriptors and test file operations, editor saves and Python I/O.
 - [x] Add SD/flash routing beneath common file APIs, including cross-volume file copy/move.
 - [ ] Add storage hot-removal recovery and remaining VFS semantics.
-- [ ] Implement persistent configuration storage.
+- [x] Implement persistent configuration storage for identity, USB geometry and startup selection.
+- [ ] Extend persistent preferences as further time/network/display services are ported.
 - [x] Integrate the upstream shell and application registry with one USB session.
 - [ ] Port full session management and extend supported commands.
 - [x] Validate calculator launch/exit, invalid input and memory stability on hardware.
 - [x] Flash and verify the separate upstream shell target; retain bootstrap recovery.
 
-First usable shell achieved. Complete when persistent settings, writable storage
-and intended session/command coverage also pass their tests.
+First usable shell, writable storage and initial persistent preferences achieved.
+Full intended session/command coverage and storage recovery still remain.
 
 ### 3. Integrate buses and expansion — planned
 
@@ -128,7 +131,9 @@ together. Optional peripheral compilation is not hardware validation.
 - [x] Integrate the full calculator application in serial text mode.
 - [x] Enable and hardware-test the upstream editor, including protected replacement saves.
 - [x] Add MicroPython REPL, SD scripts/imports, file I/O and Ctrl-C cancellation.
-- [ ] Enable clock and file viewer/pager.
+- [x] Enable and hardware-test the less text pager, including search and Files return.
+- [x] Enable and hardware-test Notes checklists and Sheet CSV viewing/formulas.
+- [ ] Enable clock (graphics, time and scheduling services remain prerequisites).
 - [ ] Add selected Teensy hardware bindings to Python after peripheral integration.
 - [ ] Check stack use, allocation failures, and missing-storage behavior per app.
 - [x] Prioritize on-device editing and MicroPython scripting.
@@ -299,3 +304,43 @@ from on-board tests.
 
 - Root listing corrected: `/` shows mounts only; SD files are listed under `/sd`.
   Legacy SD file paths still resolve. Hardware listing/read regression passed.
+
+### SSH client — 2026-09-26
+
+- `teensy41_ssh` builds the shared SSH app/session/crypto services over the existing
+  Ethernet transport. Added foreground worker/tick support and shared TRNG access.
+- Hardware password login, terminal I/O, host-key mismatch rejection and
+  cancellation passed. Fixed nonblocking cleanup leaks; repeated sessions recover
+  memory. Public-key auth and broader server interoperability remain untested.
+- Files is now integrated using the existing storage/TUI services; see below.
+
+### Files and combined-app compatibility — 2026-09-27
+
+- Enabled the shared Files app and ZIP service in `teensy41_files`.
+- Added mount enumeration/virtual-root semantics and bounded child-app return
+  in the USB runtime. App frames live in PSRAM and retain arguments and TUI state.
+- Hardware passed SD/flash copy and file move in both directions, recursive copy,
+  mkdir/delete, validated ZIP creation, copy cancellation/partial cleanup, failed
+  Python child return, repeated editor return and stable memory/handle cleanup.
+- Corrected the MPU heap boundary, reserved more internal RAM by placing shell/UI
+  code in flash, enabled full integer formatting, and mapped worker priorities
+  below USB/Ethernet so long file jobs remain cancellable.
+- Final combined SSH/network/storage/audio regressions passed. Saved the tested
+  firmware, logs and source snapshot in `../solar_os-baselines/2026-09-27-files/`;
+  working-tree changes remain uncommitted. Cross-volume directory moves and full
+  multi-session support remain outside this integration.
+
+### Persistent settings and useful text apps — 2026-09-27
+
+- Added `teensy41_apps`, extending the tested Files image with flash-backed
+  identity, USB terminal geometry and startup-source preferences. Reboot
+  persistence and once-per-boot startup execution passed on hardware.
+- Integrated unchanged upstream less, Notes and Sheet using existing services.
+  Fixed shared text-widget CR handling. Both storage volumes, search, Notes
+  persistence, CSV formulas, Files return and 20 lifecycle cycles passed.
+- Settings fault/corruption tests and child lifecycle sanitizers passed, as did
+  manual generation, widget and core regressions. Combined SSH, Files, TCP/UDP,
+  flash/Python/editor and MP3/WAV regressions passed on the final image.
+- Saved `../solar_os-baselines/2026-09-27-apps/`; preferences restored and temporary
+  startup fixture removed. No commit or push. Physical keyboard/display, clock,
+  broader settings, SD hot-removal and full sessions remain future work.

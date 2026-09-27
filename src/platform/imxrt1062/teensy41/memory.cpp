@@ -10,6 +10,7 @@ extern uint8_t external_psram_size;
 // The pinned FreeRTOS runtime overrides sbrk and maintains its own heap bounds.
 // Arduino's __brkval is not updated by that allocator.
 extern uint8_t *_g_heap_start, *_g_heap_max, *_g_current_heap_end;
+extern unsigned long _estack;
 }
 
 static StaticSemaphore_t mutex_storage;
@@ -18,6 +19,9 @@ static solar_os_memory_status_t statistics;
 struct alignas(max_align_t) Header { size_t size; };
 
 void sk_memory_begin() {
+    // Never hand out memory overlapping the pinned core's MPU stack guard.
+    configASSERT(reinterpret_cast<uintptr_t>(_g_heap_max) <=
+                 reinterpret_cast<uintptr_t>(&_estack) - 8192);
     mutex = xSemaphoreCreateMutexStatic(&mutex_storage);
     statistics.internal_reserve = SOLAR_OS_MEMORY_INTERNAL_RESERVE_BYTES;
     statistics.internal_fallback_max = SOLAR_OS_MEMORY_INTERNAL_FALLBACK_MAX_BYTES;
@@ -50,7 +54,8 @@ extern "C" void *solar_os_memory_alloc(size_t size, solar_os_memory_class_t kind
     // A generic malloc buffer is not a DMA allocation on cache-enabled M7.
     if (!header && kind != SOLAR_OS_MEMORY_EXTERNAL_REQUIRED &&
         kind != SOLAR_OS_MEMORY_DMA && may_fallback &&
-        internal_free() > size + sizeof(Header) + statistics.internal_reserve) {
+        (kind == SOLAR_OS_MEMORY_INTERNAL_CRITICAL ||
+         internal_free() > size + sizeof(Header) + statistics.internal_reserve)) {
         header = static_cast<Header *>(malloc(size + sizeof(Header)));
         if (header && external) ++stats.fallbacks;
     }

@@ -2,6 +2,7 @@ import importlib.util
 import json
 import re
 import unittest
+import tempfile
 from pathlib import Path
 
 
@@ -11,6 +12,31 @@ SPEC = importlib.util.spec_from_file_location("generate_manual", GENERATOR_PATH)
 generate_manual = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(generate_manual)
+
+
+class RegistryBranchesTest(unittest.TestCase):
+    def parse(self, body):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "registry.c"
+            path.write_text("table[] = {\n" + body + "\n};\n")
+            return generate_manual.registry_conditions(path, "table[]", r'ENTRY\("([a-z]+)"')
+
+    def test_alternative_entries(self):
+        result = self.parse('#if CORE\nENTRY("shell")\n#elif SECOND\nENTRY("shell")\n#else\nENTRY("shell")\n#endif')
+        self.assertIn("||", result["shell"])
+        self.assertIn("!((CORE)) && (SECOND)", result["shell"])
+        self.assertIn("!((CORE) || (SECOND))", result["shell"])
+
+    def test_overlapping_entries_rejected(self):
+        for body in ('ENTRY("shell")\nENTRY("shell")',
+                     '#if A\nENTRY("shell")\n#endif\n#if B\nENTRY("shell")\n#endif'):
+            with self.assertRaisesRegex(ValueError, "duplicate registry entry"):
+                self.parse(body)
+
+    def test_unbalanced_alternatives_rejected(self):
+        for body in ('#else', '#if A\n#else\n#else\n#endif', '#if A\n#else\n#elif B\n#endif'):
+            with self.assertRaises(ValueError):
+                self.parse(body)
 
 
 class ManualReleaseLimitTest(unittest.TestCase):
@@ -72,15 +98,18 @@ class ManualReleaseLimitTest(unittest.TestCase):
         )
         self.assertEqual(
             by_id["command.spi"]["condition"],
+            "(!((SOLAR_OS_SHELL_CORE_ONLY))) && "
             "(SOLAR_OS_PACKAGE_SERVICE_RESOURCES && "
             "SOLAR_OS_PACKAGE_SERVICE_SPI)",
         )
         self.assertEqual(
             by_id["command.led"]["condition"],
+            "(!((SOLAR_OS_SHELL_CORE_ONLY))) && "
             "(SOLAR_OS_PACKAGE_SERVICE_GPIO && "
             "SOLAR_OS_BOARD_HAS_STATUS_LED)",
         )
-        self.assertEqual(by_id["command.help"]["condition"], "")
+        self.assertEqual(by_id["command.help"]["condition"],
+                         "((SOLAR_OS_SHELL_CORE_ONLY)) || ((!((SOLAR_OS_SHELL_CORE_ONLY))))")
         self.assertEqual(by_id["app.hexedit"]["packages_any"], ["app_edit"])
         self.assertEqual(by_id["app.help"]["packages_any"], ["app_docs"])
 
