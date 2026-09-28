@@ -365,3 +365,22 @@ LCD input to check session isolation, app ownership, Python cancellation,
 memory cleanup and USB reconnect. It leaves the LCD at a shell prompt. Add
 `--status-only` to read keyboard/USB-host status without injecting local input.
 Text-buffer checks do not replace a visual screen and physical-keyboard check.
+
+## Plot and Playground
+
+The display profile includes native RA8875 Plot graphics and the Playground
+browser/installer. See [port notes](../../doc/ports/teensy41-plot-playground.md).
+
+```sh
+bash scripts/ports/test_teensy41_http_host.sh
+bash scripts/ports/test_teensy41_settings_host.sh
+python3 scripts/ports/test_teensy41_plot_playground.py --log /tmp/plot-playground.json
+```
+
+The device suite needs exclusive serial access and an idle local keyboard. It
+sets the RTC from the host UTC clock, starts Ethernet, downloads the official
+catalog, and installs/runs Hello Python. It removes its unique CSV fixture and
+leaves the catalog/example installed. Use `--plot-only` to skip the network work.
+The HTTP sanitizer test also checks the embedded certificates, date validation
+and hostname rejection using the same pinned crypto configuration as firmware.
+Settings tests cover legacy-snapshot migration, long source URLs and key erasure.

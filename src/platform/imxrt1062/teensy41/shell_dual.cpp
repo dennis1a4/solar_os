@@ -129,7 +129,8 @@ static bool emit_key(char ch, void *) {
 static void run_console(void *) {
     xSemaphoreTakeRecursive(console_gate,portMAX_DELAY);
     session=solar_os_shell_session_create(); configASSERT(session);
-    solar_os_context_init(&shell_context,nullptr,nullptr);
+    extern solar_os_gfx_t *sk_lcd_gfx();
+    solar_os_context_init(&shell_context,nullptr,active().local ? sk_lcd_gfx() : nullptr);
     auto *io=solar_os_shell_session_io(session);
     solar_os_shell_io_init_port(io,&active().port,active().local?100:80,active().local?30:24);
     solar_os_shell_io_set_terminal_profile(io,SOLAR_OS_SHELL_TERMINAL_PROFILE_VT100);
@@ -149,8 +150,8 @@ static void run_console(void *) {
     bool online=false,was_cr=false;
     uint32_t last_byte=0,last_tick=0;
     while(true) {
-        if(foreground && foreground->event && millis()-last_tick>=10) {
-            last_tick=millis(); solar_os_event_t event{}; event.type=SOLAR_OS_EVENT_TICK;
+        if(foreground && foreground->event && millis()-last_tick>=solar_os_app_tick_interval_ms(foreground,25)) {
+            last_tick=millis(); solar_os_event_t event{}; event.type=SOLAR_OS_EVENT_TICK; event.data.tick_ms=millis();
             foreground->event(current_context(),&event); service_requests();
         }
         if(connected() && !online) {
@@ -190,9 +191,15 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
         solar_os_shell_io_printf(io,"LCD 100x30; two consoles: usb and lcd; current=%s; keyboard=%s\n",
             owner,sk_usb_keyboard_connected()?"connected":"absent");
         char status[160]; sk_usb_status(status,sizeof(status)); solar_os_shell_io_writeln(io,status);
+#if SK_PLOT
+        extern void sk_gfx_status(char *,size_t); sk_gfx_status(status,sizeof(status)); solar_os_shell_io_writeln(io,status);
+#endif
     }
 }
 void sk_upstream_shell_run() {
+#if SK_PLOT
+    extern void sk_plot_streams_begin(); sk_plot_streams_begin();
+#endif
     configASSERT(sk_lcd_ready());
     console_gate=xSemaphoreCreateRecursiveMutex(); configASSERT(console_gate);
     const solar_os_port_driver_t usb={"usb","Teensy USB CDC",SOLAR_OS_PORT_CAP_READ|SOLAR_OS_PORT_CAP_WRITE,

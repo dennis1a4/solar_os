@@ -81,10 +81,35 @@ int main(void) {
     assert(nvs_open("overflow",NVS_READWRITE,&h)==ESP_ERR_NO_MEM);
     for (unsigned i=0;i<4;i++) nvs_close(slots[i]);
     assert(nvs_open("limits",NVS_READWRITE,&h)==ESP_OK);
-    char large[65]; memset(large,'x',64); large[64]=0;
+    char large[321]; memset(large,'x',320); large[320]=0;
     assert(nvs_set_str(h,"large",large)==ESP_ERR_INVALID_SIZE);
+    large[319]=0;
+    assert(nvs_set_str(h,"url",large)==ESP_OK);
+    assert(nvs_commit(h)==ESP_OK); nvs_close(h);
+    assert(nvs_open("limits",NVS_READWRITE,&h)==ESP_OK);
+    char restored[320]; size_t size=sizeof(restored);
+    assert(nvs_get_str(h,"url",restored,&size)==ESP_OK && !strcmp(restored,large));
+    assert(nvs_erase_key(h,"url")==ESP_OK);
+    assert(nvs_erase_key(h,"url")==ESP_ERR_NVS_NOT_FOUND);
+    assert(nvs_commit(h)==ESP_OK); nvs_close(h);
+    assert(nvs_open("limits",NVS_READWRITE,&h)==ESP_OK);
+    assert(nvs_get_str(h,"url",restored,&size)==ESP_ERR_NVS_NOT_FOUND);
     for (unsigned i=0;i<16;i++) { char key[16]; snprintf(key,sizeof(key),"key%u",i); assert(nvs_set_u8(h,key,i)==ESP_OK); }
     assert(nvs_set_u8(h,"overflow",0)==ESP_ERR_NO_MEM);
+    nvs_close(h);
+    unsigned char legacy[12+16*82]={0};
+    memcpy(legacy,"SKNVS001",8); memcpy(legacy+12,"name",5);
+    legacy[12+16]=3; legacy[12+17]=4; memcpy(legacy+12+18,"old",4);
+    uint32_t crc=0xffffffffU;
+    for (size_t i=12;i<sizeof(legacy);i++) { crc^=legacy[i]; for(unsigned j=0;j<8;j++)crc=(crc>>1)^(0xedb88320U & (0U-(crc&1U))); }
+    crc=~crc;for(unsigned i=0;i<4;i++)legacy[8+i]=crc>>(8*i);
+    FILE *fixture=fopen("settings/legacy.bin","wb");assert(fixture);
+    assert(fwrite(legacy,1,sizeof(legacy),fixture)==sizeof(legacy));assert(!fclose(fixture));
+    assert(nvs_open("legacy",NVS_READWRITE,&h)==ESP_OK);
+    size=sizeof(restored);assert(nvs_get_str(h,"name",restored,&size)==ESP_OK && !strcmp(restored,"old"));
+    assert(nvs_set_str(h,"url",large)==ESP_OK);assert(nvs_commit(h)==ESP_OK);nvs_close(h);
+    assert(nvs_open("legacy",NVS_READONLY,&h)==ESP_OK);
+    size=sizeof(restored);assert(nvs_get_str(h,"name",restored,&size)==ESP_OK && !strcmp(restored,"old"));
     nvs_close(h);
     FILE *file=fopen("settings/test.bin","r+b"); assert(file);
     assert(fseek(file,30,SEEK_SET)==0); assert(fputc(99,file)!=EOF); assert(fclose(file)==0);

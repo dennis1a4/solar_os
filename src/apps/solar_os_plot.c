@@ -1159,7 +1159,7 @@ static esp_err_t plot_start(solar_os_context_t *ctx)
 
 static void plot_stop(solar_os_context_t *ctx)
 {
-    (void)ctx;
+    if (!plot_state) return;
     plot.running = false;
     plot.suspended = false;
     plot_close_live_streams();

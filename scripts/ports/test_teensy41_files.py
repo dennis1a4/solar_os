@@ -5,6 +5,7 @@ Writes only unique SD/flash fixture directories and retains them for inspection.
 import argparse
 import io
 import json
+import re
 import time
 import uuid
 import zipfile
@@ -150,11 +151,20 @@ try:
         assert 'newdir' not in cmd('ls ' + flash)
         # Warm the same app sequence before comparing heap/PSRAM cleanup.
         report['memory_after'] = cmd('mem')
-        assert report['memory_before'] == report['memory_after'], report
+        def free_memory(text):
+            match = re.search(r'Internal heap: (\d+) free / \d+ bytes; PSRAM: (\d+) free', text)
+            assert match, text
+            return tuple(map(int, match.groups()))
+        before = free_memory(report['memory_before'])
+        after = free_memory(report['memory_after'])
+        # The internal allocator may reclaim/coalesce space during the workload.
+        # A leak consumes free space; a small increase is not a failure.
+        assert after[0] >= before[0] and after[1] == before[1], (before, after)
         for _ in range(5):
             exchange(b'files /\r', expect='flash/')
             exchange(b'q', suffix=PROMPT)
-        assert report['memory_after'] == cmd('mem')
+        restarted = free_memory(cmd('mem'))
+        assert restarted[0] >= after[0] and restarted[1] == after[1], (after, restarted)
         assert 'open=0' in cmd('flash status')
         report['uptime'] = cmd('uptime')
         report['passed'] = True

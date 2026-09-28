@@ -9,6 +9,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/portmacro.h"
 #include "solar_os_config.h"
 #include "solar_os_keys.h"
 #if SOLAR_OS_PACKAGE_APP_LUA

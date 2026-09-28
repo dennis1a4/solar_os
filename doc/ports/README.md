@@ -3,6 +3,7 @@
 This experimental port runs the shared SolarOS shell and text applications on
 a Teensy 4.1. The current `teensy41_display` profile has an RA8875 LCD with a
 USB host keyboard and a separate USB serial console. Both can be used at once.
+It also includes native Plot graphics and the Playground catalog browser.
 Touch is not required or enabled.
 
 ## Tested hardware and wiring
@@ -68,7 +69,7 @@ target. Useful profiles are:
 
 | Profile | Purpose |
 | --- | --- |
-| `teensy41_display` | Combined apps/synth plus independent LCD and USB terminals |
+| `teensy41_display` | Combined apps/synth, Plot, Playground, independent LCD/USB consoles |
 | `teensy41_synth` | Combined apps plus terminal synth, USB console only |
 | `teensy41_apps` | SSH, Files, persistent settings, less, Notes and Sheet |
 | `teensy41_lcd` | Minimal LCD/bootstrap console for hardware diagnosis |
@@ -125,6 +126,23 @@ From USB, `lcd` reports terminal/keyboard status and `lcd dump` reads the text
 buffer. `lcd send "COMMAND"` and `lcd key exit|ctrlc|esc` inject local input for
 diagnostics; use them only while the local operator is idle.
 
+## Plot, Playground and PSRAM
+
+On the LCD, `plot uptime --rate 250` graphs the built-in uptime stream;
+`plot -f /sd/readings.csv` graphs a CSV file. Q returns to the terminal.
+The USB prompt stays independent while Plot owns the LCD.
+
+After `network up`, use `playground refresh` to fetch the community catalog.
+Then `playground install hello-python` and `playground run hello-python` provide
+a small example. Lua and graphical Python scripts remain unavailable. See
+[Plot/Playground notes](teensy41-plot-playground.md) for controls, HTTPS trust,
+storage, compatibility limits, and tests.
+
+PSRAM is already the preferred application heap: Python, text buffers, Plot
+samples, catalogs, JSON and TLS use it. Keep stacks, drivers and timing-sensitive
+work in internal RAM. More capacity simplifies application data storage, but
+external-memory latency and DMA/cache rules make a blanket move inappropriate.
+
 ## Validation and current limits
 
 Hardware checks passed independent output/directories, app ownership, Python
@@ -149,8 +167,8 @@ hardware suites one at a time. Tests that write storage retain uniquely named
 fixtures; read each script's instructions before running it. See the
 [hardware test guide](../../scripts/ports/README.md).
 
-- Shared terminal/TUI apps work; the pixel graphics API and graphical app
-  variants are not yet integrated. The local terminal uses ASCII; unsupported
+- Shared terminal/TUI apps and native Plot work. Other graphical app variants
+  and Python graphics are not integrated. The local terminal uses ASCII; unsupported
   Unicode becomes `?`. It is not a complete xterm emulator.
 - Singleton apps cannot run twice. Audio apps share one output, and worker apps
   share the existing worker reservation. Native operations without a cooperative
@@ -160,7 +178,7 @@ fixtures; read each script's instructions before running it. See the
 - SD hot-removal recovery, broad USB keyboard compatibility, full-capacity PSRAM
   testing, secondary display and more upstream services remain pending.
 - A previous loader rejected an image beyond the 1 MiB Intel HEX boundary.
-  The current display image is about 907 KB; investigate the uploader before
+  The current display image is about 1.01 MB; investigate the uploader before
   exceeding that boundary. It is not the board's flash-capacity limit.
 
 ## Further notes
@@ -171,6 +189,7 @@ fixtures; read each script's instructions before running it. See the
 - [Initial LCD bring-up](teensy41-lcd.md)
 - [Display/session implementation](teensy41-display.md)
 - [Synth implementation and controls](teensy41-synth.md)
+- [Plot, Playground, and memory policy](teensy41-plot-playground.md)
 
 Local tested firmware/log/source snapshots are stored alongside this checkout
 in `../solar_os-baselines/`. They are recovery artifacts, not repository files.

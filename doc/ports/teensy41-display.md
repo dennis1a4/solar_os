@@ -88,3 +88,10 @@ requires the local operator to leave the keyboard idle and temporarily launches
 apps on the LCD. Existing serial tests remain applicable one at a time.
 
 Firmware/log/source snapshot: `../solar_os-baselines/2026-09-27-display/`.
+
+## Plot and Playground extension
+
+The current display profile also includes native RA8875 Plot graphics and the
+Playground browser/download service. See [Plot/Playground](teensy41-plot-playground.md)
+for commands, RTC setup, memory policy and validation. The original display
+checkpoint above remains available as a rollback baseline.

@@ -13,6 +13,7 @@
 #include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/portmacro.h"
 #include "nvs.h"
 #include "solar_os_board_caps.h"
 #include "solar_os_config.h"
@@ -339,6 +340,9 @@ static bool playground_capability_available(const char *name)
     if (name == NULL || name[0] == '\0') {
         return false;
     }
+#if defined(SOLAR_OS_PLAYGROUND_SCRIPT_GFX) && !SOLAR_OS_PLAYGROUND_SCRIPT_GFX
+    if (strcmp(name, "gfx") == 0) return false;
+#endif
     for (unsigned bit = 0U; bit < 32U; bit++) {
         const solar_os_board_capability_t capability = UINT64_C(1) << bit;
         if (strcmp(solar_os_board_capability_name(capability), name) == 0) {

@@ -37,6 +37,11 @@ extern "C" {
 static LcdTerminal *lcd;
 static SemaphoreHandle_t lcd_mutex;
 static unsigned render_position;
+#if SK_PLOT
+static bool graphics_mode;
+static uint32_t graphics_frames,graphics_start,graphics_ms;
+extern "C" void sk_gfx_status(char *out,size_t size) { snprintf(out,size,"graphics=%s frames=%lu render-ms=%lu",graphics_mode?"active":"idle",(unsigned long)graphics_frames,(unsigned long)graphics_ms); }
+#endif
 #endif
 #endif
 #if SK_SECONDARY_ST7735
@@ -109,6 +114,9 @@ void sk_lcd_row(unsigned row,char *out) {
     xSemaphoreGive(lcd_mutex);
 }
 void sk_lcd_flush() {
+#if SK_PLOT
+    if(graphics_mode) return;
+#endif
     if(!lcd || !sk_spi_lock(0)) return;
     static const uint16_t colors[]={0x0000,0xa800,0x0540,0xad40,0x0015,0xa815,0x0555,0xad55,
                                    0x52aa,0xf800,0x07e0,0xffe0,0x001f,0xf81f,0x07ff,0xffff};
@@ -249,3 +257,70 @@ void sk_audio_tone(bool on) {
     sk_console_print("Audio disabled in this build\r\n");
 #endif
 }
+
+#if SK_PLOT
+extern "C" {
+#include "solar_os_gfx_internal.h"
+}
+static solar_os_gfx_t plot_gfx;
+solar_os_gfx_t *sk_lcd_gfx() { return &plot_gfx; }
+static uint16_t gfx_color(solar_os_gfx_color_t c) {
+    if(c & SOLAR_OS_GFX_COLOR_RGB_FLAG)
+        return ((c>>8)&0xf800) | ((c>>5)&0x07e0) | ((c>>3)&0x001f);
+    unsigned gray=c==SOLAR_OS_GFX_COLOR_WHITE?255:c==SOLAR_OS_GFX_COLOR_LIGHT?170:
+        c==SOLAR_OS_GFX_COLOR_DARK?85:c==SOLAR_OS_GFX_COLOR_BLACK?0:
+        c>=SOLAR_OS_GFX_COLOR_GRAY_BASE && c<=SOLAR_OS_GFX_COLOR_GRAY_LAST?
+            (c-SOLAR_OS_GFX_COLOR_GRAY_BASE)*255/16:0;
+    return ((gray&248)<<8) | ((gray&252)<<3) | (gray>>3);
+}
+extern "C" void solar_os_gfx_prepare_surface(solar_os_gfx_t *) { graphics_mode=true; }
+extern "C" void solar_os_gfx_release_surface(solar_os_gfx_t *) {
+    graphics_mode=false;
+    memset(lcd->dirty,1,sizeof(lcd->dirty));
+}
+extern "C" size_t solar_os_gfx_width(const solar_os_gfx_t *) { return 800; }
+extern "C" size_t solar_os_gfx_height(const solar_os_gfx_t *) { return 480; }
+extern "C" void solar_os_gfx_set_color(solar_os_gfx_t *g,solar_os_gfx_color_t c) { g->color=c; }
+extern "C" void solar_os_gfx_set_font(solar_os_gfx_t *g,solar_os_gfx_font_t f) { g->font=f; }
+extern "C" void solar_os_gfx_set_line_style(solar_os_gfx_t *g,solar_os_gfx_line_style_t s) { g->line_style=s; }
+extern "C" void solar_os_gfx_clear(solar_os_gfx_t *,solar_os_gfx_color_t c) {
+    graphics_start=millis();
+    if(sk_spi_lock(0)) { primary.fillScreen(gfx_color(c)); sk_spi_unlock(0); }
+}
+extern "C" void solar_os_gfx_fill_rect(solar_os_gfx_t *g,int x,int y,int w,int h) {
+    if(sk_spi_lock(0)) { primary.fillRect(x,y,w,h,gfx_color(g->color)); sk_spi_unlock(0); }
+}
+extern "C" void solar_os_gfx_line(solar_os_gfx_t *g,int x0,int y0,int x1,int y1) {
+    if(!sk_spi_lock(0)) return;
+    auto color=gfx_color(g->color);
+    if(g->line_style==SOLAR_OS_GFX_LINE_SOLID) primary.drawLine(x0,y0,x1,y1,color);
+    else {
+        // Plot's grid is axis-aligned; use short hardware line segments.
+        const int dx=x1-x0,dy=y1-y0,n=max(abs(dx),abs(dy));
+        const int stride=g->line_style==SOLAR_OS_GFX_LINE_DOTTED?4:10;
+        for(int i=0;i<=n;i+=stride) {
+            const int end=min(n,i+(stride==4?0:5));
+            primary.drawLine(x0+(n?dx*i/n:0),y0+(n?dy*i/n:0),
+                x0+(n?dx*end/n:0),y0+(n?dy*end/n:0),color);
+        }
+    }
+    sk_spi_unlock(0);
+}
+extern "C" void solar_os_gfx_text(solar_os_gfx_t *g,int x,int baseline,const char *s) {
+    if(!sk_spi_lock(0)) return;
+    primary.setFontDefault(); primary.setFontScale(0);
+    primary.setTextColor(gfx_color(g->color));
+    primary.setCursor(x,max(0,baseline-12)); primary.print(s);
+    sk_spi_unlock(0);
+}
+extern "C" void solar_os_gfx_present(solar_os_gfx_t *) { ++graphics_frames;graphics_ms=millis()-graphics_start; }
+extern "C" void solar_os_splash_draw_reboot(solar_os_gfx_t *g,const char *status) {
+    solar_os_gfx_clear(g,SOLAR_OS_GFX_COLOR_BLACK);
+    solar_os_gfx_set_color(g,SOLAR_OS_GFX_COLOR_WHITE);
+    solar_os_gfx_text(g,0,16,status?status:"Rebooting");
+}
+#else
+#if SK_LCD_CONSOLE
+solar_os_gfx_t *sk_lcd_gfx() { return nullptr; }
+#endif
+#endif

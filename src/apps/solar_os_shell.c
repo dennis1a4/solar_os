@@ -536,6 +536,9 @@ static const shell_command_t shell_builtin_commands[] = {
 #if SK_LCD_CONSOLE
     {"lcd", "LCD status, dump, or send a quoted command", solar_os_shell_cmd_lcd},
 #endif
+#if SK_PLAYGROUND
+    {"rtc", "show/set UTC clock for HTTPS", solar_os_shell_cmd_rtc},
+#endif
 #if SK_SETTINGS
     {"identity", "show or save user and hostname", solar_os_shell_cmd_identity},
 #endif
@@ -9153,7 +9156,8 @@ static bool shell_launch_playground_script(
         return true;
     }
     if (solar_os_shell_io_kind(shell_io(ctx)) == SOLAR_OS_SHELL_IO_KIND_PORT &&
-        (runtime->capabilities & SOLAR_OS_APP_CAP_PORT) == 0) {
+        (runtime->capabilities & SOLAR_OS_APP_CAP_PORT) == 0 &&
+        solar_os_context_gfx(ctx) == NULL) {
         solar_os_shell_io_printf(
             io, "%s: display-only app; use the display shell\n", runtime_name);
         return true;
@@ -9212,7 +9216,8 @@ static bool SHELL_NOINLINE shell_launch_registered_app(
         return true;
     }
     if (solar_os_shell_io_kind(io) == SOLAR_OS_SHELL_IO_KIND_PORT &&
-        (app->capabilities & SOLAR_OS_APP_CAP_PORT) == 0) {
+        (app->capabilities & SOLAR_OS_APP_CAP_PORT) == 0 &&
+        solar_os_context_gfx(ctx) == NULL) {
         solar_os_shell_io_printf(io,
                                  "%s: display-only app; use the display shell\n",
                                  app->name);

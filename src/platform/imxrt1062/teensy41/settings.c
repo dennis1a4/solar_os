@@ -3,7 +3,7 @@
  * checksummed snapshot. Commit syncs a temporary file then atomically replaces
  * the previous LittleFS file; failed/abandoned writes leave it untouched.
  * Namespace/key names: 1..15 ASCII identifier characters; values: u8/u16 or
- * strings up to 63 bytes. Handles own staged data until close. No SD fallback.
+ * strings up to 319 bytes (reads legacy 63-byte snapshots). Handles own staged data until close. No SD fallback.
  */
 #include "nvs.h"
 #include <stdbool.h>
@@ -17,7 +17,8 @@
 #ifndef SK_SETTINGS_DIR
 #define SK_SETTINGS_DIR "/flash/.solar-settings"
 #endif
-#define ENTRY_SIZE 82U
+#define ENTRY_SIZE 339U
+#define LEGACY_ENTRY_SIZE 82U
 #define ENTRY_COUNT 16U
 #define IMAGE_SIZE (12U + ENTRY_COUNT * ENTRY_SIZE)
 #define HANDLE_COUNT 4U
@@ -53,24 +54,37 @@ static uint32_t checksum(const unsigned char *p, size_t n) {
 static void path_for(const settings_handle_t *h, char *path, size_t len, bool temp) {
     snprintf(path,len,SK_SETTINGS_DIR "/%s.%s",h->name,temp ? "tmp" : "bin");
 }
-static bool valid_image(const unsigned char *image) {
-    if (memcmp(image,"SKNVS001",8)) return false;
+static size_t value_length(const unsigned char *e) { return e[17] | ((size_t)e[18]<<8); }
+static bool valid_image(const unsigned char *image, bool legacy) {
+    const size_t stride=legacy ? LEGACY_ENTRY_SIZE : ENTRY_SIZE;
+    const size_t data=legacy ? 18 : 19;
+    if (memcmp(image,legacy ? "SKNVS001" : "SKNVS002",8)) return false;
     uint32_t stored=0;
     for (unsigned i=0;i<4;i++) stored |= (uint32_t)image[8+i] << (8*i);
-    if (stored!=checksum(image+12,IMAGE_SIZE-12)) return false;
+    if (stored!=checksum(image+12,ENTRY_COUNT*stride)) return false;
     for (unsigned i=0;i<ENTRY_COUNT;i++) {
-        const unsigned char *e=image+12+i*ENTRY_SIZE;
+        const unsigned char *e=image+12+i*stride;
         if (!e[0]) {
-            for (unsigned j=0;j<ENTRY_SIZE;j++) if (e[j]) return false;
+            for (unsigned j=0;j<stride;j++) if (e[j]) return false;
             continue;
         }
         if (!memchr(e,0,16) || !valid_name((const char *)e)) return false;
-        if (!((e[16]==1 && e[17]==1) || (e[16]==2 && e[17]==2) ||
-              (e[16]==3 && e[17]>=1 && e[17]<=64 && e[18+e[17]-1]==0 &&
-               strlen((const char *)e+18)==(size_t)e[17]-1))) return false;
-        for (unsigned j=0;j<i;j++) if (!strcmp((const char *)e,(const char *)image+12+j*ENTRY_SIZE)) return false;
+        size_t n=legacy ? e[17] : value_length(e);
+        if (!((e[16]==1 && n==1) || (e[16]==2 && n==2) ||
+              (e[16]==3 && n>=1 && n<=stride-data && e[data+n-1]==0 &&
+               strlen((const char *)e+data)==n-1))) return false;
+        for (unsigned j=0;j<i;j++) if (!strcmp((const char *)e,(const char *)image+12+j*stride)) return false;
     }
     return true;
+}
+static void migrate_image(unsigned char *image) {
+    for (unsigned i=ENTRY_COUNT;i-- > 0;) {
+        unsigned char old[LEGACY_ENTRY_SIZE];
+        memcpy(old,image+12+i*LEGACY_ENTRY_SIZE,sizeof(old));
+        unsigned char *e=image+12+i*ENTRY_SIZE;
+        memset(e,0,ENTRY_SIZE); memcpy(e,old,18); memcpy(e+19,old+18,64);
+    }
+    memcpy(image,"SKNVS002",8);
 }
 esp_err_t nvs_open(const char *name, nvs_open_mode_t mode, nvs_handle_t *out) {
     if (!out || !valid_name(name) || (mode!=NVS_READONLY && mode!=NVS_READWRITE)) return ESP_ERR_INVALID_ARG;
@@ -91,11 +105,13 @@ esp_err_t nvs_open(const char *name, nvs_open_mode_t mode, nvs_handle_t *out) {
     if (file) {
         const size_t count=fread(h->image,1,IMAGE_SIZE,file);
         const int extra=fgetc(file);
-        if (count!=IMAGE_SIZE || extra!=EOF || ferror(file) || !valid_image(h->image)) err=ESP_ERR_INVALID_CRC;
+        const bool legacy=count==12U+ENTRY_COUNT*LEGACY_ENTRY_SIZE;
+        if ((!legacy && count!=IMAGE_SIZE) || extra!=EOF || ferror(file) || !valid_image(h->image,legacy)) err=ESP_ERR_INVALID_CRC;
+        else if (legacy) migrate_image(h->image);
         if (fclose(file) && err==ESP_OK) err=ESP_FAIL;
     } else if (errno!=ENOENT) err=ESP_FAIL;
     else if (!h->writable) err=ESP_ERR_NOT_FOUND;
-    else memcpy(h->image,"SKNVS001",8);
+    else memcpy(h->image,"SKNVS002",8);
     if (err!=ESP_OK) { free(h); return err; }
     do { ++next_id; } while (!next_id || lookup(next_id));
     h->id=next_id; handles[slot]=h; *out=h->id;
@@ -125,9 +141,9 @@ static esp_err_t set(nvs_handle_t id,const char *key,unsigned type,const void *v
     unsigned char *e;
     esp_err_t err=entry(id,key,true,&e);
     if (err!=ESP_OK) return err;
-    if (e[16]==type && e[17]==len && !memcmp(e+18,value,len)) return ESP_OK;
-    memset(e,0,ENTRY_SIZE); strcpy((char *)e,key); e[16]=type; e[17]=len;
-    memcpy(e+18,value,len); lookup(id)->dirty=true; return ESP_OK;
+    if (e[16]==type && value_length(e)==len && !memcmp(e+19,value,len)) return ESP_OK;
+    memset(e,0,ENTRY_SIZE); strcpy((char *)e,key); e[16]=type; e[17]=len&255; e[18]=len>>8;
+    memcpy(e+19,value,len); lookup(id)->dirty=true; return ESP_OK;
 }
 static esp_err_t get(nvs_handle_t id,const char *key,unsigned type,void *value,size_t *len) {
     if (!len) return ESP_ERR_INVALID_ARG;
@@ -135,10 +151,18 @@ static esp_err_t get(nvs_handle_t id,const char *key,unsigned type,void *value,s
     esp_err_t err=entry(id,key,false,&e);
     if (err!=ESP_OK) return err;
     if (e[16]!=type) return ESP_ERR_INVALID_ARG;
-    const size_t available=*len; *len=e[17];
+    const size_t available=*len; *len=value_length(e);
     if (!value) return ESP_OK;
     if (available<*len) return ESP_ERR_INVALID_SIZE;
-    memcpy(value,e+18,*len); return ESP_OK;
+    memcpy(value,e+19,*len); return ESP_OK;
+}
+esp_err_t nvs_erase_key(nvs_handle_t id,const char *key) {
+    settings_handle_t *h=lookup(id);
+    if (!h || !h->writable) return ESP_ERR_INVALID_STATE;
+    unsigned char *e;
+    esp_err_t err=entry(id,key,false,&e);
+    if (err!=ESP_OK) return err;
+    memset(e,0,ENTRY_SIZE); h->dirty=true; return ESP_OK;
 }
 esp_err_t nvs_set_u8(nvs_handle_t h,const char *k,uint8_t v) { return set(h,k,1,&v,1); }
 esp_err_t nvs_get_u8(nvs_handle_t h,const char *k,uint8_t *v) { size_t n=1; return v ? get(h,k,1,v,&n) : ESP_ERR_INVALID_ARG; }
@@ -151,7 +175,7 @@ esp_err_t nvs_get_u16(nvs_handle_t h,const char *k,uint16_t *v) {
 }
 esp_err_t nvs_set_str(nvs_handle_t h,const char *k,const char *v) {
     if (!v) return ESP_ERR_INVALID_ARG;
-    if (strlen(v)>63) return ESP_ERR_INVALID_SIZE;
+    if (strlen(v)>319) return ESP_ERR_INVALID_SIZE;
     return set(h,k,3,v,strlen(v)+1);
 }
 esp_err_t nvs_get_str(nvs_handle_t h,const char *k,char *v,size_t *n) { return get(h,k,3,v,n); }

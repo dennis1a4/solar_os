@@ -22,7 +22,8 @@ do not maintain a separate device or website copy.
 
 The SuperKeyboard port now runs independent RA8875 LCD/USB-host-keyboard and
 USB serial terminals, writable SD/QSPI flash storage, MicroPython, Ethernet,
-an SSH client, Files, editor, calculator, less, Notes, Sheet, and a terminal synth.
+an SSH client, Files, editor, calculator, less, Notes, Sheet, a terminal synth,
+native Plot graphics, and the Playground catalog browser.
 The tested display profile builds with `pio run -e teensy41_display`.
 
 Start with the [Teensy 4.1 README](doc/ports/README.md) for hardware, temporary

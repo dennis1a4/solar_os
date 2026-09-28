@@ -70,6 +70,9 @@ static void service_requests() {
     auto *ctx = current_context();
     const auto *app = solar_os_context_take_launch_request(ctx);
     if (!app) return;
+    if (app->app_class == SOLAR_OS_APP_CLASS_GUI && !solar_os_context_gfx(ctx)) {
+        launch_error("This graphical app needs the local LCD console."); return;
+    }
 #if SK_LCD_CONSOLE
     if (!sk_app_allowed(app)) { launch_error("Audio is in use by another session."); return; }
 #endif

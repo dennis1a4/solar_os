@@ -11,7 +11,20 @@
 #include "solar_os_storage.h"
 #include "flash_storage.h"
 
-// Owned by the one shell task, including the synchronous Python VM.
+// Serialize each storage operation across consoles and Playground's worker.
+#include <semphr.h>
+static StaticSemaphore_t storage_mutex_buffer;
+static SemaphoreHandle_t storage_mutex;
+struct StorageLock {
+    StorageLock() {
+        taskENTER_CRITICAL();
+        if (!storage_mutex) storage_mutex=xSemaphoreCreateRecursiveMutexStatic(&storage_mutex_buffer);
+        taskEXIT_CRITICAL();
+        configASSERT(storage_mutex);
+        xSemaphoreTakeRecursive(storage_mutex,portMAX_DELAY);
+    }
+    ~StorageLock() { xSemaphoreGiveRecursive(storage_mutex); }
+};
 // libc streams use funopen; no syscall overrides affect FreeRTOS or USB.
 struct Route {
     char path[SOLAR_OS_STORAGE_PATH_MAX];
@@ -63,7 +76,7 @@ struct sk_directory {
     lfs_dir_t little{};
 #endif
 };
-extern "C" DIR *opendir(const char *path) {
+extern "C" DIR *opendir(const char *path) { StorageLock lock;
     Route r; if (!route_path(path,r)) return nullptr;
     auto *dir=new (std::nothrow) sk_directory;
     if (!dir) { errno=ENOMEM; return nullptr; }
@@ -82,7 +95,7 @@ extern "C" DIR *opendir(const char *path) {
     }
     return dir;
 }
-extern "C" struct dirent *readdir(DIR *dir) {
+extern "C" struct dirent *readdir(DIR *dir) { StorageLock lock;
     if (!dir) { errno=EBADF; return nullptr; }
 #if SK_QSPI_FLASH
     if (dir->flash) {
@@ -109,7 +122,7 @@ extern "C" struct dirent *readdir(DIR *dir) {
         strlcpy(dir->entry.d_name,entry.name(),sizeof(dir->entry.d_name)); return &dir->entry;
     }
 }
-extern "C" int closedir(DIR *dir) {
+extern "C" int closedir(DIR *dir) { StorageLock lock;
     if (!dir) { errno=EBADF; return -1; }
     int ret=0;
 #if SK_QSPI_FLASH
@@ -117,7 +130,7 @@ extern "C" int closedir(DIR *dir) {
 #endif
     delete dir; return ret;
 }
-extern "C" int __wrap_stat(const char *path, struct stat *out) {
+extern "C" int __wrap_stat(const char *path, struct stat *out) { StorageLock lock;
     if (!out) { errno=EINVAL; return -1; }
     Route r; if (!route_path(path,r)) return -1;
     memset(out,0,sizeof(*out)); out->st_nlink=1;
@@ -147,7 +160,7 @@ static OpenFile *lookup(int fd) {
     if (fd<first_fd || fd>=first_fd+file_limit || !files[fd-first_fd].used) { errno=EBADF; return nullptr; }
     return &files[fd-first_fd];
 }
-extern "C" int __wrap_open(const char *path,int flags,...) {
+extern "C" int __wrap_open(const char *path,int flags,...) { StorageLock lock;
     Route r; if (!route_path(path,r)) return -1;
     if (flags & ~(O_ACCMODE|O_CREAT|O_TRUNC|O_APPEND|O_EXCL)) { errno=EINVAL; return -1; }
     if ((flags&O_ACCMODE)>O_RDWR || ((flags&O_TRUNC) && (flags&O_ACCMODE)==O_RDONLY)) { errno=EINVAL; return -1; }
@@ -179,7 +192,7 @@ extern "C" int __wrap_open(const char *path,int flags,...) {
     }
     f.used=true; f.stream=nullptr; f.access=flags&O_ACCMODE; return first_fd+slot;
 }
-extern "C" ssize_t __wrap_read(int fd,void *data,size_t size) {
+extern "C" ssize_t __wrap_read(int fd,void *data,size_t size) { StorageLock lock;
     auto *f=lookup(fd); if (!f) return -1;
     if (f->access==O_WRONLY) { errno=EBADF; return -1; }
 #if SK_QSPI_FLASH
@@ -187,7 +200,7 @@ extern "C" ssize_t __wrap_read(int fd,void *data,size_t size) {
 #endif
     int n=f->file.read(data,size); if (n<0) errno=EIO; return n;
 }
-extern "C" ssize_t __wrap_write(int fd,const void *data,size_t size) {
+extern "C" ssize_t __wrap_write(int fd,const void *data,size_t size) { StorageLock lock;
     auto *f=lookup(fd); if (!f) return -1;
     if (f->access==O_RDONLY) { errno=EBADF; return -1; }
 #if SK_QSPI_FLASH
@@ -196,14 +209,14 @@ extern "C" ssize_t __wrap_write(int fd,const void *data,size_t size) {
     size_t n=f->file.write(data,size);
     if (n<size) { errno=EIO; if (!n && size) return -1; } return n;
 }
-extern "C" int __wrap_fsync(int fd) {
+extern "C" int __wrap_fsync(int fd) { StorageLock lock;
     auto *f=lookup(fd); if (!f) return -1;
 #if SK_QSPI_FLASH
     if (f->little) return flash_result(lfs_file_sync(sk_flash_fs(),f->little));
 #endif
     if (!f->file.sync()) { errno=EIO; return -1; } return 0;
 }
-extern "C" int __wrap_close(int fd) {
+extern "C" int __wrap_close(int fd) { StorageLock lock;
     auto *f=lookup(fd); if (!f) return -1;
     int ret=0;
 #if SK_QSPI_FLASH
@@ -215,7 +228,7 @@ extern "C" int __wrap_close(int fd) {
     if (!f->file.close()) { errno=EIO; ret=-1; }
     f->used=false; f->stream=nullptr; return ret;
 }
-extern "C" off_t __wrap_lseek(int fd,off_t offset,int whence) {
+extern "C" off_t __wrap_lseek(int fd,off_t offset,int whence) { StorageLock lock;
     auto *f=lookup(fd); if (!f) return -1;
 #if SK_QSPI_FLASH
     if (f->little) {
@@ -230,7 +243,7 @@ extern "C" off_t __wrap_lseek(int fd,off_t offset,int whence) {
     else if (whence!=SEEK_SET) { errno=EINVAL; return -1; }
     if (target<0 || target>INT32_MAX || !f->file.seekSet(target)) { errno=EINVAL; return -1; } return target;
 }
-extern "C" int __wrap_fstat(int fd,struct stat *out) {
+extern "C" int __wrap_fstat(int fd,struct stat *out) { StorageLock lock;
     auto *f=lookup(fd); if (!f) return -1;
     if (!out) { errno=EINVAL; return -1; }
     memset(out,0,sizeof(*out)); out->st_mode=S_IFREG|0666; out->st_nlink=1;
@@ -243,7 +256,7 @@ extern "C" int __wrap_fstat(int fd,struct stat *out) {
     out->st_size=f->file.fileSize(); return 0;
 }
 extern "C" int __real_fileno(FILE *stream);
-extern "C" int __wrap_fileno(FILE *stream) {
+extern "C" int __wrap_fileno(FILE *stream) { StorageLock lock;
     for (int i = 0; i < file_limit; ++i)
         if (files[i].used && files[i].stream == stream) return first_fd + i;
     return __real_fileno(stream);
@@ -252,7 +265,7 @@ static int file_read(void *cookie, char *data, int size) { return __wrap_read(in
 static int file_write(void *cookie, const char *data, int size) { return __wrap_write(int(intptr_t(cookie)), data, size); }
 static fpos_t file_seek(void *cookie, fpos_t offset, int whence) { return __wrap_lseek(int(intptr_t(cookie)), offset, whence); }
 static int file_close(void *cookie) { return __wrap_close(int(intptr_t(cookie))); }
-extern "C" FILE *__wrap_fopen(const char *path, const char *mode) {
+extern "C" FILE *__wrap_fopen(const char *path, const char *mode) { StorageLock lock;
     if (!mode || !*mode) { errno = EINVAL; return nullptr; }
     bool plus = false, binary = false;
     for (const char *m = mode + 1; *m; ++m) {
@@ -276,7 +289,7 @@ extern "C" FILE *__wrap_fopen(const char *path, const char *mode) {
     else files[fd-first_fd].stream = stream;
     return stream;
 }
-extern "C" int __wrap_mkdir(const char *path,mode_t) {
+extern "C" int __wrap_mkdir(const char *path,mode_t) { StorageLock lock;
     Route r; if (!route_path(path,r)) return -1;
     if (r.mount_root) { errno=EEXIST; return -1; }
 #if SK_QSPI_FLASH
@@ -285,7 +298,7 @@ extern "C" int __wrap_mkdir(const char *path,mode_t) {
     if (SD.exists(r.path)) { errno=EEXIST; return -1; }
     if (!SD.sdfs.mkdir(r.path,false)) { errno=EIO; return -1; } return 0;
 }
-extern "C" int __wrap_unlink(const char *path) {
+extern "C" int __wrap_unlink(const char *path) { StorageLock lock;
     struct stat info; if (__wrap_stat(path,&info)) return -1;
     if (S_ISDIR(info.st_mode)) { errno=EISDIR; return -1; }
     Route r; if (!route_path(path,r)) return -1;
@@ -294,7 +307,7 @@ extern "C" int __wrap_unlink(const char *path) {
 #endif
     if (!SD.sdfs.remove(r.path)) { errno=EIO; return -1; } return 0;
 }
-extern "C" int __wrap_rmdir(const char *path) {
+extern "C" int __wrap_rmdir(const char *path) { StorageLock lock;
     Route r; if (!route_path(path,r)) return -1;
     if (r.mount_root) { errno=EBUSY; return -1; }
     struct stat info; if (__wrap_stat(path,&info)) return -1;
@@ -304,11 +317,11 @@ extern "C" int __wrap_rmdir(const char *path) {
 #endif
     if (!SD.sdfs.rmdir(r.path)) { errno=ENOTEMPTY; return -1; } return 0;
 }
-extern "C" int __wrap_remove(const char *path) {
+extern "C" int __wrap_remove(const char *path) { StorageLock lock;
     struct stat info; if (__wrap_stat(path,&info)) return -1;
     return S_ISDIR(info.st_mode) ? __wrap_rmdir(path) : __wrap_unlink(path);
 }
-extern "C" int __wrap_rename(const char *oldpath,const char *newpath) {
+extern "C" int __wrap_rename(const char *oldpath,const char *newpath) { StorageLock lock;
     Route a,b; if (!route_path(oldpath,a) || !route_path(newpath,b)) return -1;
     if (a.mount_root || b.mount_root) { errno=EBUSY; return -1; }
     if (a.flash!=b.flash) { errno=EXDEV; return -1; }
@@ -324,7 +337,7 @@ extern "C" int __wrap_rename(const char *oldpath,const char *newpath) {
 #if SK_SETTINGS
 // LittleFS rename atomically replaces a regular destination. Keep general shell
 // rename's no-clobber policy; only the settings transaction uses replacement.
-extern "C" esp_err_t sk_settings_replace(const char *source, const char *dest) {
+extern "C" esp_err_t sk_settings_replace(const char *source, const char *dest) { StorageLock lock;
     constexpr const char *prefix="/flash/.solar-settings/";
     Route a,b;
     if (!route_path(source,a) || !route_path(dest,b) || !a.flash || !b.flash ||
@@ -334,26 +347,26 @@ extern "C" esp_err_t sk_settings_replace(const char *source, const char *dest) {
     return flash_result(lfs_rename(sk_flash_fs(),a.path,b.path))==0 ? ESP_OK : ESP_FAIL;
 }
 #endif
-extern "C" bool solar_os_storage_flash_is_mounted() {
+extern "C" bool solar_os_storage_flash_is_mounted() { StorageLock lock;
 #if SK_QSPI_FLASH
     return sk_flash_mounted();
 #else
     return false;
 #endif
 }
-extern "C" bool solar_os_storage_is_mounted() { return sk_sd_is_mounted() || solar_os_storage_flash_is_mounted(); }
-extern "C" bool solar_os_storage_sd_is_mounted() { return sk_sd_is_mounted(); }
-extern "C" bool solar_os_storage_root_is_mounted() {
+extern "C" bool solar_os_storage_is_mounted() { StorageLock lock; return sk_sd_is_mounted() || solar_os_storage_flash_is_mounted(); }
+extern "C" bool solar_os_storage_sd_is_mounted() { StorageLock lock; return sk_sd_is_mounted(); }
+extern "C" bool solar_os_storage_root_is_mounted() { StorageLock lock;
 #if SK_QSPI_FLASH
     return false; // Root is the mount list; no filesystem owns it.
 #else
     return sk_sd_is_mounted();
 #endif
 }
-extern "C" size_t solar_os_storage_mount_count() {
+extern "C" size_t solar_os_storage_mount_count() { StorageLock lock;
     return size_t(sk_sd_is_mounted()) + size_t(solar_os_storage_flash_is_mounted());
 }
-extern "C" bool solar_os_storage_get_mount(size_t index, solar_os_storage_mount_info_t *out) {
+extern "C" bool solar_os_storage_get_mount(size_t index, solar_os_storage_mount_info_t *out) { StorageLock lock;
     if (!out) return false;
     memset(out, 0, sizeof(*out));
     if (sk_sd_is_mounted()) {
@@ -373,17 +386,17 @@ extern "C" bool solar_os_storage_get_mount(size_t index, solar_os_storage_mount_
     }
     return false;
 }
-extern "C" const char *solar_os_storage_mount_point() { return "/"; }
-extern "C" const char *solar_os_storage_sd_mount_point() {
+extern "C" const char *solar_os_storage_mount_point() { StorageLock lock; return "/"; }
+extern "C" const char *solar_os_storage_sd_mount_point() { StorageLock lock;
 #if SK_QSPI_FLASH
     return "/sd";
 #else
     return "/";
 #endif
 }
-extern "C" const char *solar_os_storage_flash_mount_point() { return "/flash"; }
-extern "C" bool solar_os_storage_path_has_mount_prefix(const char *path) { return path && path[0]=='/'; }
-extern "C" esp_err_t solar_os_storage_path_mount_point(const char *path,char *out,size_t len) {
+extern "C" const char *solar_os_storage_flash_mount_point() { StorageLock lock; return "/flash"; }
+extern "C" bool solar_os_storage_path_has_mount_prefix(const char *path) { StorageLock lock; return path && path[0]=='/'; }
+extern "C" esp_err_t solar_os_storage_path_mount_point(const char *path,char *out,size_t len) { StorageLock lock;
     if (!out) return ESP_ERR_INVALID_ARG;
     Route r; if (!route_path(path,r,false)) return ESP_ERR_INVALID_ARG;
     const char *mount=r.flash ? "/flash" : "/";
@@ -393,10 +406,10 @@ extern "C" esp_err_t solar_os_storage_path_mount_point(const char *path,char *ou
     if (strlen(mount)>=len) return ESP_ERR_INVALID_SIZE;
     strcpy(out,mount); return ESP_OK;
 }
-extern "C" esp_err_t solar_os_storage_mkdir(const char *p) { return __wrap_mkdir(p,0777)==0 ? ESP_OK : ESP_FAIL; }
-extern "C" esp_err_t solar_os_storage_rmdir(const char *p) { return __wrap_rmdir(p)==0 ? ESP_OK : ESP_FAIL; }
-extern "C" esp_err_t solar_os_storage_remove(const char *p) { return __wrap_remove(p)==0 ? ESP_OK : ESP_FAIL; }
-extern "C" esp_err_t solar_os_storage_rename(const char *a,const char *b) {
+extern "C" esp_err_t solar_os_storage_mkdir(const char *p) { StorageLock lock; return __wrap_mkdir(p,0777)==0 ? ESP_OK : ESP_FAIL; }
+extern "C" esp_err_t solar_os_storage_rmdir(const char *p) { StorageLock lock; return __wrap_rmdir(p)==0 ? ESP_OK : ESP_FAIL; }
+extern "C" esp_err_t solar_os_storage_remove(const char *p) { StorageLock lock; return __wrap_remove(p)==0 ? ESP_OK : ESP_FAIL; }
+extern "C" esp_err_t solar_os_storage_rename(const char *a,const char *b) { StorageLock lock;
     if (__wrap_rename(a,b)==0) return ESP_OK;
     if (errno!=EXDEV) return ESP_FAIL;
     // POSIX rename remains EXDEV; the OS move service can copy a regular file
@@ -407,7 +420,7 @@ extern "C" esp_err_t solar_os_storage_rename(const char *a,const char *b) {
     if (err!=ESP_OK) return err;
     return __wrap_unlink(a)==0 ? ESP_OK : ESP_FAIL;
 }
-extern "C" esp_err_t solar_os_storage_sync_file(FILE *f) {
+extern "C" esp_err_t solar_os_storage_sync_file(FILE *f) { StorageLock lock;
     if (!f) return ESP_ERR_INVALID_ARG;
     return fflush(f)==0 && __wrap_fsync(__wrap_fileno(f))==0 ? ESP_OK : ESP_FAIL;
 }

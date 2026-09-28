@@ -11,6 +11,7 @@ extern uint8_t external_psram_size;
 // Arduino's __brkval is not updated by that allocator.
 extern uint8_t *_g_heap_start, *_g_heap_max, *_g_current_heap_end;
 extern unsigned long _estack;
+extern uint8_t _extram_start[], _extram_end[];
 }
 
 static StaticSemaphore_t mutex_storage;
@@ -19,6 +20,11 @@ static solar_os_memory_status_t statistics;
 struct alignas(max_align_t) Header { size_t size; };
 
 void sk_memory_begin() {
+    // Arduino EXTMEM is NOLOAD; shared SolarOS EXT_RAM_BSS_ATTR means zeroed
+    // static storage. Initialize it before any shared service or allocation.
+    const size_t external_bss=uintptr_t(_extram_end)-uintptr_t(_extram_start);
+    configASSERT(external_bss<=size_t(external_psram_size)*1024*1024);
+    if(external_bss) memset(_extram_start,0,external_bss);
     // Never hand out memory overlapping the pinned core's MPU stack guard.
     configASSERT(reinterpret_cast<uintptr_t>(_g_heap_max) <=
                  reinterpret_cast<uintptr_t>(&_estack) - 8192);

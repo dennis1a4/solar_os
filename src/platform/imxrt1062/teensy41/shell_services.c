@@ -29,6 +29,7 @@ esp_err_t nvs_commit(nvs_handle_t h) { (void)h; return ESP_ERR_NOT_SUPPORTED; }
 void nvs_close(nvs_handle_t h) { (void)h; }
 void solar_os_identity_format(char *buffer, size_t len) { snprintf(buffer, len, "user@teensy41"); }
 #endif
+#if !SK_PLAYGROUND
 bool solar_os_board_has(solar_os_board_capability_t cap) {
     solar_os_memory_status_t status;
     solar_os_memory_get_status(&status);
@@ -36,6 +37,7 @@ bool solar_os_board_has(solar_os_board_capability_t cap) {
         (status.external.total ? SOLAR_OS_BOARD_CAP_PSRAM : 0);
     return (supported & cap) == cap;
 }
+#endif
 #if !SK_SSH
 bool solar_os_task_admit(const char *name, uint32_t size,
                         solar_os_task_role_t role, bool external) {

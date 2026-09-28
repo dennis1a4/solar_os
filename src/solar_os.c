@@ -7,7 +7,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#if !defined(SOLAR_OS_HEADLESS) || !SOLAR_OS_HEADLESS
+#if !defined(SOLAR_OS_HEADLESS) || !SOLAR_OS_HEADLESS || SOLAR_OS_PORT_GFX
 #include "solar_os_gfx_internal.h"
 #include "solar_os_splash.h"
 #endif
@@ -282,7 +282,7 @@ void solar_os_context_set_graphics_active(solar_os_context_t *ctx, bool active)
         return;
     }
 
-#if defined(SOLAR_OS_HEADLESS) && SOLAR_OS_HEADLESS
+#if defined(SOLAR_OS_HEADLESS) && SOLAR_OS_HEADLESS && !SOLAR_OS_PORT_GFX
     (void)active;
     ctx->graphics_active = false;
     return;
@@ -304,7 +304,7 @@ void solar_os_context_set_streaming_graphics_active(solar_os_context_t *ctx,
     if (ctx == NULL) {
         return;
     }
-#if defined(SOLAR_OS_HEADLESS) && SOLAR_OS_HEADLESS
+#if defined(SOLAR_OS_HEADLESS) && SOLAR_OS_HEADLESS && !SOLAR_OS_PORT_GFX
     (void)active;
     ctx->graphics_active = false;
     return;
@@ -599,7 +599,7 @@ bool solar_os_context_take_session_request(solar_os_context_t *ctx,
 
 void solar_os_context_reboot(solar_os_context_t *ctx, const char *status)
 {
-#if !defined(SOLAR_OS_HEADLESS) || !SOLAR_OS_HEADLESS
+#if !defined(SOLAR_OS_HEADLESS) || !SOLAR_OS_HEADLESS || SOLAR_OS_PORT_GFX
     if (ctx != NULL && ctx->gfx != NULL) {
         solar_os_splash_draw_reboot(ctx->gfx, status);
         vTaskDelay(pdMS_TO_TICKS(150));
