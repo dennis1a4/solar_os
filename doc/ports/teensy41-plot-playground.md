@@ -129,8 +129,8 @@ The host suite also checks all bundled roots, expired dates and wrong hostnames.
 `--playground-only` skips Plot checks when diagnosing downloads.
 
 Firmware: 1,015,088 bytes flash, 424,256 bytes RAM1 and 225,704 bytes RAM2.
-The independent-console regression also passes. On-screen Plot appearance and
-physical Plot keyboard controls await user confirmation.
+The independent-console regression also passes. The user confirmed a readable live graph,
+Space pause/resume and Q returning to the shell.
 
 Final Files regression passed: SD/flash copy/move, recursive copy, ZIP, editor
 and Python child return, and repeated app cleanup. The memory assertion accepts

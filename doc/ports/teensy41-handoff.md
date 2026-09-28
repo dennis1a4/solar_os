@@ -71,8 +71,8 @@ Firmware and validation logs: `../solar_os-baselines/2026-09-27-plot-playground/
 Final combined app test: `/tmp/teensy-plot-playground-final.json`;
 independent-console regression: `/tmp/teensy-plot-display-regression.json`.
 Both pass. HTTP/settings/child lifecycle/terminal host tests pass, as do the
-14 manual tests and the USB-only synth build. Native Plot's on-screen
-appearance still needs the user's visual confirmation.
+14 manual tests and the USB-only synth build. The user confirmed a readable live Plot graph and working Space pause/resume
+and Q-to-shell keyboard controls.
 
 ## Continuing work
 
