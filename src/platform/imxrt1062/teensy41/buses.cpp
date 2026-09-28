@@ -27,6 +27,8 @@ esp_err_t sk_buses_begin() {
     for (auto pins : superkeyboard::slots) {
         digitalWrite(pins.cs, HIGH); pinMode(pins.cs, OUTPUT);
     }
+    digitalWrite(superkeyboard::primary_cs, HIGH);
+    pinMode(superkeyboard::primary_cs, OUTPUT);
     digitalWrite(superkeyboard::secondary_cs, HIGH);
     pinMode(superkeyboard::secondary_cs, OUTPUT);
     SPI.setMOSI(superkeyboard::primary_mosi); SPI.setMISO(superkeyboard::primary_miso);

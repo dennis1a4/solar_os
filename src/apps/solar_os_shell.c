@@ -519,6 +519,9 @@ static bool shell_prepare_app_launch_args(
 #if SK_QSPI_FLASH
 void solar_os_shell_cmd_flash(solar_os_context_t *ctx, int argc, char **argv);
 #endif
+#if SK_LCD_CONSOLE
+void solar_os_shell_cmd_lcd(solar_os_context_t *ctx, int argc, char **argv);
+#endif
 static const shell_command_t shell_builtin_commands[] = {
 #if SOLAR_OS_SHELL_CORE_ONLY
     {"help", "list shell commands", cmd_commands},
@@ -530,6 +533,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"uptime", "show time since boot", solar_os_shell_cmd_uptime},
     {"clear", "clear the screen", solar_os_shell_cmd_clear},
     {"setterm", "set serial terminal size", solar_os_shell_cmd_setterm},
+#if SK_LCD_CONSOLE
+    {"lcd", "LCD status, dump, or send a quoted command", solar_os_shell_cmd_lcd},
+#endif
 #if SK_SETTINGS
     {"identity", "show or save user and hostname", solar_os_shell_cmd_identity},
 #endif
@@ -3700,7 +3706,12 @@ static void cmd_wait(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
+#if SK_LCD_CONSOLE
+    extern void sk_console_delay_ms(uint32_t ms);
+    sk_console_delay_ms((uint32_t)seconds * 1000U);
+#else
     vTaskDelay(pdMS_TO_TICKS((uint32_t)seconds * 1000U));
+#endif
 }
 
 static solar_os_shell_io_t *terminal(solar_os_context_t *ctx)

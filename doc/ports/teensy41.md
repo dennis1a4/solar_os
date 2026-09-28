@@ -1,16 +1,16 @@
 # SuperKeyboard CPU v2: i.MX RT1062 / Teensy 4.1
 
-For milestones, checklists, and future ideas, use the
-[Teensy progress tracker](teensy41-roadmap.md).
+For current setup and supported features, start with the
+[Teensy README](README.md). Milestones and remaining work are in the
+[progress tracker](teensy41-roadmap.md).
 
-This is the **first bring-up port**, based on SolarOS commit
-`5e1ddf2200055a6bdfdc7ae0664fd26f00e98b51`. It is not a completed SolarOS
-platform, nor a fully hardware-validated firmware release. Basic bare-board
-testing was performed on 2026-09-24; see the results below.
-The `teensy41_shell` target now runs the shared shell, calculator, editor and
-a Teensy MicroPython adapter through one USB session with writable SD storage.
-The complete command set, persistent settings, storage hot-removal recovery,
-and full scheduler/session manager remain unported. The original `teensy41` target remains the bring-up/recovery console.
+These notes preserve the detailed bring-up history, starting from SolarOS commit
+`5e1ddf2200055a6bdfdc7ae0664fd26f00e98b51`. Earlier sections describe the state
+at that stage; later dated sections record storage, networking, SSH, Files and
+settings integration. The current display profile adds two independent shell
+sessions and a USB host keyboard; see the [display notes](teensy41-display.md)
+and [synth notes](teensy41-synth.md). This remains an incomplete platform port.
+The original `teensy41` target is retained for bootstrap/recovery.
 
 ## Build
 

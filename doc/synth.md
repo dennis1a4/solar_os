@@ -1,5 +1,7 @@
 # Synth Service
 
+The Teensy 4.1 terminal port is described in [Teensy Synth](ports/teensy41-synth.md).
+
 `service.synth` is SolarOS's reusable real-time sample-generation layer. It
 depends on the device-independent `service.audio`. The selected built-in or
 runtime-attached provider continues to own its hardware, global volume, and

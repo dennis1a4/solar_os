@@ -1,5 +1,6 @@
-// Included by the single USB console. Each app retains its context and TUI
-// while a child runs; all frames live in PSRAM, not the console stack.
+// Included by either the single USB console or the dual-console adapter.
+// Each session retains its app contexts/TUIs while a child runs; frames live
+// in PSRAM, not on the console stack.
 struct AppFrame {
     AppFrame *parent;
     const solar_os_app_t *app;
@@ -8,7 +9,9 @@ struct AppFrame {
     int argc;
     char argv[SOLAR_OS_APP_ARG_MAX][SOLAR_OS_APP_ARG_LEN];
 };
+#if !SK_LCD_CONSOLE
 static AppFrame *app_frame;
+#endif
 static solar_os_context_t *current_context() {
     return app_frame ? &app_frame->context : &shell_context;
 }
@@ -67,6 +70,9 @@ static void service_requests() {
     auto *ctx = current_context();
     const auto *app = solar_os_context_take_launch_request(ctx);
     if (!app) return;
+#if SK_LCD_CONSOLE
+    if (!sk_app_allowed(app)) { launch_error("Audio is in use by another session."); return; }
+#endif
     const auto policy = solar_os_context_take_launch_policy(ctx);
     unsigned depth = 0;
     for (auto *frame = app_frame; frame; frame = frame->parent) {

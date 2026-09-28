@@ -1,5 +1,8 @@
 # Teensy hardware checks
 
+See the [Teensy quick-start](../../doc/ports/README.md) for the current profiles
+and wiring. The sections below also describe earlier bring-up profiles.
+
 Run commands from the SolarOS repository root. The hardware script requires
 Python 3 and `pyserial`, the baseline firmware with `sdinfo`, and exclusive use
 of the USB console: close other serial monitors first. It discovers a single
@@ -339,3 +342,26 @@ Settings host tests inject sync/rename failure, validate corrupt/truncated data,
 check staged writes, type/length/capacity bounds, read-only and stale handles,
 and unchanged-value write suppression under ASAN/UBSAN. Sanitizers require
 execution outside the restricted sandbox on this host.
+
+## Synth and independent LCD/USB terminals
+
+The `teensy41_synth` profile adds the terminal instrument. The
+`teensy41_display` profile adds an Adafruit RA8875 terminal and USB host keyboard
+while retaining a separate USB serial shell. See the
+[synth controls and evidence](../../doc/ports/teensy41-synth.md) and
+[display integration notes](../../doc/ports/teensy41-display.md).
+
+```sh
+bash scripts/ports/test_teensy41_synth_host.sh
+bash scripts/ports/test_teensy41_lcd_host.sh
+python3 scripts/ports/test_teensy41_synth.py --log /tmp/teensy-synth.json
+python3 scripts/ports/test_teensy41_display.py --log /tmp/teensy-display.json
+```
+
+Run device tests separately, with the serial monitor closed. The synth suite
+requires the connected audio shield and plays at 10% headphone volume. The
+display suite requires the local operator to leave the keyboard idle: it injects
+LCD input to check session isolation, app ownership, Python cancellation,
+memory cleanup and USB reconnect. It leaves the LCD at a shell prompt. Add
+`--status-only` to read keyboard/USB-host status without injecting local input.
+Text-buffer checks do not replace a visual screen and physical-keyboard check.

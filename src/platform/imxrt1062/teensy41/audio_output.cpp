@@ -145,7 +145,14 @@ void sk_audio_player_begin() {
     sk_console_print(ready ? "Audio shield: SGTL5000 ready, headphones at 20%\r\n" :
                             "Audio shield: SGTL5000 not detected\r\n");
 }
+#if SK_LCD_CONSOLE
+extern "C" bool sk_console_poll_cancel(bool);
+extern "C" bool sk_audio_owner_connected();
+#endif
 extern "C" bool sk_audio_cancelled() {
+#if SK_LCD_CONSOLE
+    return sk_console_poll_cancel(true);
+#else
     if (!Serial) return true;
     bool stop = false;
     while (Serial.available()) {
@@ -153,6 +160,7 @@ extern "C" bool sk_audio_cancelled() {
         stop |= ch == 3 || ch == 27 || ch == 29;
     }
     return stop;
+#endif
 }
 extern "C" esp_err_t sk_audio_output_start(uint8_t volume) {
     if (!ready) return ESP_ERR_NOT_FOUND;
@@ -183,6 +191,49 @@ extern "C" esp_err_t sk_audio_output_write(const int16_t *data, size_t frames) {
     }
     return ESP_OK;
 }
+#if SK_SYNTH
+extern "C" esp_err_t sk_audio_output_volume(uint8_t volume) {
+    if (volume > 100) return ESP_ERR_INVALID_ARG;
+    if (!ready) return ESP_ERR_NOT_FOUND;
+    if (!sk_i2c_lock(0)) return ESP_ERR_TIMEOUT;
+    bool ok = codec.volume(volume / 100.0f);
+    sk_i2c_unlock(0);
+    return ok ? ESP_OK : ESP_FAIL;
+}
+extern "C" uint32_t sk_audio_output_underruns() { return underruns; }
+// Synth has a foreground input owner. Never consume Serial from this worker.
+// Limit queued audio to four blocks (~12 ms), instead of the player's 90 ms.
+extern "C" esp_err_t sk_audio_synth_write(const int16_t *data, size_t frames,
+                                          const volatile bool *stop) {
+    while (frames) {
+        uint32_t started = millis();
+        while ((head + slots - tail) % slots >= 4) {
+            if (*stop) return ESP_ERR_TIMEOUT;
+#if SK_LCD_CONSOLE
+            if (!sk_audio_owner_connected()) return ESP_FAIL;
+#else
+            if (!Serial) return ESP_FAIL;
+#endif
+            if (millis() - started > 1000) return ESP_FAIL;
+            vTaskDelay(1);
+        }
+        if (*stop) return ESP_ERR_TIMEOUT;
+#if SK_LCD_CONSOLE
+        if (!sk_audio_owner_connected()) return ESP_FAIL;
+#else
+        if (!Serial) return ESP_FAIL;
+#endif
+        const size_t count = min(frames, size_t(AUDIO_BLOCK_SAMPLES - partial));
+        memcpy(pcm[head] + partial * 2, data, count * 4);
+        data += count * 2; frames -= count; partial += count;
+        if (partial == AUDIO_BLOCK_SAMPLES) {
+            __DMB(); head = (head + 1) % slots;
+            consuming = true; partial = 0;
+        }
+    }
+    return ESP_OK;
+}
+#endif
 extern "C" esp_err_t sk_audio_output_finish(bool drain) {
     esp_err_t result = ESP_OK;
     consuming = false; // The producer is finished; an empty tail is no underrun.

@@ -17,3 +17,15 @@ uint32_t sk_audio_capture_stop(void);
 #ifdef __cplusplus
 }
 #endif
+
+#if SK_SYNTH
+#ifdef __cplusplus
+extern "C" {
+#endif
+esp_err_t sk_audio_synth_write(const int16_t *stereo, size_t frames, const volatile bool *stop);
+esp_err_t sk_audio_output_volume(uint8_t volume);
+uint32_t sk_audio_output_underruns(void);
+#ifdef __cplusplus
+}
+#endif
+#endif

@@ -28,3 +28,7 @@
 #if SK_FILES
 #define SOLAR_OS_PACKAGE_APP_FILES 1
 #endif
+
+#if SK_SYNTH
+#define SOLAR_OS_PACKAGE_APP_SYNTH 1
+#endif

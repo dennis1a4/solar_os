@@ -20,14 +20,14 @@ do not maintain a separate device or website copy.
 
 ## Experimental Teensy 4.1 port
 
-The SuperKeyboard CPU v2 upstream USB shell builds with `pio run -e teensy41_shell`.
-It runs a reduced command set, the full text calculator, and read-only SD access.
-The original `teensy41` target retains the bring-up console for recovery.
-Writable storage and broader service/session integration remain pending.
-See the [port status, hardware findings, and
-bring-up instructions](doc/ports/teensy41.md) before flashing.
-Track milestones, next actions, and future ideas in the
-[Teensy progress tracker](doc/ports/teensy41-roadmap.md).
+The SuperKeyboard port now runs independent RA8875 LCD/USB-host-keyboard and
+USB serial terminals, writable SD/QSPI flash storage, MicroPython, Ethernet,
+an SSH client, Files, editor, calculator, less, Notes, Sheet, and a terminal synth.
+The tested display profile builds with `pio run -e teensy41_display`.
+
+Start with the [Teensy 4.1 README](doc/ports/README.md) for hardware, temporary
+LCD wiring, build/upload instructions, commands, test coverage, and limitations.
+The [progress tracker](doc/ports/teensy41-roadmap.md) records the remaining work.
 
 ## Build
 

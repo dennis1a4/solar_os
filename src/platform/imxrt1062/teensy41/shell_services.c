@@ -90,6 +90,13 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) 
     }
 #endif
     if (argc == 4 && !strcmp(argv[1], "size")) {
+#if SK_LCD_CONSOLE
+        extern bool sk_console_is_local(void);
+        if (sk_console_is_local()) {
+            solar_os_shell_io_writeln(io,"LCD geometry is fixed at 100x30.");
+            return;
+        }
+#endif
         char *end_col, *end_row;
         long cols = strtol(argv[2], &end_col, 10), rows = strtol(argv[3], &end_row, 10);
         if (*argv[2] && *argv[3] && !*end_col && !*end_row &&

@@ -227,6 +227,13 @@ device configuration, so treat shell history and physical access to the device
 as sensitive. `email sync` performs one synchronization; use the `email-sync`
 job for periodic polling.
 
+### `lcd` (Teensy display profile)
+
+`lcd` shows local terminal geometry and the calling console. `lcd dump` prints
+the LCD's text buffer. From USB, `lcd send "COMMAND"` queues text and Enter to
+the LCD session, for display diagnostics without a local keyboard. Input goes
+to whichever app is active there. The two consoles share files and services.
+
 ## System And Diagnostics
 
 | Command | Usage | Description |
@@ -273,6 +280,7 @@ job for periodic polling.
 | `schedule` | `schedule run <name>` | Run an entry immediately. Only one scheduled shell script can run at a time. |
 | `schedule` | `schedule stop [name]` | Stop the active ringing alarm, optionally only when its name matches. |
 | `setterm` | `setterm` | Open the terminal settings TUI from the display shell. |
+| `lcd` | `lcd [dump\|send "COMMAND"\|key exit\|key ctrlc\|key esc]` | Teensy display profile: show status, dump LCD text, or queue local input from USB. |
 | `setterm` | `setterm --display <target> [orientation\|font\|textsize\|palette\|statusbar] [value]` | Show or change the volatile terminal profile of a named display target. |
 | `setterm` | `setterm orientation [0\|90\|180\|270]` | Show or set primary-display orientation. |
 | `setterm` | `setterm font [mono\|compact]`; `setterm textsize [10\|12\|14\|16\|18\|20]` | Show or set the terminal font and text size. |

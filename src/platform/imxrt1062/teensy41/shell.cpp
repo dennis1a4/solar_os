@@ -1,4 +1,4 @@
-#if SK_UPSTREAM_SHELL
+#if SK_UPSTREAM_SHELL && !SK_LCD_CONSOLE
 #include <arduino_freertos.h>
 #include "platform.h"
 extern "C" {

@@ -8,19 +8,20 @@ and test evidence in the [port notes](teensy41.md).
 
 ## Current position
 
-The bring-up baseline is preserved in local commit `b46367f`. The separate
-`teensy41_shell` build now runs the real upstream USB shell, app registry and
-calculator (interactive text mode and `-e`), upstream editor, and MicroPython
-REPL/SD scripts with writable SD access. A reduced command table and single USB
-session are implemented; storage hot-removal recovery and the complete
-multi-session/service integration remain. `teensy41_apps` now adds persistent
-USB geometry, identity and startup selection, plus less, Notes and Sheet.
-Fitted PSRAM is detected as 8 MiB. Current work is on local `main`.
-Compatibility remains the priority: keep application logic shared and put board
-changes below OS services. The combined `teensy41_files` profile now runs SSH and
-the Files manager, including returning to Files from a child editor or Python app. The Ethernet profile now uses the shared network
-registry, managed TCP/UDP sessions and the existing `solaros.net` bindings. It
-also mounts the fitted QSPI flash at `/flash`, with SD at `/sd` and legacy `/` paths.
+The current `teensy41_display` profile runs independent LCD/USB-host-keyboard
+and USB serial shells, extending the shared Files/SSH/network/storage/apps
+profile and terminal synth. Temporary Adafruit RA8875 wiring and the tested
+Microsoft keyboard are documented in the [Teensy README](README.md).
+Physical typing and Files navigation work. Dual-session isolation, cancellation,
+USB reconnect and app cleanup passed. The audio shield was removed for access
+to the USB host cable, so combined audio/display hardware validation remains.
+
+Writable SD/QSPI flash, persistent identity/USB geometry/startup selection,
+MicroPython, Ethernet, SSH client, calculator, editor, Files, less, Notes and
+Sheet are integrated. The display uses the shared TUI apps through an ASCII/ANSI
+terminal; pixel graphics and full upstream session/service coverage remain.
+Fitted PSRAM is 8 MiB. Compatibility remains the priority: keep application logic
+shared and put board changes beneath OS services. Current work is on local `main`.
 
 ## Original 13-step plan
 
@@ -33,15 +34,15 @@ step. Partial implementations and compile checks do not mean full integration.
 | 1 | Make an imxrt1062/teensy41 platform target and get the SolarOS core compiling. | Partial: target builds with upstream core lifecycle, queues, parser and expression engine. Full upstream core flavor/services are not yet ported. |
 | 2 | Boot FreeRTOS. | Verified on hardware: console task and heartbeat run. |
 | 3 | Get USB or Serial1 console output. | Verified over USB. Serial1 is implemented but not hardware-tested. |
-| 4 | Get the SolarOS shell prompt. | Verified: upstream `user@teensy41:/` USB shell with reduced command table. Bootstrap retained for recovery; full multi-session integration remains. |
+| 4 | Get the SolarOS shell prompt. | Verified: independent LCD and USB upstream shells with a reduced command table. Bootstrap retained for recovery; full upstream session coverage remains. |
 | 5 | Implement SDIO and mount the SD card. | Mount and reads verified, including writable shell/SD file operations, editor saves and Python files. Startup failure root cause, hot-removal recovery and full VFS semantics remain. |
-| 6 | Implement the primary display. | Optional RA8875 bring-up compiles. Controller/wiring confirmation, hardware testing and SolarOS terminal/GFX integration remain. |
+| 6 | Implement the primary display. | Adafruit RA8875 800x480 text terminal and shared TUI apps verified on temporary wiring. PCB wiring and pixel graphics integration remain. |
 | 7 | Implement I²C/SPI/UART abstraction. | Initial adapters compile. Hardware tests and upstream service/resource integration remain. |
 | 8 | Implement expansion slots. | Initial pin descriptors and exclusive slot claims implemented. Manifest/driver registry integration and hardware tests remain. |
 | 9 | Add PSRAM allocation. | Allocation adapter and 4 KiB test implemented. Missing-PSRAM handling and fitted 8 MiB / repeated 4 KiB checks verified; full-capacity testing remains. |
 | 10 | Add audio. | Rev D shield headphone output and aplay MP3/WAV verified in teensy41_audio. Mic WAV capture verified with speaker tone; 60 Hz hum remains. Custom-board supply/wiring and full audio services remain. |
 | 11 | Add secondary display. | Optional ST7735 bring-up compiles. Controller confirmation, hardware tests and second-terminal support remain. |
-| 12 | Add USB functionality. | USB CDC console verified. Optional host keyboard support compiles but is untested; other USB roles/features need scope decisions and implementation. |
+| 12 | Add USB functionality. | Independent USB CDC console and Microsoft USB host keyboard verified. Home-built keyboard compatibility and other USB roles remain. |
 | 13 | Start enabling higher-level SolarOS applications one at a time. | Calculator, upstream editor and a Teensy MicroPython adapter run through the registry/lifecycle. Graphics, hardware Python bindings and further applications remain. |
 
 ## Next actions
@@ -113,13 +114,15 @@ conflicts are handled predictably. External hardware is required.
 
 - [ ] Resolve the wiring and component questions listed in the port notes,
   especially SGTL5000 supply voltage, display controllers, and GPIO9's role.
-- [ ] Validate the primary display and integrate terminal/GFX rendering.
+- [x] Validate the Adafruit primary display and integrate terminal/TUI rendering.
+- [ ] Integrate pixel graphics and validate final PCB display wiring.
 - [ ] Validate the secondary display and define its terminal behavior.
 - [x] Validate Rev D shield output and upstream aplay MP3/WAV playback.
 - [x] Verify Rev D microphone WAV recording, cancellation and speaker-tone capture.
 - [ ] Investigate 60 Hz microphone hum and verify clean recording quality.
 - [ ] Validate custom-board audio wiring and full stream services.
-- [ ] Validate USB host wiring and keyboard input; integrate input events.
+- [x] Validate USB host input with the Microsoft keyboard and local terminal.
+- [ ] Investigate the home-built keyboard and broader HID compatibility.
 - [x] Detect fitted 8 MiB PSRAM and pass repeated cache-flushed 4 KiB tests.
 - [ ] Test full-capacity PSRAM and define DMA-safe buffer handling where needed.
 
@@ -344,3 +347,18 @@ from on-board tests.
 - Saved `../solar_os-baselines/2026-09-27-apps/`; preferences restored and temporary
   startup fixture removed. No commit or push. Physical keyboard/display, clock,
   broader settings, SD hot-removal and full sessions remain future work.
+
+### Synth and independent LCD/USB terminals — 2026-09-27
+
+- Shared eight-voice synth engine runs through the SGTL5000 output worker with
+  terminal controls. Host sanitizers, device waveforms/load, twenty restarts,
+  USB disconnect and MP3/WAV regression passed on the synth firmware.
+- Added configurable RA8875 wiring, Adafruit display preset, buffered ANSI
+  terminal, HID parsers and keyboard navigation/function keys.
+- Combined display profile runs two real shell sessions with per-session app
+  frames, shared app/resource ownership, and owner-specific cancellation.
+- Dual-session and Files regressions passed. User confirmed local typing and
+  Files navigation with Microsoft keyboard 045e:0750. Home-built keyboard remains
+  unverified; audio shield was removed for USB host access.
+- See [display notes](teensy41-display.md) and [synth notes](teensy41-synth.md).
+  Touch is not a priority; pixel graphics and broader services remain future work.
