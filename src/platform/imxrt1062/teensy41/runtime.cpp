@@ -29,6 +29,11 @@ extern "C" void esp_restart() {
 }
 extern "C" esp_err_t solar_os_log_write(solar_os_log_level_t level,
                                          const char *tag, const char *fmt, ...) {
+#if SK_GRAPHICS && !SK_GFX_DIAGNOSTICS
+    // These local graphics lifecycle diagnostics must not interrupt USB prompts.
+    if (tag && (!strcmp(tag,"gfx") || !strcmp(tag,"solar_os_view"))) return ESP_OK;
+#endif
+
     char message[192];
     va_list args;
     va_start(args, fmt);

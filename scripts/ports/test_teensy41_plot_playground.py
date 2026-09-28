@@ -89,7 +89,6 @@ try:
         run=cmd('playground run hello-python');assert 'Hello from the SolarOS Playground!' in run,run
         alias=cmd('hello-python');assert 'Hello from the SolarOS Playground!' in alias,alias
         assert 'unavailable' in cmd('playground install hello-lua')
-        assert 'unavailable' in cmd('playground install mandelbrot-python')
         local('playground');time.sleep(1);assert 'Playground' in dump()
         cmd('lcd key exit');time.sleep(.5)
         report['playground_passed']=True

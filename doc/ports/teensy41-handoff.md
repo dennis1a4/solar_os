@@ -1,3 +1,58 @@
+# Paused graphics checkpoint — 2026-09-27
+
+The user explicitly requested an overnight pause. Resume graphics/View work
+when asked. See [graphics notes](teensy41-graphics.md). Current branch is
+`teensy41`; preserve the unrelated untracked DNP3 work.
+
+## Current work in progress
+
+- Uploaded display firmware adds the shared PSRAM INDEX8/u8g2 renderer and
+  fonts/icons, native View/Invaders, and synchronous Python `solaros.gfx`.
+- User visually confirmed seeing the color test patterns. PNG/JPEG hardware
+  viewing and fit/actual transitions ran. Python drawing and exception cleanup
+  checks were reached; Invaders was animating when the user requested pause.
+- **The full hardware test was intentionally interrupted, not passed.**
+  Log: `/tmp/teensy-graphics.json`; last completed frame count 15. Do not report
+  full graphics validation complete. The interrupted test is saved with the
+  checkpoint. Host PNG/JPEG ASAN/UBSAN tests and 14 manual tests passed.
+- Full-screen presentation is currently **about 1.73 seconds**. This is too slow
+  for smooth games. Next work should optimize presentation before calling the
+  graphical-app port complete. The shared canvas already supplies dirty tiles
+  and 6,000 presented-hash slots: compare tile content (and palette changes) so
+  apps which clear/redraw a frame do not force retransmission of unchanged
+  tiles. No hash optimization has been implemented yet. Validate bounds and
+  palette/rotation/dirty-map assumptions in the new surface adapter as well.
+- Current SD demos: `/sd/graphics-demo-acaf29fc/color-bars.png`, `color-bars.jpg`,
+  `drawing.py`, `broken.png`. Earlier interrupted test folders
+  `/sd/graphics-demo-fc0cc8cd` and others may remain. Do not delete user files.
+- The old uploader failed at the 1 MiB HEX boundary. Pinned PJRC CLI 2.3 revision
+  `03fca4156c244c7ad36bd368cf6e24531dbd566a` fixed this. Normal Linux PlatformIO
+  upload now calls `scripts/ports/upload_teensy41.py`, builds the tool in
+  `.pio/teensy-tools/loader`, and explicitly selects `TEENSY41`. This path was
+  successfully tested. Host prerequisites: make, C compiler, libusb-compat.
+- Current firmware SHA256:
+  `bb46b976d2b55f5d8a5e3a014d263d740c3f7a221264938f2c745f24476bd08d`.
+  Flash 1,202,984 bytes. Backup firmware, ELF, source and logs:
+  `../solar_os-baselines/2026-09-27-graphics-wip/`.
+- View/gfx diagnostic logs are suppressed by default to preserve USB prompt
+  isolation (`SK_GFX_DIAGNOSTICS=1` opts in). WebP and Lua are unavailable.
+  Python graphics bindings exist; other upstream Python modules are not all
+  ported. Native Invaders has no audio here (shield remains disconnected).
+- The hardware test transfers images through Python REPL; shell command lines
+  are too short for large hex payloads. It polls frame counts because display
+  presentation yields to USB before the frame finishes. Remaining: finish
+  native/Python controls and memory tests, exercise official Playground
+  Mandelbrot, Files-to-View child return, Plot and dual-console regressions,
+  and obtain visual confirmation of text/icons/game controls.
+- Official Mandelbrot package inspected at `/tmp/solaros-mandelbrot.sopkg`;
+  SHA256 matches catalog `43fc83c5448955b418641221ee3b748ceccd8f062add9ba52159cf3d60f9b6f0`.
+  Uses only the supplied graphics/should_exit/getch API. Not yet run on device.
+
+The sections below preserve the previous completed Plot/Playground baseline;
+they do not describe the newly uploaded graphics checkpoint.
+
+---
+
 # Teensy 4.1 handoff — 2026-09-27
 
 Start with the [Teensy README](README.md). Repository:

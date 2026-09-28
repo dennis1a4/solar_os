@@ -14,7 +14,8 @@ script = script.replace(marker, marker + "\n\t\t*libLittleFS.a:*(.text* .rodata*
 script = script.replace(marker, marker + "\n\t\t*libssh2.a:*(.text* .rodata*)\n\t\t*libmbedcrypto.a:*(.text* .rodata*)")
 script = script.replace(marker, marker + "\n\t\t*libminiz.a:*(.text* .rodata*)\n\t\t*solar_os_files.c.o(.text* .rodata*)\n\t\t*solar_os_zip.c.o(.text* .rodata*)")
 script = script.replace(marker, marker + "\n\t\t*libRA8875.a:*(.text* .rodata*)\n\t\t*libUSBHost_t36.a:*(.text* .rodata*)")
-for obj in ("solar_os_plot.c", "solar_os_playground_app.c", "solar_os_playground.c", "solar_os_json.c", "http_client.cpp", "tls_roots.cpp", "shell_dual.cpp", "lcd_terminal.cpp", "peripherals.cpp",
+script = script.replace(marker, marker + "\n\t\t*libgfx_*.a:*(.text* .rodata*)")
+for obj in ("u8g2*", "u8x8*", "stb_image_port.c", "solar_os_invaders.c", "graphics.cpp", "python_gfx.c", "solar_os_view.c", "solar_os_gfx.c", "solar_os_gfx_icons.c", "solar_os_vector.c", "solar_os_plot.c", "solar_os_playground_app.c", "solar_os_playground.c", "solar_os_json.c", "http_client.cpp", "tls_roots.cpp", "shell_dual.cpp", "lcd_terminal.cpp", "peripherals.cpp",
             "synth_backend.cpp", "synth_app.c", "solar_os_dsp.c", "solar_os_synth_voice.c", "settings.c", "solar_os_identity.c", "solar_os_less.c", "solar_os_notes.c", "solar_os_sheet.c", "solar_os_manual.c",
             "ssh_platform.cpp", "solar_os_ssh.c", "solar_os_ssh_transport.c", "solar_os_ssh_keys.c", "solar_os_crypto.c", "flash_storage.cpp", "flash_policy.c", "shell_storage.cpp", "network.cpp", "net_transport.c", "network_registry.cpp", "python_solaros_net.c",
             "solar_os_tui.c", "solar_os_tui_widgets.c", "solar_os_edit.c", "solar_os_calc.c",

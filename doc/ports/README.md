@@ -3,7 +3,8 @@
 This experimental port runs the shared SolarOS shell and text applications on
 a Teensy 4.1. The current `teensy41_display` profile has an RA8875 LCD with a
 USB host keyboard and a separate USB serial console. Both can be used at once.
-It also includes native Plot graphics and the Playground catalog browser.
+It also includes Plot, View for PNG/JPEG images, Invaders, Python graphics
+and the Playground catalog browser. See [graphics notes](teensy41-graphics.md).
 Touch is not required or enabled.
 
 ## Tested hardware and wiring

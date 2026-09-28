@@ -384,3 +384,9 @@ leaves the catalog/example installed. Use `--plot-only` to skip the network work
 The HTTP sanitizer test also checks the embedded certificates, date validation
 and hostname rejection using the same pinned crypto configuration as firmware.
 Settings tests cover legacy-snapshot migration, long source URLs and key erasure.
+
+## RA8875 graphics and images
+
+See [graphics notes](../../doc/ports/teensy41-graphics.md) for the image decoder
+host test and `test_teensy41_graphics.py` hardware acceptance test. Both need
+Pillow; the device test retains a unique SD demo folder for manual use.

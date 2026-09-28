@@ -1,4 +1,8 @@
 #pragma once
+#if SK_GRAPHICS
+#define SOLAR_OS_PACKAGE_APP_VIEW 1
+#define SOLAR_OS_PACKAGE_APP_INVADERS 1
+#endif
 #if SK_PLOT
 #define SOLAR_OS_PACKAGE_APP_PLOT 1
 #endif

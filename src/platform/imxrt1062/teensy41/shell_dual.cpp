@@ -68,7 +68,12 @@ static int read_key() {
 extern "C" bool sk_console_poll_cancel(bool escape) {
     if(!connected()) return true;
     bool stop=false;
-    for(int ch;(ch=read_key())>=0;) stop|=ch==3 || ch==29 || (escape && ch==27);
+    for(int ch;(ch=read_key())>=0;) {
+        if(ch==3 || ch==29 || (escape && ch==27))stop=true;
+#if SK_GRAPHICS
+        else if(foreground && !strcmp(foreground->name,"python")) { extern void sk_python_gfx_key(int);sk_python_gfx_key(ch); }
+#endif
+    }
     console_yield();
     return stop;
 }

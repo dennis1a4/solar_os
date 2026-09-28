@@ -25,6 +25,10 @@ void sk_python_solaros_net_destroy(void);
 
 #define PY_HEAP_BYTES (512U * 1024U)
 #define PY_INPUT_BYTES 8192U
+#if SK_GRAPHICS
+void sk_python_gfx_init(solar_os_context_t *);
+void sk_python_gfx_destroy(void);
+#endif
 static solar_os_context_t *context;
 static void *heap;
 static char *source;
@@ -99,6 +103,9 @@ static void prompt(void) {
 }
 static void python_stop(solar_os_context_t *ctx) {
     (void)ctx;
+#if SK_GRAPHICS
+    sk_python_gfx_destroy();
+#endif
     if (initialized) {
         volatile uintptr_t top = 0;
         stack_boundary((void *)&top);
@@ -139,6 +146,9 @@ static esp_err_t python_start(solar_os_context_t *ctx) {
     #if SK_ETHERNET
     sk_python_network_init();
     sk_python_solaros_net_init();
+    #endif
+    #if SK_GRAPHICS
+    sk_python_gfx_init(ctx);
     #endif
     const int argc = solar_os_context_argc(ctx);
     const char *path = argc > 1 ? solar_os_context_argv(ctx, 1) : NULL;
