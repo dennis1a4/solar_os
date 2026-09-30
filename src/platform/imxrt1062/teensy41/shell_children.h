@@ -20,6 +20,9 @@ static void restore_arguments(AppFrame *frame) {
     memcpy(frame->context.argv, frame->argv, sizeof(frame->argv));
 }
 static void select_frame() {
+#if SK_LCD_CONSOLE
+    sk_console_input_boundary();
+#endif
     foreground = app_frame ? app_frame->app : nullptr;
     active_tui = app_frame ? app_frame->tui : nullptr;
     solar_os_shell_session_set_foreground_app(session, foreground);
@@ -64,6 +67,9 @@ static void launch_error(const char *message) {
 static void service_requests() {
     if (solar_os_context_take_exit_request(current_context())) {
         if (app_frame) finish_app();
+#if SK_TELNETD
+        else if(sk_console_is_remote())sk_telnet_disconnect();
+#endif
         else solar_os_shell_session_start(&shell_context, session,
             solar_os_shell_session_io(session), false, false);
     }

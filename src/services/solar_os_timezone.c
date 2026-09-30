@@ -11,6 +11,9 @@ typedef struct {
 } timezone_alias_t;
 
 static const timezone_alias_t timezone_aliases[] = {
+    /* Explicit fixed-offset policy, not historical IANA America/Winnipeg data. */
+    {"Manitoba", "Manitoba", "UTC5"},
+    {"manitoba", "Manitoba", "UTC5"},
     {"UTC", "UTC", "UTC0"},
     {"utc", "UTC", "UTC0"},
     {"Etc/UTC", "UTC", "UTC0"},

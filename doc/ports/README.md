@@ -1,11 +1,28 @@
 # SolarOS on Teensy 4.1 / SuperKeyboard
 
+**Workstation commands:** [Command audit and integration](teensy41-workstation.md).
+`help` now browses the embedded manual; use `commands` for the command list,
+`man watch` for a topic and `watch -n 2 top` for task monitoring. `session list`
+currently inspects fixed consoles; retained sessions and `fg` remain pending.
+
+**Keyboard:** [Repeat timing and validation](teensy41-keyboard.md), physically
+confirmed for letters, Left, Backspace and Shift changes.
+
+**Testing:** [Master outstanding test checklist](teensy41-test-checklist.md).
+
 This experimental port runs the shared SolarOS shell and text applications on
 a Teensy 4.1. The current `teensy41_display` profile has an RA8875 LCD with a
 USB host keyboard and a separate USB serial console. Both can be used at once.
 It also includes Plot, View for PNG/JPEG images, Invaders, Python graphics
-and the Playground catalog browser. See [graphics notes](teensy41-graphics.md).
+and the Playground catalog browser. The native [MQTT Explorer](teensy41-mqtt-explorer.md)
+adds a topic tree, live message history and optional SD capture logs.
+See [graphics notes](teensy41-graphics.md).
 Touch is not required or enabled.
+
+Incoming Ethernet shells are available through [Telnet](teensy41-telnetd.md),
+with explicit startup and password login. The currently tested old-wiring image
+uses `teensy41_telnet_legacy` (AmpEn40, scope ADC disabled). The normal
+`teensy41_display` candidate requires the planned AmpEn0/ADC40 wiring change.
 
 ## Tested hardware and wiring
 
@@ -55,22 +72,24 @@ Run from the repository root with PlatformIO installed. The first build fetches
 the pinned Teensy platform and libraries.
 
 ```sh
-pio run -e teensy41_display
-pio run -e teensy41_display -t upload
-pio device monitor -e teensy41_display --baud 115200 --raw --exit-char 28
+pio run -e teensy41_telnet_legacy
+pio run -e teensy41_telnet_legacy -t upload
+pio device monitor -e teensy41_telnet_legacy --baud 115200 --raw --exit-char 28
 ```
 
 Close serial monitors and hardware-test scripts before uploading. Ctrl+\ exits
 the monitor; Ctrl-C then remains available to the SolarOS application. If the
 automatic reboot cannot reach the Teensy, press the board's Program button when
-the loader waits for the device. Firmware is in `.pio/build/teensy41_display/`.
+the loader waits for the device. Current-wiring firmware is in
+`.pio/build/teensy41_telnet_legacy/`.
 
 Always select an environment explicitly: the repository default is an ESP32
 target. Useful profiles are:
 
 | Profile | Purpose |
 | --- | --- |
-| `teensy41_display` | Combined apps/synth, Plot, Playground, independent LCD/USB consoles |
+| `teensy41_telnet_legacy` | Current AmpEn40 wiring; workstation apps, Telnet, LCD/USB, scope demo |
+| `teensy41_display` | New AmpEn0/ADC40 wiring; physical scope ADC, Serial1 disabled |
 | `teensy41_synth` | Combined apps plus terminal synth, USB console only |
 | `teensy41_apps` | SSH, Files, persistent settings, less, Notes and Sheet |
 | `teensy41_lcd` | Minimal LCD/bootstrap console for hardware diagnosis |
@@ -106,7 +125,7 @@ Notes edits Markdown checklists; Sheet views CSV data/formulas rather than
 editing cells. `synth` plays through the audio shield when fitted; see its
 [controls](teensy41-synth.md). It starts at 20% headphone volume.
 
-`/` lists the `/sd` and `/flash` mounts. Identity, USB terminal geometry and
+`/` lists the `/sd`, `/usb` and `/flash` mounts. Identity, USB terminal geometry and
 startup selection persist in flash. `setterm size 100 30` changes USB geometry;
 LCD geometry is fixed at 100x30. In the display profile the startup script runs
 once per boot on the LCD session. No startup file is created automatically.
@@ -155,6 +174,7 @@ See [display evidence](teensy41-display.md) and [synth evidence](teensy41-synth.
 for the exact scope and recorded logs.
 
 ```sh
+bash scripts/ports/test_teensy41_keyboard_host.sh
 bash scripts/ports/test_teensy41_lcd_host.sh
 bash scripts/ports/test_teensy41_synth_host.sh
 bash scripts/ports/test_teensy41_children_host.sh
@@ -168,8 +188,8 @@ hardware suites one at a time. Tests that write storage retain uniquely named
 fixtures; read each script's instructions before running it. See the
 [hardware test guide](../../scripts/ports/README.md).
 
-- Shared terminal/TUI apps and native Plot work. Other graphical app variants
-  and Python graphics are not integrated. The local terminal uses ASCII; unsupported
+- Shared terminal/TUI apps, Plot, View, Invaders and Python graphics work.
+  Other graphical apps need individual integration. The local terminal uses ASCII; unsupported
   Unicode becomes `?`. It is not a complete xterm emulator.
 - Singleton apps cannot run twice. Audio apps share one output, and worker apps
   share the existing worker reservation. Native operations without a cooperative
@@ -178,9 +198,9 @@ fixtures; read each script's instructions before running it. See the
   hardware testing awaits reconnecting the shield.
 - SD hot-removal recovery, broad USB keyboard compatibility, full-capacity PSRAM
   testing, secondary display and more upstream services remain pending.
-- A previous loader rejected an image beyond the 1 MiB Intel HEX boundary.
-  The current display image is about 1.01 MB; investigate the uploader before
-  exceeding that boundary. It is not the board's flash-capacity limit.
+- The old loader's 1 MiB HEX parsing issue is fixed by the pinned Linux loader
+  used by the upload script. The installed image is 1,340,592 bytes. Other host
+  platforms need a compatible loader; see the graphics notes.
 
 ## Further notes
 
@@ -196,3 +216,11 @@ Local tested firmware/log/source snapshots are stored alongside this checkout
 in `../solar_os-baselines/`. They are recovery artifacts, not repository files.
 Unfinished DNP3 sources in the development workspace are not integrated or part
 of the tested port.
+
+USB flash-drive integration and limits: [Teensy USB storage](teensy41-usb-storage.md).
+
+- [USB-PD power app](teensy41-power.md): native `pdpower --demo`, negotiation
+  policy and STUSB4500 hardware follow-up.
+
+- [Single-channel scope](teensy41-scope.md): graphical ADC snapshots, controls,
+  pending pin move and validation.

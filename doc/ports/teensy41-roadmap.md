@@ -1,12 +1,79 @@
 # Teensy 4.1 / SuperKeyboard progress tracker
 
-Last updated: 2026-09-27.
+**Testing:** [Master outstanding test checklist](teensy41-test-checklist.md).
+
+Last updated: 2026-09-29.
 
 This is the working plan and idea backlog for porting SolarOS from ESP32 to
 Teensy 4.1, then bringing up the SuperKeyboard hardware. Keep technical details
 and test evidence in the [port notes](teensy41.md).
 
 ## Current position
+
+**2026-09-29 keyboard repeat:** implemented and flashed on AmpEn40 legacy wiring;
+400 ms delay / 33 ms interval. Host sanitizer and child lifecycle tests pass.
+User confirmed basic physical repeat/release; reconnect and broader app checks
+remain pending. See [keyboard notes](teensy41-keyboard.md).
+
+**2026-09-29 workstation shell:** embedded Help/Man, Watch, task/system/storage
+diagnostics, Date/Time, archives and Curl added and tested on legacy wiring.
+Session listing is integrated; retained sessions and fg/close are still next
+work. See the [complete command audit](teensy41-workstation.md). Current state
+is the keyboard-repeat legacy image; query network status after its reboot.
+
+Current firmware, validation and recovery instructions are in the
+[handoff](teensy41-handoff.md); older pause/unplug entries are historical.
+
+**Telnet installed:** password-protected incoming Ethernet shell alongside USB
+and LCD, one remote client. Host/device tests pass, including disconnect cleanup,
+network recovery, immediate restart and stable warm idle memory over ten cycles.
+The user also confirmed their own Telnet connection worked.
+`teensy41_telnet_legacy` preserves AmpEn40/Serial1 and
+disables physical scope ADC until rewiring; both scope/pdpower demos are installed.
+See [Telnet notes](teensy41-telnetd.md).
+
+**Scope candidate:** graphical `scope` adds single-channel timer/DMA snapshots
+and demo mode. Positive 5/50 V manual scaling, triggering, run/hold and basic
+measurements. Pin 40 ADC / pin 0 AmpEn; Serial1 disabled in display build.
+Host tests pass; demo installed in legacy image. Rewiring, normal display-image
+flashing and ADC hardware validation pending. See
+[scope notes](teensy41-scope.md).
+
+**USB-PD power candidate:** native `pdpower --demo` text app and negotiation model
+implemented with simulated success/fault scenarios. Host tests pass; installed
+with Telnet (device interaction checks pending).
+STUSB4500 I2C backend and board limits pending; motor controller deferred. See
+[power notes](teensy41-power.md).
+
+**Clock/timezone installed:** shared Clock app ported with time, stopwatch and
+transient countdown modes. Saved timezone support includes fixed UTC-5 Manitoba.
+Host and remote device tests pass, including reboot persistence and repeated
+launch memory recovery. Flashed; visual/audio checks pending (audio shield missing).
+
+**Keyboard testing:** Earlier reconnect checks passed. Repeat is now implemented
+and basic hold/release is user-confirmed. Held-key removal on the new image,
+multiple simultaneous holds and wider app checks remain in KEY-2 through KEY-5.
+
+**2026-09-28, OBD demo:** Native `obd --demo` and shared bounded CAN/ISO-TP/OBD
+foundation implemented and host-tested. Installed with the clock image; real
+CAN hardware remains untested.
+MCP2515 hardware backend and separate canmon app remain next steps. See
+[OBD notes](teensy41-obd.md).
+
+**2026-09-28, SD recovery:** implemented, host-tested and installed. Boot mount
+passes; physical hot-removal validation remains pending.
+Guided SD/USB/keyboard reconnect automation is ready for a local operator.
+Physical validation remains pending; see [SD recovery](teensy41-sd-recovery.md).
+
+**2026-09-28, MQTT Explorer:** Native `mqttx` adds topic tree/latest values,
+message history, payload inspection, pause/filtering and SD logs. Isolated
+hardware capture/reconnect/keepalive and memory checks pass. Authenticated live
+capture and user LCD/navigation checks also passed; see the
+[MQTT notes](teensy41-mqtt-explorer.md). Initial transport is MQTT 3.1.1 TCP.
+
+**2026-09-28:** Python graphics and View passed host/device checks and user
+visual confirmation. Invaders physical movement/fire controls also confirmed.
+Small redraws take 33–36 ms; full-screen transfers remain about 1.74 seconds.
 
 The current `teensy41_display` profile runs independent LCD/USB-host-keyboard
 and USB serial shells, extending the shared Files/SSH/network/storage/apps
@@ -19,9 +86,10 @@ to the USB host cable, so combined audio/display hardware validation remains.
 Writable SD/QSPI flash, persistent identity/USB geometry/startup selection,
 MicroPython, Ethernet, SSH client, calculator, editor, Files, less, Notes and
 Sheet are integrated. The display uses the shared TUI apps through an ASCII/ANSI
-terminal; pixel graphics and full upstream session/service coverage remain.
+terminal. Shared pixel graphics, View and Python `solaros.gfx` are now integrated;
+full upstream session/service coverage remains. See [graphics notes](teensy41-graphics.md).
 Fitted PSRAM is 8 MiB. Compatibility remains the priority: keep application logic
-shared and put board changes beneath OS services. Current work is on local `main`.
+shared and put board changes beneath OS services. Current work is on branch `teensy41`.
 
 ## Original 13-step plan
 
@@ -35,17 +103,23 @@ step. Partial implementations and compile checks do not mean full integration.
 | 2 | Boot FreeRTOS. | Verified on hardware: console task and heartbeat run. |
 | 3 | Get USB or Serial1 console output. | Verified over USB. Serial1 is implemented but not hardware-tested. |
 | 4 | Get the SolarOS shell prompt. | Verified: independent LCD and USB upstream shells with a reduced command table. Bootstrap retained for recovery; full upstream session coverage remains. |
-| 5 | Implement SDIO and mount the SD card. | Mount and reads verified, including writable shell/SD file operations, editor saves and Python files. Startup failure root cause, hot-removal recovery and full VFS semantics remain. |
-| 6 | Implement the primary display. | Adafruit RA8875 800x480 text terminal and shared TUI apps verified on temporary wiring. PCB wiring and pixel graphics integration remain. |
+| 5 | Implement SDIO and mount the SD card. | Mount and reads verified, including writable shell/SD file operations, editor saves and Python files. Startup failure root cause, physical validation of the new hot-removal recovery candidate and full VFS semantics remain. |
+| 6 | Implement the primary display. | Adafruit RA8875 800x480 text terminal and shared TUI apps verified on temporary wiring. Shared pixel graphics/View/Python are integrated; final PCB wiring remains. |
 | 7 | Implement I²C/SPI/UART abstraction. | Initial adapters compile. Hardware tests and upstream service/resource integration remain. |
 | 8 | Implement expansion slots. | Initial pin descriptors and exclusive slot claims implemented. Manifest/driver registry integration and hardware tests remain. |
 | 9 | Add PSRAM allocation. | Allocation adapter and 4 KiB test implemented. Missing-PSRAM handling and fitted 8 MiB / repeated 4 KiB checks verified; full-capacity testing remains. |
 | 10 | Add audio. | Rev D shield headphone output and aplay MP3/WAV verified in teensy41_audio. Mic WAV capture verified with speaker tone; 60 Hz hum remains. Custom-board supply/wiring and full audio services remain. |
 | 11 | Add secondary display. | Optional ST7735 bring-up compiles. Controller confirmation, hardware tests and second-terminal support remain. |
-| 12 | Add USB functionality. | Independent USB CDC console and Microsoft USB host keyboard verified. Home-built keyboard compatibility and other USB roles remain. |
-| 13 | Start enabling higher-level SolarOS applications one at a time. | Calculator, upstream editor and a Teensy MicroPython adapter run through the registry/lifecycle. Graphics, hardware Python bindings and further applications remain. |
+| 12 | Add USB functionality. | Independent USB CDC console, Microsoft USB host keyboard and 16 GB FAT32 USB mass storage on a powered hub verified. `/usb` mounting, file operations and safe eject/remount pass; other USB roles remain. |
+| 13 | Start enabling higher-level SolarOS applications one at a time. | Calculator, upstream editor and a Teensy MicroPython adapter run through the registry/lifecycle. View, Invaders and Python graphics are integrated. Hardware Python bindings and further applications remain. |
 
 ## Next actions
+
+- [x] Add workstation commands and keyboard repeat; basic repeat/release confirmed.
+- [ ] Complete remaining physical keyboard checks in the master checklist.
+- [ ] Implement retained sessions/fg/close and cooperative cold DF scans.
+
+The earlier bring-up follow-ups below remain open where unchecked.
 
 - [x] Test a cold power cycle with the SD card inserted (baseline passed).
 - [x] Repeat the cold power cycle with the new retry/diagnostic firmware
@@ -88,7 +162,8 @@ understood, and a tested baseline is saved with reproduction instructions.
 - [x] Bridge read-only SD files/directories to upstream shell filesystem calls.
 - [x] Add writable SD streams/descriptors and test file operations, editor saves and Python I/O.
 - [x] Add SD/flash routing beneath common file APIs, including cross-volume file copy/move.
-- [ ] Add storage hot-removal recovery and remaining VFS semantics.
+- [x] Add USB mass-storage `/usb` mounting, root/Files enumeration, file operations and safe eject/remount (16 GB FAT32, powered hub).
+- [ ] Finish physical USB hot-removal validation, SD hot-removal recovery and remaining VFS semantics.
 - [x] Implement persistent configuration storage for identity, USB geometry and startup selection.
 - [ ] Extend persistent preferences as further time/network/display services are ported.
 - [x] Integrate the upstream shell and application registry with one USB session.
@@ -115,7 +190,8 @@ conflicts are handled predictably. External hardware is required.
 - [ ] Resolve the wiring and component questions listed in the port notes,
   especially SGTL5000 supply voltage, display controllers, and GPIO9's role.
 - [x] Validate the Adafruit primary display and integrate terminal/TUI rendering.
-- [ ] Integrate pixel graphics and validate final PCB display wiring.
+- [x] Integrate shared pixel graphics, View and Python graphics on the temporary RA8875 wiring.
+- [ ] Validate final PCB display wiring.
 - [ ] Validate the secondary display and define its terminal behavior.
 - [x] Validate Rev D shield output and upstream aplay MP3/WAV playback.
 - [x] Verify Rev D microphone WAV recording, cancellation and speaker-tone capture.
@@ -136,7 +212,7 @@ together. Optional peripheral compilation is not hardware validation.
 - [x] Add MicroPython REPL, SD scripts/imports, file I/O and Ctrl-C cancellation.
 - [x] Enable and hardware-test the less text pager, including search and Files return.
 - [x] Enable and hardware-test Notes checklists and Sheet CSV viewing/formulas.
-- [ ] Enable clock (graphics, time and scheduling services remain prerequisites).
+- [x] Enable clock (time, stopwatch, transient countdown and saved timezone); visual/audio validation pending.
 - [ ] Add selected Teensy hardware bindings to Python after peripheral integration.
 - [ ] Check stack use, allocation failures, and missing-storage behavior per app.
 - [x] Prioritize on-device editing and MicroPython scripting.
@@ -161,9 +237,9 @@ Done when: the selected applications work reliably on the intended hardware.
 | Missing-card startup delay | Three mount attempts take about 6.2 seconds with the tested firmware/card absent. Console then remains usable. |
 | Intermittent USB connection | Removing the USB extension restored enumeration, but two longer tests still lost USB while the board was untouched. Uptime continued across the first reconnection; Linux autosuspend was disabled. A different cable and host port passed 1,000 cycles on 2026-09-26; cause remains unconfirmed. |
 | USB console connection timing | Test client needed a one-second settling delay after opening the port. |
-| SD hot removal | Recovery after an already successful mount is not implemented. |
+| SD hot removal | Recovery is implemented and host-tested; physical removal/reinsertion validation remains pending. |
 | Hardware wiring/population | See unresolved items in the port notes before peripheral bring-up. |
-| Network transport | Native Ethernet with PJRC kit selected; teensy41_network link/DHCP/DNS/TCP and short audio/shell checks passed. Shared interface registry, managed TCP/UDP services and solaros.net now work; direct POSIX/ESP networking and TLS remain. |
+| Network transport | Native Ethernet with PJRC kit selected; teensy41_network link/DHCP/DNS/TCP and short audio/shell checks passed. Shared interface registry, managed TCP/UDP services and solaros.net now work; direct POSIX/ESP networking and broader service coverage remain; SSH and Curl TLS adapters are integrated. |
 | MicroPython scope | 512 KiB PSRAM heap, basic REPL and SD scripts/imports/files; IPv4 TCP socket module plus shared solaros.net TCP/UDP APIs in the network profile; no CircuitPython or hardware modules yet. |
 | Full upstream feature scope | Select incrementally after shell/storage integration. |
 

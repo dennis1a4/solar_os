@@ -1,158 +1,82 @@
-# Paused graphics checkpoint — 2026-09-27
+# Teensy / SuperKeyboard handover
 
-The user explicitly requested an overnight pause. Resume graphics/View work
-when asked. See [graphics notes](teensy41-graphics.md). Current branch is
-`teensy41`; preserve the unrelated untracked DNP3 work.
+Updated 2026-09-29. Branch: `teensy41`; GitHub: `dennis1a4/solar_os`.
+This is the current state. Older snapshots are in the
+[handover history](teensy41-handoff-history.md).
 
-## Current work in progress
+## Installed firmware and wiring
 
-- Uploaded display firmware adds the shared PSRAM INDEX8/u8g2 renderer and
-  fonts/icons, native View/Invaders, and synchronous Python `solaros.gfx`.
-- User visually confirmed seeing the color test patterns. PNG/JPEG hardware
-  viewing and fit/actual transitions ran. Python drawing and exception cleanup
-  checks were reached; Invaders was animating when the user requested pause.
-- **The full hardware test was intentionally interrupted, not passed.**
-  Log: `/tmp/teensy-graphics.json`; last completed frame count 15. Do not report
-  full graphics validation complete. The interrupted test is saved with the
-  checkpoint. Host PNG/JPEG ASAN/UBSAN tests and 14 manual tests passed.
-- Full-screen presentation is currently **about 1.73 seconds**. This is too slow
-  for smooth games. Next work should optimize presentation before calling the
-  graphical-app port complete. The shared canvas already supplies dirty tiles
-  and 6,000 presented-hash slots: compare tile content (and palette changes) so
-  apps which clear/redraw a frame do not force retransmission of unchanged
-  tiles. No hash optimization has been implemented yet. Validate bounds and
-  palette/rotation/dirty-map assumptions in the new surface adapter as well.
-- Current SD demos: `/sd/graphics-demo-acaf29fc/color-bars.png`, `color-bars.jpg`,
-  `drawing.py`, `broken.png`. Earlier interrupted test folders
-  `/sd/graphics-demo-fc0cc8cd` and others may remain. Do not delete user files.
-- The old uploader failed at the 1 MiB HEX boundary. Pinned PJRC CLI 2.3 revision
-  `03fca4156c244c7ad36bd368cf6e24531dbd566a` fixed this. Normal Linux PlatformIO
-  upload now calls `scripts/ports/upload_teensy41.py`, builds the tool in
-  `.pio/teensy-tools/loader`, and explicitly selects `TEENSY41`. This path was
-  successfully tested. Host prerequisites: make, C compiler, libusb-compat.
-- Current firmware SHA256:
-  `bb46b976d2b55f5d8a5e3a014d263d740c3f7a221264938f2c745f24476bd08d`.
-  Flash 1,202,984 bytes. Backup firmware, ELF, source and logs:
-  `../solar_os-baselines/2026-09-27-graphics-wip/`.
-- View/gfx diagnostic logs are suppressed by default to preserve USB prompt
-  isolation (`SK_GFX_DIAGNOSTICS=1` opts in). WebP and Lua are unavailable.
-  Python graphics bindings exist; other upstream Python modules are not all
-  ported. Native Invaders has no audio here (shield remains disconnected).
-- The hardware test transfers images through Python REPL; shell command lines
-  are too short for large hex payloads. It polls frame counts because display
-  presentation yields to USB before the frame finishes. Remaining: finish
-  native/Python controls and memory tests, exercise official Playground
-  Mandelbrot, Files-to-View child return, Plot and dual-console regressions,
-  and obtain visual confirmation of text/icons/game controls.
-- Official Mandelbrot package inspected at `/tmp/solaros-mandelbrot.sopkg`;
-  SHA256 matches catalog `43fc83c5448955b418641221ee3b748ceccd8f062add9ba52159cf3d60f9b6f0`.
-  Uses only the supplied graphics/should_exit/getch API. Not yet run on device.
+Installed **`teensy41_telnet_legacy`**, with **AmpEn on pin 40**, Serial1 retained
+and physical scope ADC disabled. Keep this profile until the AmpEn0/ADC40 move.
+The normal `teensy41_display` image requires that wiring change and disables
+Serial1. Both scope and USB-PD demo apps are available on the installed image.
 
-The sections below preserve the previous completed Plot/Playground baseline;
-they do not describe the newly uploaded graphics checkpoint.
+Installed HEX SHA256:
+`7ea498a91947d6a267714ab4f9bebb5b938494d74af818427c98bae432896c4d`.
+Flash 1,340,592 bytes; RAM1 436,160; RAM2 271,192.
+Microsoft keyboard `045e:0750`, powered USB host hub, RA8875 LCD, native SD,
+USB drive, QSPI flash and 8 MiB PSRAM. Audio shield was absent in recent tests.
+See [quick-start and wiring](README.md).
 
----
+## Completed work and evidence
 
-# Teensy 4.1 handoff — 2026-09-27
+- Keyboard repeat: 400 ms initial delay, 33 ms interval; release/disconnect and
+  app-transition cancellation. User confirmed letter, Left, Backspace and Shift
+  repeat/release. Diagnostics recorded 144 repeats with zero drops. Host
+  ASan/UBSan and dual-console device regression pass. See [keyboard notes](teensy41-keyboard.md).
+- Workstation commands: embedded Help/Man, Watch, version/board/status/pwd,
+  task Top, Port, DF, Date/Time, ZIP/Unzip and Ethernet Curl. Session/Sessions
+  **only list fixed consoles**. Host and device suites pass; remote man/watch/
+  session and Telnet lifecycle checks pass. See [audit and backlog](teensy41-workstation.md).
+- Telnet: authenticated incoming shell, one client; device lifecycle checks
+  pass and the user confirmed a real connection. See [Telnet notes](teensy41-telnetd.md).
+- Graphics, View, Python graphics, Invaders and MQTT Explorer have recorded
+  device/user checks. SD recovery is implemented and host-tested; physical
+  SD removal remains unverified. Clock host/remote checks pass. CAN/OBD, scope
+  and USB-PD have software/demo coverage; their hardware backends or validation
+  remain incomplete. Follow the [master test checklist](teensy41-test-checklist.md).
 
-Start with the [Teensy README](README.md). Repository:
-`/home/dennis/Documents/SuperKeyboard/Code/solar_os`, branch `teensy41`, tracking `origin/teensy41`.
-The public fork is https://github.com/dennis1a4/solar_os; `upstream` points to
-https://github.com/nilseuropa/solar_os. The previous synth/display checkpoint
-was pushed as `f28a885` before the Plot/Playground work. Preserve unfinished, untracked DNP3 sources;
-they are not included in the tested profiles or this checkpoint.
+The last keyboard upload rebooted the board. Subsequent console tests passed;
+USB/LCD were responsive and the keyboard connected. Earlier Ethernet-up status
+predates that upload: query `network status` before assuming it is running.
+No media eject or shutdown was performed. No RTC/timezone change was made during
+keyboard/workstation testing; a prior restart read 2018. Use `date YYYY-MM-DD`
+and `time HH:MM:SS` to set local time, or the documented `rtc` UTC interface.
+Correct UTC is required for HTTPS. Saved Manitoba timezone is fixed UTC-5.
 
-## Installed and confirmed
+## Next work
 
-Profile `teensy41_display`: independent LCD/USB-host-keyboard and USB CDC
-SolarOS shells, extending the existing apps/synth profile. Temporary Adafruit
-RA8875 wiring: MOSI 11, MISO 12, SCK 13, CS 37, RESET 9; preset
-`Adafruit_800x480`, 100x30 text terminal. User confirmed readable text, typing,
-Files navigation and overall operation. Microsoft keyboard 045e:0750 works;
-the initial home-built keyboard did not enumerate. Touch is out of scope.
+1. Complete remaining physical keyboard checks: simultaneous holds, Edit/Files,
+   app transitions and unplug while repeating. Basic repeat/release is confirmed;
+   do not repeat implementation work or mark all KEY tests complete.
+2. User-selected workstation follow-up: retained sessions with fg/close, then
+   bounded shell jobs/composition and network diagnostics. Listing sessions is
+   not retained-session support.
+3. Make the first DF scan cooperative: the attached media took 51.36 seconds
+   cold versus 0.06 seconds cached, delaying both consoles during the first scan.
+4. Work through SD hot-removal, Clock visual/audio, scope wiring/ADC, STUSB4500
+   and CAN hardware prerequisites in the checklist. Keep demo and hardware
+   results distinct. Home-built keyboard compatibility remains unresolved.
 
-The user removed the SGTL5000 shield to access the USB host connection.
-`SGTL5000=missing` is expected; audio hardware regression cannot run until
-it is reconnected. The synth was separately built, uploaded and tested before
-that removal. No audible headphone listening check was recorded.
+## Recovery and repository state
 
-Previous display-only integration baseline (before Plot/Playground):
-SHA256: `9156e51ca7cb3d1b4bbef390c185495807a6f3e10f5e640e62c61732f0281667`.
-Flash 906,952 bytes, RAM1 440,224 bytes, RAM2 225,680 bytes.
-Permanent baseline: `../solar_os-baselines/2026-09-27-display/`.
-Prior LCD-only, synth, apps, Files and SSH backups remain in that directory tree.
+Local firmware/source/log checkpoints are in `../solar_os-baselines/`:
+`2026-09-29-keyboard/` is the installed build;
+`2026-09-29-workstation/` is its predecessor. These artifacts are not committed.
+The keyboard snapshot predates the final user confirmation; current docs record it.
 
-## Validation
+This cleanup commits the integrated port source, tests and documentation to
+`teensy41`. Unrelated unfinished `solar_os_dnp3_bridge.*` and `src/vendor/opendnp3/`
+remain local, untracked and outside the tested port. Do not resume DNP3 implicitly.
+Unique SD workstation fixtures remain for inspection; no user files were removed.
 
-- `/tmp/teensy-display.json`: independent output/directories, singleton app
-  conflict, local Python loop with responsive USB, owner-specific cancellation,
-  concurrent wait, ten calc restart cycles with stable heap/PSRAM, and USB
-  reconnect preserving LCD state.
-- `/tmp/teensy-display-files.json`: Files SD/flash copy/move, recursive copy,
-  ZIP, editor/Python child return and cleanup.
-- `/tmp/teensy-display-keyboard.json`: Microsoft keyboard enumeration; physical
-  typing and Files navigation subsequently confirmed by the user.
-- Host ANSI terminal UBSAN, synth-engine ASAN/UBSAN, child lifecycle ASAN/UBSAN
-  and 14 manual-generator tests pass. The previous USB-only synth profile builds.
-- Automated two-session/Files checks preceded the final HID parser additions;
-  the final firmware passed enumeration and physical keyboard/display checks.
+For regression commands, see the [test guide](../../scripts/ports/README.md).
+Run hardware suites one at a time with exclusive USB and an idle local keyboard.
+No reflash is needed for this documentation/commit cleanup.
 
-The [display notes](teensy41-display.md) and [synth notes](teensy41-synth.md)
-record architecture, reproduction and limitations. Serial test processes have
-exited. Do not inject LCD commands while the local operator is typing.
-
-## Plot/Playground checkpoint
-
-The current `teensy41_display` build adds Plot's RA8875 drawing backend, an
-`uptime` stream, Playground with verified HTTPS and persistent catalog settings,
-and `rtc` / `rtc set <UTC Unix seconds>`. The user plans a coin-cell RTC backup;
-battery retention has not been physically tested. Store UTC in the RTC.
-PSRAM remains the preferred large application-data allocator; internal stacks
-and timing-critical state stay internal. Shared external BSS is explicitly
-zeroed before service initialization.
-
-Hardware checks exercised live/CSV plotting with responsive USB, repeated Plot
-cleanup, catalog refresh, Hello Python installation/run/alias, and rejection of
-unsupported Lua/Python graphics entries. TLS initially correctly rejected an
-incorrect RTC date. Enabling mbedTLS assembly and NIST arithmetic optimizations
-reduced certificate processing enough for the catalog GET to complete in about
-four seconds. Diagnostic output is disabled by default (`SK_HTTP_DIAGNOSTICS=1`
-opts in). The official catalog and Hello Python are retained for manual use.
-
-Current firmware: `.pio/build/teensy41_display/firmware.hex`, SHA256
-`bfba482edb0564644527967a4ed5fde7affaed799c61ca3ebcb90309defea755`.
-Flash 1,015,088 bytes; RAM1 424,256 bytes; RAM2 225,704 bytes.
-Firmware and validation logs: `../solar_os-baselines/2026-09-27-plot-playground/`.
-Final combined app test: `/tmp/teensy-plot-playground-final.json`;
-independent-console regression: `/tmp/teensy-plot-display-regression.json`.
-Both pass. HTTP/settings/child lifecycle/terminal host tests pass, as do the
-14 manual tests and the USB-only synth build. The user confirmed a readable live Plot graph and working Space pause/resume
-and Q-to-shell keyboard controls.
-
-## Continuing work
-
-The display now also supports native Plot graphics and the Playground catalog
-browser; see [Plot/Playground notes](teensy41-plot-playground.md). Lua and Python
-graphics bindings remain unavailable. Other graphical apps still need porting. Singleton apps and the single worker/audio resource
-remain shared; native blocking operations without cooperative polling can delay
-both consoles. Startup runs on the local LCD session once per boot; USB geometry
-remains persistent while LCD geometry is fixed. Ethernet requires `network up`
-after reboot; `network down` / `network up` restarts DHCP.
-
-Next work should follow the user's chosen priority. Possible follow-ups are
-combined display/audio validation after refitting the shield, home-built
-keyboard compatibility, broader ANSI/Unicode or additional graphics primitives, and the
-[roadmap](teensy41-roadmap.md). Do not automatically resume DNP3. Its preserved
-scope was a two-way 3.3 V UART bridge on Serial7/Serial8, configurable from
-9600 baud, then a TCP proxy/viewer; its sources remain unbuilt and untested.
-
-Use separate build directories when needed and keep known-good firmware before
-hardware changes. Serial tests must run one at a time. Host USB devices may be
-hidden by the sandbox; use approved host access before reporting disconnection.
-The loader sometimes retries a USB write and succeeds. A prior image above
-1 MiB hit a loader/HEX boundary issue; the board's flash capacity is larger.
-
-Final Files regression passed: SD/flash copy/move, recursive copy, ZIP, editor
-and Python child return, and repeated app cleanup. The memory assertion accepts
-increased internal free space while still rejecting losses; PSRAM must match.
-Log: `/tmp/teensy-plot-files-regression-final.json`.
+Cleanup validation: ten host suites passed (keyboard, child lifecycle, Clock,
+graphics, MQTT, OBD, USB-PD, scope, SD recovery and Telnet), plus 14 shared manual
+tests, 13 port manual/hotplug tests, 29 package tests and the linked USB DMA buffer
+placement check against the installed ELF. Documentation links and diff whitespace
+checks passed. Restored the core power service in the package manifest; the new
+USB-PD service remains scoped to its own package.

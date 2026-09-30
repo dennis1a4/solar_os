@@ -1,3 +1,4 @@
+#if !SK_SD_RECOVERY
 #include <arduino_freertos.h>
 #include <SD.h>
 #include <semphr.h>
@@ -82,3 +83,5 @@ void sk_sd_cat(const char *path) {
 }
 
 bool sk_sd_is_mounted() { return mounted; }
+
+#endif

@@ -1,12 +1,13 @@
 #if SK_GRAPHICS
 #include <arduino_freertos.h>
+#include "graphics_presenter.h"
 extern "C" {
 #include "solar_os_gfx_internal.h"
 #include "solar_os_display.h"
 #include "solar_os_memory.h"
 #include "solar_os_webp_decoder.h"
 void sk_lcd_graphics_mode(bool);
-void sk_lcd_pixels(int,int,int,int,const uint16_t *);
+bool sk_lcd_pixels(int,int,int,int,const uint16_t *);
 void sk_lcd_graphics_presented(uint32_t);
 void sk_console_delay_ms(uint32_t);
 void __real_solar_os_gfx_prepare_surface(solar_os_gfx_t *);
@@ -15,7 +16,7 @@ void __real_solar_os_gfx_release_surface(solar_os_gfx_t *);
 static u8g2_t canvas;
 static solar_os_gfx_t gfx;
 static u8x8_display_info_t info;
-static uint16_t row[800];
+static SkGraphicsPresenter presenter;
 solar_os_gfx_t *sk_lcd_gfx() {
     if (!gfx.u8g2) {
         auto *mask=(uint8_t *)solar_os_memory_calloc(1,800*480/8,SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,"gfx.font-mask");
@@ -31,7 +32,7 @@ extern "C" void __wrap_solar_os_gfx_prepare_surface(solar_os_gfx_t *g) {
     __real_solar_os_gfx_prepare_surface(g);sk_lcd_graphics_mode(true);
 }
 extern "C" void __wrap_solar_os_gfx_release_surface(solar_os_gfx_t *g) {
-    __real_solar_os_gfx_release_surface(g);sk_lcd_graphics_mode(false);
+    presenter.reset();__real_solar_os_gfx_release_surface(g);sk_lcd_graphics_mode(false);
 }
 extern "C" esp_err_t solar_os_display_get_colors(uint32_t *fg,uint32_t *bg) { if(fg)*fg=0;if(bg)*bg=0xffffff;return ESP_OK; }
 extern "C" bool solar_os_display_target_name_for_u8g2(const u8g2_t *u,char *name,size_t n) {
@@ -44,21 +45,16 @@ extern "C" bool solar_os_display_find_target(const char *name,solar_os_display_t
     target->surface_formats=SOLAR_OS_DISPLAY_FORMAT_INDEX8_BIT;return true;
 }
 extern "C" esp_err_t solar_os_display_present_surface(u8g2_t *u,const solar_os_display_surface_t *s) {
-    if(u!=&canvas || !s || s->format!=SOLAR_OS_DISPLAY_FORMAT_INDEX8 || s->width!=800 || s->height!=480 || s->stride<800 || s->data_size<size_t(s->stride)*480 || !s->palette_rgb565)return ESP_ERR_INVALID_ARG;
+    if(u!=&canvas)return ESP_ERR_INVALID_ARG;
     uint32_t start=millis();
-    for(unsigned y=0;y<480;++y) {
-        // Send only dirty horizontal tile runs; small sprite updates avoid a full frame.
-        for(unsigned tile=0;tile<100;) {
-            auto dirty=[&](unsigned x) {return !s->dirty_tiles || (s->dirty_tiles[(y/8)*s->dirty_stride+x/8]&(1U<<(x%8)));};
-            if(!dirty(tile)) {++tile;continue;}
-            unsigned end=tile+1;while(end<100 && dirty(end))++end;
-            for(unsigned x=tile*8;x<end*8;++x)row[x]=s->palette_rgb565[s->data[y*s->stride+x]];
-            sk_lcd_pixels(tile*8,y,(end-tile)*8,1,row+tile*8);tile=end;
-        }
-        if(y%32==31)sk_console_delay_ms(1);
-    }
+    bool ok=presenter.present(s,
+        [](unsigned x,unsigned y,unsigned w,const uint16_t *p) {
+            return sk_lcd_pixels(x,y,w,1,p);
+        }, [] { sk_console_delay_ms(1); });
+    if(!ok)return ESP_FAIL;
     sk_lcd_graphics_presented(millis()-start);return ESP_OK;
 }
+
 extern "C" void solar_os_display_present(u8g2_t *,solar_os_display_present_mode_t) {}
 extern "C" esp_err_t solar_os_display_present_frame(u8g2_t *u,const solar_os_display_raster_t *f) {
     if(u!=&canvas || !f || !f->data || !f->source_width || !f->source_height || !f->width || !f->height)return ESP_ERR_INVALID_ARG;

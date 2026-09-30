@@ -3,6 +3,10 @@
 See the [Teensy quick-start](../../doc/ports/README.md) for the current profiles
 and wiring. The sections below also describe earlier bring-up profiles.
 
+Current installed firmware: `teensy41_telnet_legacy` (AmpEn40). The normal display
+profile requires AmpEn0/ADC40 rewiring. See the [handover](../../doc/ports/teensy41-handoff.md)
+and [master checklist](../../doc/ports/teensy41-test-checklist.md) before hardware tests.
+
 Run commands from the SolarOS repository root. The hardware script requires
 Python 3 and `pyserial`, the baseline firmware with `sdinfo`, and exclusive use
 of the USB console: close other serial monitors first. It discovers a single
@@ -390,3 +394,94 @@ Settings tests cover legacy-snapshot migration, long source URLs and key erasure
 See [graphics notes](../../doc/ports/teensy41-graphics.md) for the image decoder
 host test and `test_teensy41_graphics.py` hardware acceptance test. Both need
 Pillow; the device test retains a unique SD demo folder for manual use.
+
+## MQTT Explorer
+
+`test_teensy41_mqtt_host.sh` runs the bounded model/incremental codec under
+ASAN/UBSAN. `test_teensy41_mqtt.py --log /tmp/teensy-mqtt-fixture-final.json`
+starts an isolated local broker and exercises the Teensy LCD app, capture and
+logging. Host and board must have LAN connectivity. The script controls the
+local keyboard session and retains a unique SD log. Optional `--live-only
+--live-host BROKER_IP --live-auth FILE` connects read-only to a real broker and
+leaves the explorer open; the credential file is never copied into test logs.
+See [MQTT port notes](../../doc/ports/teensy41-mqtt-explorer.md).
+
+USB drive mounting and file operations (new unique fixture folders only):
+
+```sh
+python3 scripts/ports/test_teensy41_usb_storage.py --log /tmp/teensy-usb-test.json
+```
+
+Use `--no-drive` to verify the empty-host case. See the
+[USB storage port notes](../../doc/ports/teensy41-usb-storage.md).
+
+SD/USB/keyboard reconnect runner: `test_teensy41_hotplug.py`. Default mode tests
+software storage eject/remount; `--physical` waits for an interactive operator.
+See [SD recovery and examples](../../doc/ports/teensy41-sd-recovery.md). Host-only
+checks: `bash scripts/ports/test_teensy41_sd_recovery_host.sh` and
+`python3 tests/ports/test_teensy41_hotplug.py`. SD recovery is installed; physical recovery checks remain pending.
+
+OBD/CAN software tests (no attached board required):
+
+```sh
+bash scripts/ports/test_teensy41_obd_host.sh
+```
+
+Tests both the portable CAN/ISO-TP/OBD model and actual `obd` app lifecycle using
+simulated ECUs and a host terminal stub, with address/undefined sanitizers.
+See [OBD notes](../../doc/ports/teensy41-obd.md). The demo is installed with the clock image; CAN hardware is not validated.
+
+Clock/timezone host checks: `bash scripts/ports/test_teensy41_clock_host.sh`.
+Exercises the upstream Clock app, Teensy countdown adapter, RTC/local-time
+conversion and flash settings persistence. See [clock notes](../../doc/ports/teensy41-clock.md).
+
+Clock remote device checks (sets RTC from host UTC, saves Manitoba timezone,
+and drives the LCD app through USB diagnostics):
+
+```sh
+python3 scripts/ports/test_teensy41_clock.py --reboot --log /tmp/teensy-clock-device.json
+```
+
+Keep the keyboard idle and close serial monitors. Requires mounted test SD and
+USB media; checks their boot mounts without modifying their files. `--reboot`
+verifies timezone/RTC retention across software reboot. Does not verify LCD
+appearance, sound or battery-backed RTC retention across power loss.
+
+USB-PD model and actual app lifecycle checks:
+`bash scripts/ports/test_teensy41_power_host.sh`. Sanitized host simulation; no
+board required. See [power notes](../../doc/ports/teensy41-power.md).
+
+Scope model/app checks: `bash scripts/ports/test_teensy41_scope_host.sh`.
+Produces a host SVG preview; does not exercise ADC/DMA hardware. See
+[scope notes](../../doc/ports/teensy41-scope.md) before flashing the new pin map.
+
+Telnet server host tests: `bash scripts/ports/test_teensy41_telnet_host.sh`.
+Device tests: `python3 scripts/ports/test_teensy41_telnet.py --log /tmp/teensy-telnet-device.json`.
+Uses USB control and Ethernet, a temporary password file and explicit network
+up/down; requires idle shells. See [Telnet notes](../../doc/ports/teensy41-telnetd.md).
+
+## Workstation command acceptance
+
+`test_teensy41_workstation.py --log /tmp/workstation.json` exercises manual search/
+paging, shell ticks and watch exits, diagnostics, fixed-session listings,
+ZIP byte round trips, HTTP binary hashes, curl cancellation/console isolation
+and repeated memory recovery. Requires an idle keyboard, exclusive USB access,
+SD storage and Ethernet on the host LAN. Starts a temporary host HTTP listener
+and retains a uniquely named SD fixture directory. Does not set the RTC.
+
+Host manual selection: `python3 -m unittest discover -s tests/ports -p test_teensy41_manual.py`.
+The Clock host runner also tests local datetime writes, DST gaps and RTC bounds.
+The Telnet suite covers remote `watch`, manual paging and session listing.
+
+## USB keyboard repeat
+
+```sh
+bash scripts/ports/test_teensy41_keyboard_host.sh
+```
+
+ASan/UBSan covers delay/rate, clock wrap, release, live modifiers, multiple holds,
+rollover, disconnect, app boundaries and complete ANSI events under overflow.
+The user confirmed basic physical repeat/release on the installed legacy image.
+KEY-2 through KEY-5 retain broader physical checks; injection cannot verify them.
+Read `lcd` over USB for repeat counters without sending local keystrokes.
+See [keyboard notes](../../doc/ports/teensy41-keyboard.md).

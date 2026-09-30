@@ -45,6 +45,9 @@ static void expect_local_time(const char *input,
 
 int main(void)
 {
+    expect_timezone("Manitoba", "Manitoba", "UTC5");
+    expect_timezone("manitoba", "Manitoba", "UTC5");
+    expect_local_time("Manitoba", 1, 19, 0);
     expect_timezone("UTC", "UTC", "UTC0");
     expect_timezone("utc", "UTC", "UTC0");
     expect_timezone("UTC-8", "UTC-8", "UTC+8");

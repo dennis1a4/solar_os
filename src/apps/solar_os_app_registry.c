@@ -90,8 +90,21 @@
 #if SOLAR_OS_PACKAGE_APP_LESS
 #include "solar_os_less.h"
 #endif
+#if SOLAR_OS_PACKAGE_APP_SCOPE
+#include "solar_os_scope.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_PDPOWER
+#include "solar_os_power_app.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_OBD
+#include "solar_os_obd_app.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_MQTT_EXPLORER
+#include "solar_os_mqtt_explorer.h"
+#endif
 #if SOLAR_OS_PACKAGE_APP_NOTES
 #include "solar_os_notes.h"
+
 #endif
 #if SOLAR_OS_PACKAGE_APP_PLOT
 #include "solar_os_plot.h"
@@ -223,6 +236,18 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #endif
 #if SOLAR_OS_PACKAGE_APP_LESS
     APP_ENTRY("less", "text file pager", &solar_os_less_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "less <file>", 2, 2),
+#endif
+#if SOLAR_OS_PACKAGE_APP_MQTT_EXPLORER
+    APP_ENTRY("mqttx", "MQTT topic and message explorer", &solar_os_mqtt_explorer_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "mqttx HOST[:PORT] [--auth FILE] [--log NEWFILE]", 2, 6),
+#endif
+#if SOLAR_OS_PACKAGE_APP_SCOPE
+    APP_ENTRY("scope", "single-channel ADC oscilloscope", &solar_os_scope_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "scope [--demo]", 1, 2),
+#endif
+#if SOLAR_OS_PACKAGE_APP_PDPOWER
+    APP_ENTRY("pdpower", "USB-PD profiles (simulation)", &solar_os_power_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "pdpower --demo [--scenario normal|reject|timeout|disconnect|io-error|mismatch]", 1, 4),
+#endif
+#if SOLAR_OS_PACKAGE_APP_OBD
+    APP_ENTRY("obd", "OBD-II diagnostics (demo backend)", &solar_os_obd_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "obd --demo [--scenario normal|timeout|sequence|reject] [--report /new/path.txt]", 1, 6),
 #endif
 #if SOLAR_OS_PACKAGE_APP_NOTES
     APP_ENTRY("notes", "Markdown checklist notes", &solar_os_notes_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "notes [file.md]", 1, 2),

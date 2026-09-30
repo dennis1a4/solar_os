@@ -157,6 +157,13 @@ void sk_upstream_shell_run() {
             solar_os_shell_session_start(&shell_context, session, io, false, SK_SETTINGS);
             service_requests();
         } else if (!Serial) connected = false;
+        if (connected && !foreground && millis()-last_tick >= 25) {
+            last_tick = millis();
+            solar_os_event_t tick{};
+            tick.type = SOLAR_OS_EVENT_TICK; tick.data.tick_ms = pdTICKS_TO_MS(xTaskGetTickCount());
+            solar_os_shell_session_event(&shell_context, session, &tick);
+            service_requests();
+        }
         if (connected && Serial.available()) {
             const uint8_t ch = Serial.read();
             last_byte = millis();

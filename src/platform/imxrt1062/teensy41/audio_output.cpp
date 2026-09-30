@@ -19,13 +19,29 @@ static volatile unsigned head, tail;
 static volatile uint32_t played, underruns;
 static volatile bool consuming, tone_on;
 static bool ready;
+#if SK_CLOCK
+static volatile bool clock_tone_on;
+static volatile uint32_t clock_tone_until;
+extern "C" void sk_clock_alarm_sound(bool on) {
+    // Independent alarm gate: never reset a player, queue, volume or test tone.
+    if (!on) { clock_tone_on=false; return; }
+    if (!ready || consuming || head!=tail || tone_on) return;
+    clock_tone_until=millis()+1000;
+    __DMB(); clock_tone_on=true;
+}
+#endif
 static unsigned partial;
 static volatile uint32_t tone_until, tone_blocks;
 class StereoSource : public AudioStream {
 public:
     StereoSource() : AudioStream(0, nullptr) {}
     void update() override {
-        if (head == tail && !tone_on) {
+        bool clock_sound=false;
+#if SK_CLOCK
+        if (clock_tone_on && int32_t(millis()-clock_tone_until)>=0) clock_tone_on=false;
+        clock_sound=clock_tone_on && !consuming && head==tail && !tone_on;
+#endif
+        if (head == tail && !tone_on && !clock_sound) {
             if (consuming) ++underruns;
             return;
         }
@@ -35,7 +51,7 @@ public:
             if (r) release(r);
             return;
         }
-        if (tone_on) {
+        if (tone_on || clock_sound) {
             ++tone_blocks;
             static float phase;
             if (int32_t(millis() - tone_until) >= 0) tone_on = false;

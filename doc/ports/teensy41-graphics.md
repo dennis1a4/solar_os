@@ -1,9 +1,10 @@
 # Teensy RA8875 graphics and image viewing
 
-**Work in progress, paused at the user’s request on 2026-09-27.** PNG/JPEG
-patterns display, but the complete hardware suite is unfinished and full-frame
-updates currently take about 1.73 seconds. See the [handoff](teensy41-handoff.md)
-for the exact resume point.
+**Python graphics and View validated on 2026-09-28.** Python and View are integrated.
+Tile-content comparison now avoids retransmitting unchanged tiles after apps
+clear/redraw their canvas. The hardware acceptance suite, repeated lifecycle checks and official
+Playground Mandelbrot rendering have passed. See the
+[handoff](teensy41-handoff.md) for the latest validation record.
 
 The `teensy41_display` profile includes the shared SolarOS software renderer,
 View, native Invaders, and `solaros.gfx` for Python applications. The LCD/USB-host
@@ -63,7 +64,13 @@ allocated on entry and released on exit. Image decoding also uses PSRAM.
 
 `graphics.cpp` adapts that canvas to the panel. It converts dirty horizontal
 8-pixel tile runs into RGB565 scanlines and writes them through the RA8875
-library. No full RGB565 copy is needed. Safe presentation boundaries yield the
+library. It compares dirty 8x8 tile hashes against the shared canvas's 6,000
+presented-hash slots. Palette changes and graphics re-entry force repainting;
+zero hashes (including snapshot invalidation) force the affected tiles to be
+sent. Hashes are committed after all eight scanlines transfer successfully.
+The adapter validates data, palette, dirty-map and hash-array bounds and accepts
+only the current 800x480, unrotated INDEX8 surface. Other orientations require
+an adapter extension. No full RGB565 copy is needed. Safe presentation boundaries yield the
 console gate periodically so USB can run. Native decode/render computation
 outside those boundaries can still briefly delay the other console.
 
@@ -79,11 +86,21 @@ libusb-compat development headers. The source revision is recorded in
 `scripts/ports/upload_teensy41.py`. The loader explicitly selects `TEENSY41`.
 Other host platforms must provide a compatible current loader.
 
+## Performance
+
+On the 2026-09-28 firmware, a Python clear/draw/present benchmark measured
+1,739 ms for the initial full frame, 33 ms for an identical redraw, and 36 ms
+for moving an 8x8 rectangle. A sampled Invaders update took 33 ms. Actual frame
+rate also includes application rendering and scheduling. Full-screen changes
+still take about 1.73 seconds at the existing 4 MHz SPI setting; this is not a
+video-rate full-screen renderer. SPI speed and temporary wiring are unchanged.
+
 ## Verification
 
 ```sh
+bash scripts/ports/test_teensy41_graphics_host.sh
 bash scripts/ports/test_teensy41_image_host.sh
-python3 scripts/ports/test_teensy41_graphics.py --log /tmp/teensy-graphics.json
+python3 scripts/ports/test_teensy41_graphics.py --mandelbrot --log /tmp/teensy-graphics-complete.json
 ```
 
 The host test needs Pillow and a C compiler with ASAN/UBSAN. It checks decoded
@@ -91,3 +108,22 @@ PNG/JPEG colors/dimensions, repeated cleanup, pixel limits and truncated files.
 The hardware test needs Pillow, pyserial, exclusive USB serial access and an
 idle local keyboard. It creates a unique `/sd/graphics-demo-*` folder, retains
 its images and Python example, and leaves a PNG displayed for visual checking.
+
+The presenter host test uses ASAN/UBSAN and compares randomized dirty updates
+against a full-frame reference. It covers palette changes, padded strides,
+invalid bounds/rotation, reset, zero-hash invalidation, uncached presentation,
+and retry after a partial transport failure. The expanded hardware test measures
+Python presentation times and checks repeated Python/native cleanup and
+Files-to-View return. `--mandelbrot` additionally installs/runs the official
+Playground example and requires Ethernet access.
+
+2026-09-28 device evidence: `teensy-graphics-final.json` passes the expanded
+core suite, including five additional Python/Invaders cycles with exactly stable
+internal/PSRAM free memory. `teensy-graphics-mandelbrot.json` passes the official
+package installation, all 480 rendered rows, USB responsiveness and Q cleanup.
+The Mandelbrot calculation itself takes several minutes at 800x480. Logs and
+firmware are retained in `../solar_os-baselines/2026-09-28-graphics/`.
+
+The user also confirmed readable demo text, the folder icon and clean shapes,
+and working physical Left/Right movement and Space firing in Invaders. This
+completes validation for the current display setup and supported feature scope.

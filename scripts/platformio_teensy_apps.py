@@ -10,11 +10,10 @@ spec = importlib.util.spec_from_file_location("teensy_manual", root / "scripts/g
 manual = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(manual)
 pages = manual.load_pages(root / "doc/manual", root / "packages/solar_os_packages.toml")
-# Embed focused references for these apps. The full desktop/ESP manual contains
-# large unrelated service pages; it need not consume the port's firmware space.
-selected = {"app." + name for name in ("calc", "edit", "python", "aplay", "arecord",
-                                      "ssh", "files", "less", "notes", "sheet", "plot", "playground", "view", "invaders")}
-output = manual.render_header([page for page in pages if page["id"] in selected], root / "doc/manual")
+selection_spec = importlib.util.spec_from_file_location("teensy_manual_selection", root / "scripts/ports/teensy41_manual.py")
+selection = importlib.util.module_from_spec(selection_spec)
+selection_spec.loader.exec_module(selection)
+output = manual.render_header(selection.select_pages(pages, manual.markdown_to_terminal_text), root / "doc/manual")
 header = generated / "solar_os_manual_data.h"
 if not header.exists() or header.read_text() != output:
     header.write_text(output)

@@ -6,6 +6,10 @@ extern "C" {
 #include "solar_os.h"
 #include "solar_os_shell_io.h"
 }
+#if SK_CLOCK
+extern "C" uint32_t sk_clock_rtc_epoch() { return Teensy3Clock.get(); }
+extern "C" void sk_clock_rtc_set(uint32_t epoch) { Teensy3Clock.set(epoch); }
+#endif
 extern "C" void solar_os_shell_cmd_rtc(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);
     if(argc==3 && !strcmp(argv[1],"set")) {

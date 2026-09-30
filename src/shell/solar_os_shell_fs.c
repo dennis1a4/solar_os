@@ -1156,7 +1156,13 @@ static esp_err_t shell_zip_run_create_task(shell_zip_create_request_t *request)
         poll_ticks = 1;
     }
     while (!request->done) {
+#if SK_LCD_CONSOLE
+        /* Release the console gate while the existing ZIP worker operates. */
+        extern void sk_console_delay_ms(uint32_t);
+        sk_console_delay_ms(SHELL_ZIP_WAIT_POLL_MS);
+#else
         vTaskDelay(poll_ticks);
+#endif
     }
     return request->result;
 }

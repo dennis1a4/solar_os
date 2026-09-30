@@ -2359,3 +2359,31 @@ sources = [
 ]
 capabilities = ["psram"]
 any_capabilities = ["expansion_spi", "expansion_gpio", "expansion_uart"]
+
+[groups.mqtt_explorer]
+label = "MQTT Explorer"
+category = "Applications"
+members = ["app_mqtt_explorer"]
+
+[packages.app_mqtt_explorer]
+label = "app.mqttx"
+depends = ["service_script_net"]
+sources = ["apps/solar_os_mqtt_explorer.c", "services/solar_os_mqtt_capture.c", "services/solar_os_mqtt_capture_model.c", "services/solar_os_mqtt_wire.c"]
+
+[groups.obd]
+label = "OBD-II diagnostics"
+category = "Applications"
+members = ["app_obd"]
+
+[packages.app_obd]
+label = "app.obd"
+sources = ["apps/solar_os_obd_app.c", "services/solar_os_can.c", "services/solar_os_isotp.c", "services/solar_os_obd.c", "services/solar_os_obd_demo.c"]
+
+[groups.pdpower]
+label = "USB-PD power control"
+category = "Applications"
+members = ["app_pdpower"]
+
+[packages.app_pdpower]
+label = "app.pdpower"
+sources = ["apps/solar_os_power_app.c", "services/solar_os_pd_power.c"]

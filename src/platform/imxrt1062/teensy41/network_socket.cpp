@@ -46,6 +46,12 @@ static void release_slot(Slot &s,bool abort) {
     if (abort || s.client.connecting()) s.client.abort(); else s.client.close();
     s.handle=0; s.packet=s.rx_held=false;
 }
+#if SK_TELNETD
+static EthernetServer telnet_server(23);
+static uint16_t listen_port;
+static bool listening;
+static int accepted_handle;
+#endif
 static unsigned next_handle;
 static bool was_ready;
 static uint32_t dns_generation;
@@ -72,6 +78,9 @@ extern "C" int sk_net_call(sk_net_request *request, sk_net_reply *reply) {
     return result;
 }
 extern "C" void sk_net_transport_reset() {
+#if SK_TELNETD
+    telnet_server.end(); listening=false;
+#endif
     ++dns_generation; dns_error=ENETDOWN;
     for (auto &s:slots) if (s.handle) {
         s.failure=ENETDOWN;
@@ -82,12 +91,51 @@ extern "C" void sk_net_transport_reset() {
 extern "C" void sk_net_transport_poll(int ready) {
     if (was_ready && !ready) sk_net_transport_reset();
     was_ready=ready;
+#if SK_TELNETD
+    if(ready && listen_port && !listening)listening=telnet_server.beginWithReuse(listen_port);
+    if(accepted_handle) {
+        bool retained=false;
+        for(auto &slot:slots)if(slot.handle==accepted_handle)retained=true;
+        if(!retained)accepted_handle=0;
+    }
+    if(listening && accepted_handle) {
+        auto extra=telnet_server.accept();
+        if(extra) { const char msg[]="Telnet busy; one client allowed.\r\n"; extra.write((const uint8_t *)msg,sizeof(msg)-1); extra.close(); }
+    }
+#endif
     sk_net_request q;
     if (xQueueReceive(requests,&q,0)!=pdTRUE) return;
     sk_net_reply r{}; r.id=q.id;
     Slot *s=nullptr;
     for (auto &slot:slots) if (slot.handle==q.handle && q.handle>0) s=&slot;
     switch(q.op) {
+#if SK_TELNETD
+    case SK_NET_LISTEN_START:
+        if(!ready) { r.error=ENETDOWN; break; }
+        if(listen_port) { r.error=EALREADY; break; }
+        if(!q.port || !telnet_server.beginWithReuse(q.port)) { r.error=errno?errno:EADDRINUSE; break; }
+        listening=true; listen_port=q.port; break;
+    case SK_NET_LISTEN_STOP:
+        listen_port=0; listening=false; telnet_server.end();
+        for(auto &slot:slots)if(slot.handle==accepted_handle && accepted_handle)release_slot(slot,true);
+        accepted_handle=0; break;
+    case SK_NET_LISTEN_ACCEPT: {
+        if(!ready || !listening) { r.error=ENETDOWN; break; }
+        if(accepted_handle) { r.error=EBUSY; break; }
+        auto client=telnet_server.accept();
+        if(!client) { r.error=EAGAIN; break; }
+        Slot *free_slot=nullptr;
+        for(auto &slot:slots)if(!slot.handle) { free_slot=&slot; break; }
+        if(!free_slot) { client.abort(); r.error=EMFILE; break; }
+        auto &slot=*free_slot;
+        slot.client=client; slot.handle=int((++next_handle & 0x3fffffff)+1);
+        slot.failure=0; slot.started=slot.service=true;
+        slot.packet=slot.rx_held=false;
+        accepted_handle=r.value=slot.handle;
+        auto ip=client.remoteIP(); for(unsigned i=0;i<4;++i)r.ip[i]=ip[i];
+        break;
+    }
+#endif
 #if SK_SSH
     case SK_NET_ENTROPY: {
         // Ethernet and SSH share one TRNG owner. Never reinitialize it from

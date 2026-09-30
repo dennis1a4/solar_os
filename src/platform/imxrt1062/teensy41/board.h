@@ -9,6 +9,13 @@
 #define SK_PRIMARY_RESET 14
 #endif
 
+#ifndef SK_AMPLIFIER_SHUTDOWN_PIN
+#define SK_AMPLIFIER_SHUTDOWN_PIN 40
+#endif
+#ifndef SK_UART_CONSOLE
+#define SK_UART_CONSOLE 1
+#endif
+static_assert(!SK_UART_CONSOLE || SK_AMPLIFIER_SHUTDOWN_PIN != 0, "AmpEn pin 0 conflicts with Serial1 RX");
 namespace superkeyboard {
 constexpr uint8_t console_rx = 0, console_tx = 1;
 constexpr uint8_t shift_clock = 2, nes_latch = 3, nes_data = 4;
@@ -24,7 +31,7 @@ constexpr uint8_t wire2_scl = 24, wire2_sda = 25;
 constexpr uint8_t shared_mosi = 26, shared_sck = 27, shared_miso = 39;
 constexpr uint8_t secondary_reset = 30, secondary_dc = 31;
 constexpr uint8_t secondary_cs = 32, secondary_backlight = 33;
-constexpr uint8_t vin_sense = 38, amplifier_shutdown = 40, volume = 41;
+constexpr uint8_t vin_sense = 38, amplifier_shutdown = SK_AMPLIFIER_SHUTDOWN_PIN, volume = 41;
 struct SlotPins {
     uint8_t spi, cs, i2c, uart, rx, tx;
 };

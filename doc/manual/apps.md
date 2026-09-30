@@ -452,6 +452,18 @@ Controls:
 - Exiting a countdown removes that transient alarm and stops it if ringing.
 - `Esc` or app-exit key exits.
 
+On Teensy, `clock` reads the onboard UTC RTC and displays the local time selected
+by `setterm timezone`. For permanent UTC-5, use `setterm timezone Manitoba`.
+Settings are saved in QSPI flash. `rtc` still reports UTC; changing timezone does
+not change the RTC. Invalid RTC dates display dashes.
+
+The Teensy countdown adapter supports one transient Clock alarm while powered;
+it does not provide RTC wake or persistent schedules. With the SGTL5000 shield,
+it requests a one-second 440 Hz tone every 1.6 seconds when audio is idle. Busy
+playback is not interrupted, and missing audio hardware leaves the zero display
+as the indication. Exiting cancels the alarm. Clock graphics require the LCD;
+launching from USB serial is rejected by the existing graphics capability check.
+
 ## com
 
 Serial terminal for a bidirectional byte-stream port. Display-keyboard or
@@ -1119,6 +1131,79 @@ Controls:
   code to the launching shell.
 - App-exit key interrupts running code or exits.
 
+## mqttx
+
+Native MQTT Explorer: browse a topic tree, latest values and recent messages.
+
+```text
+mqttx HOST[:PORT] [--auth FILE] [--log NEWFILE]
+mqttx 192.168.1.10
+mqttx broker.local:1883 --auth /sd/mqtt-auth.txt --log /sd/capture-001.jsonl
+```
+
+The auth file has a username on the first line and password on the second.
+Credentials are not shown in the UI or written to the capture log. The optional
+log must be a new file; existing files are never overwritten.
+
+Controls: Tab switches tree/history; Up/Down select; Left/Right collapse/expand;
+Space pauses screen updates while capture and logging continue; `/` edits a
+case-sensitive topic substring filter (`c` clears it); `x` switches hex; `j` formats JSON-like
+payloads; `[` and `]` scroll payload details; Home follows the newest history
+message; Q, Escape or Ctrl-] exits and closes the connection.
+
+The client subscribes to `#` and `$SYS/#`, requesting QoS 1. It uses MQTT 3.1.1
+TCP with optional username/password, automatic reconnect and keepalive.
+TLS, WebSockets, publishing and MQTT 5 are not implemented here.
+Only messages delivered by the broker are visible, subject to permissions;
+there is no historical replay apart from retained messages. Clean sessions mean
+messages during disconnection are not recovered. QoS 1 duplicates are displayed.
+
+Memory is bounded: 256 topic-tree nodes, 256 history messages, 255 stored topic
+bytes and 2,048 stored payload bytes per message. Tree nodes include intermediate
+folders. Latest values survive history eviction. Counters expose history eviction,
+truncation, unindexed messages and detected connection interruptions. Oversized
+payloads up to a 1 MiB MQTT packet are drained after retaining the prefix; larger
+or malformed packets cause a reconnect. Logs contain JSON records with binary
+payloads and original topic bytes encoded as hex, original sizes and truncation flags. Slow storage can
+fall behind the history ring; `log-lost` reports those omissions.
+
+On Teensy the capture worker shares the foreground worker resource with SSH,
+Playground downloads and audio. A conflicting worker launch is rejected.
+
+## obd
+
+OBD-II diagnostics with an explicitly selected simulated CAN backend. No vehicle
+hardware driver is enabled in this version.
+
+```text
+obd --demo
+obd --demo --scenario timeout
+obd --demo --scenario sequence
+obd --demo --scenario reject --report /sd/obd-demo-report.txt
+```
+
+Two simulated ECUs provide MIL/readiness and stored, pending and permanent codes.
+Normal scans take about six seconds. Tab cycles ECU addresses 7E8–7EF; 1/2/3
+select stored/pending/permanent codes; arrows scroll; R rescans; S saves a report;
+Q, Escape or Ctrl-] exits. Empty categories and unavailable responses are distinct.
+The timeout scenario has no responding ECUs. Sequence corrupts a multi-frame
+response; reject refuses clear requests with a diagnostic negative response.
+
+C opens a confirmation for the selected ECU; uppercase Y confirms, N or Escape
+cancels. Clear waits for acknowledgement and automatically rescans. Clearing
+resets stored/pending codes and readiness in the demo; permanent codes remain.
+Restarting the app restores the demo fixtures. No CAN pins are accessed.
+
+Reports are explicitly labeled DEMO and include ECU IDs, code categories,
+readiness bytes, clear results and error/drop counters. S uses the optional
+absolute --report path or a new /sd/obd-demo-TIME-N.txt file. Existing files are
+never overwritten. A report saved during a scan is labeled in progress.
+
+Current limits: 11-bit OBD addressing on channel A, eight ECU addresses, 32 codes
+per category per ECU, and 256-byte ISO-TP payloads. Oversized/malformed responses
+are rejected. Hardware MCP2515, CAN FD, manufacturer-specific diagnostics,
+29-bit OBD discovery and the separate canmon app are not implemented yet.
+
 ## notes
 
 Markdown-backed checklist and category manager. It stores unchecked and checked
@@ -1644,3 +1729,49 @@ Use `apps` to list applications installed in the current firmware. Start an app
 by entering its name and arguments. Use the app-exit key to return to the shell;
 resumable applications can also be switched through sessions. This page is the
 complete usage and controls reference for foreground applications.
+
+## pdpower
+
+USB-PD power profile explorer. The initial implementation is a simulation and
+works on text terminals, including the Teensy LCD shell and USB serial.
+
+```text
+pdpower --demo
+pdpower --demo --scenario timeout
+```
+
+Press 1–4 to select a source voltage, +/- to adjust requested current in 100 mA
+steps, and Enter to review the request. Uppercase Y applies it; N cancels.
+Q or Escape exits. Current values describe the power contract, not measured
+consumption. Each launch resets the simulated source to 5 V / 1000 mA.
+
+Scenarios: normal, reject, timeout, disconnect, io-error, mismatch. The simulated
+source offers 5/9/15/20 V at up to 3000 mA. These are demo limits, not configured
+ratings for the user's PCB. No I2C access, voltage change, NVM programming or
+motor-controller operation is performed. Launching without --demo reports that
+the hardware backend is not configured.
+
+## scope
+
+Single-channel graphical ADC scope for Teensy. Run `scope --demo` to try its
+100 Hz sine/square/DC generator without any wiring. `scope` uses a dedicated
+ADC pin assigned by the board build; it fails clearly if no pin is configured.
+Launch at the LCD shell. A USB-only shell cannot display the graphical app.
+
+Space toggles run/hold, +/- changes timebase, Up/Down changes trigger level,
+T selects rising/falling edge, N switches auto/normal triggering, and S arms a
+single triggered capture. R cycles raw 3.3 V, 5 V and 50 V full-scale labels;
+All ranges are positive-only. W changes demo wave. Q/Escape exits.
+Changing scale while held clears the old trace; resume to acquire a new one.
+
+Ten horizontal divisions, eight vertical divisions, a trigger line, min/max,
+peak-to-peak, mean, total RMS and a periodic-signal frequency estimate are shown.
+The range must match the physical jumper/front end; software does not switch
+or detect jumpers. All voltages are uncalibrated estimates. The ADC pin itself accepts
+only 0–3.3 V, including on the 5 V and 50 V front-end ranges.
+
+Captures use 1024 samples at requested rates of 1–100 kSa/s, depending on
+timebase (100 us/div to 50 ms/div). There are gaps between snapshots. This is
+not a continuous recorder or serial decoder. Frequency requires several cycles
+and is unreliable for nonperiodic or aliased signals. Use an appropriate analog
+anti-alias filter. ADC timing and accuracy need physical validation.

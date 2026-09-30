@@ -46,7 +46,7 @@ def mem():
     return tuple(map(int,m.groups()))
 try:
     time.sleep(1); exchange(b'\x1d\r')
-    status=cmd('lcd'); assert 'two consoles' in status,status
+    status=cmd('lcd'); assert 'local consoles: usb and lcd' in status,status
     report['keyboard_status']=status
     if a.status_only:
         report['passed']=True

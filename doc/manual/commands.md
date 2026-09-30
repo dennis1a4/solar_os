@@ -16,6 +16,10 @@ the running image.
 
 ## Shell Conventions
 
+| Command | Usage | Description |
+| --- | --- | --- |
+| `pwd` | `pwd` | Print the current shell directory (Teensy port). |
+
 Paths are resolved relative to the current shell directory. The default storage
 volume is presented as `/`. On SD-backed boards, the primary SD card volume also
 has the internal mount path `/sdcard`, and the internal flash volume is mounted
@@ -227,6 +231,24 @@ device configuration, so treat shell history and physical access to the device
 as sensitive. `email sync` performs one synchronization; use the `email-sync`
 job for periodic polling.
 
+### `sd` (Teensy display profile)
+
+`sd [status|mount|eject]` reports SD mount state and open handles, retries a mount,
+or safely ejects a card. Card presence is polled; insertion mounts `/sd` when
+no old handles remain. Close files and apps before `sd eject`. After unexpected
+removal, old handles fail and must close before any card can be remounted.
+Physical removal and reinsertion validation is pending on the Teensy port.
+
+### `usb` (Teensy display profile)
+
+`usb [status|mount|eject]` manages a USB mass-storage drive on the host port.
+The first supported FAT16/FAT32/exFAT partition mounts automatically at `/usb`
+and appears beside `/sd` and `/flash` in `ls /` and Files. Close files and apps
+using the drive, then run `usb eject` before unplugging. `usb mount` remounts
+an ejected drive. Eject refuses while a file or directory handle is open.
+Only one drive/volume is supported. No USB format command is provided.
+Use 512-byte logical sectors and files smaller than 2 GiB.
+
 ### `lcd` (Teensy display profile)
 
 `lcd` shows local terminal geometry and the calling console. `lcd dump` prints
@@ -238,6 +260,8 @@ to whichever app is active there. The two consoles share files and services.
 
 | Command | Usage | Description |
 | --- | --- | --- |
+| `sd` | `sd [status\|mount\|eject]` | Show, mount or safely eject the Teensy SD card. |
+| `usb` | `usb [status\|mount\|eject]` | Show, mount or safely eject a Teensy USB drive. |
 | `version` | `version` | Print the SolarOS version and firmware flavor. |
 | `pkg` | `pkg` | Print compiled package groups and build units. |
 | `board` | `board` | Print board ID, name, and capabilities. |
@@ -292,7 +316,7 @@ to whichever app is active there. The two consoles share files and services.
 | `setterm` | `setterm keyboard [us\|de]`; `setterm powerkey [sleep\|suspend]` | Show or set the keyboard layout and dedicated KEY action. |
 | `setterm` | `setterm keyrate [off\|1..60 [delay-ms]]` | Show or set the shared keyboard and button repeat policy. |
 | `setterm` | `setterm ble [default\|on\|off]` | Show or set the BLE preference for the next boot. |
-| `setterm` | `setterm timezone [UTC\|UTC+/-offset\|Europe/Berlin\|POSIX-TZ]` | Show or set the timezone used for local time. |
+| `setterm` | `setterm timezone [UTC\|Manitoba\|UTC+/-offset\|Europe/Berlin\|POSIX-TZ]` | Show or set the timezone used for local time. |
 | `setterm` | `setterm startup [auto\|flash\|sd]` | Show or select the volume containing `.shell/startup` for the next boot. |
 | `setterm` | `setterm otaurl [url]` | Show or set the OTA metadata URL. |
 
@@ -402,7 +426,7 @@ setterm keyboard [us|de]
 setterm powerkey [sleep|suspend]
 setterm keyrate [off|1..60 [delay-ms]]
 setterm ble [default|on|off]
-setterm timezone [UTC|UTC+/-offset|Europe/Berlin|POSIX-TZ]
+setterm timezone [UTC|Manitoba|UTC+/-offset|Europe/Berlin|POSIX-TZ]
 setterm startup [auto|flash|sd]
 setterm otaurl [url]
 ```
@@ -421,7 +445,9 @@ across firmware updates until changed. The current boot is unchanged.
 ahead. Fixed offsets do not apply daylight-saving transitions. Other accepted
 timezone expressions use POSIX TZ syntax and its POSIX sign convention.
 SolarOS does not include the IANA timezone database; `Europe/Berlin` is a
-built-in daylight-saving alias.
+built-in daylight-saving alias. `Manitoba` is a fixed UTC-5 alias with no seasonal
+changes: use `setterm timezone Manitoba`. It represents the current fixed-offset
+policy, not historical timezone rules.
 
 `setterm powerkey` selects the dedicated KEY short-press action. `sleep`
 enters explicit light sleep; `suspend` turns off the display while jobs and
@@ -704,6 +730,7 @@ xfer recv <port> <file> --zmodem [--append|--replace]
 
 | Command | Usage | Description |
 | --- | --- | --- |
+| `telnetd` | `telnetd start /absolute/password-file [port]`, `telnetd status`, `telnetd stop` | Teensy Ethernet Telnet server; one password-authenticated shell, off by default. Password file: one line, 1–63 printable ASCII characters. Default port 23. |
 | `network` | `network` | Open the two-tab network TUI. Status shows interfaces and routes; Settings changes persistent interface priority and client routing. |
 | `network` | `network status` | Show network interfaces, route selection, VPN routes, and router state as text. |
 | `network` | `network interfaces` | List route-capable interfaces, addresses, priorities, and the local downstream interface. |

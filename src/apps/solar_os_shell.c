@@ -522,10 +522,56 @@ void solar_os_shell_cmd_flash(solar_os_context_t *ctx, int argc, char **argv);
 #if SK_LCD_CONSOLE
 void solar_os_shell_cmd_lcd(solar_os_context_t *ctx, int argc, char **argv);
 #endif
+#if SK_USB_STORAGE
+void solar_os_shell_cmd_usb(solar_os_context_t *ctx, int argc, char **argv);
+#endif
+#if SK_SD_RECOVERY
+void solar_os_shell_cmd_sd(solar_os_context_t *ctx, int argc, char **argv);
+#endif
+#if SK_TELNETD
+void solar_os_shell_cmd_telnetd(solar_os_context_t *, int, char **);
+#endif
+#if SK_UPSTREAM_SHELL
+void sk_shell_cmd_pwd(solar_os_context_t *, int, char **);
+void sk_shell_cmd_session(solar_os_context_t *, int, char **);
+#endif
+#if SK_TEXT_APPS
+#define SHELL_CORE_HELP solar_os_shell_cmd_help
+#else
+#define SHELL_CORE_HELP cmd_commands
+#endif
 static const shell_command_t shell_builtin_commands[] = {
+#if SK_TELNETD
+    {"telnetd", "start, stop or inspect the Telnet shell server", solar_os_shell_cmd_telnetd},
+#endif
+#if SK_SD_RECOVERY
+    {"sd", "SD card status, mount or eject", solar_os_shell_cmd_sd},
+#endif
+#if SK_USB_STORAGE
+    {"usb", "USB drive status, mount or eject", solar_os_shell_cmd_usb},
+#endif
 #if SOLAR_OS_SHELL_CORE_ONLY
-    {"help", "list shell commands", cmd_commands},
+    {"help", "manual and shell help", SHELL_CORE_HELP},
+#if SK_TEXT_APPS
+    {"man", "read or search the manual", solar_os_shell_cmd_man},
+#endif
     {"commands", "list shell commands", cmd_commands},
+    {"watch", "repeat a shell command", cmd_watch},
+    {"version", "show firmware version", solar_os_shell_cmd_version},
+    {"board", "show board and processor", solar_os_shell_cmd_board},
+    {"status", "show system summary", solar_os_shell_cmd_status},
+    {"top", "snapshot FreeRTOS tasks", solar_os_shell_cmd_top},
+    {"port", "list byte-stream ports", solar_os_shell_cmd_port},
+    {"df", "show mounted filesystem space", solar_os_shell_cmd_df},
+    {"pwd", "print working directory", sk_shell_cmd_pwd},
+#if SK_LCD_CONSOLE
+    {"session", "inspect console sessions", sk_shell_cmd_session},
+    {"sessions", "list console sessions", sk_shell_cmd_session},
+#endif
+#if SK_FILES
+    {"zip", "create ZIP archive", solar_os_shell_cmd_zip},
+    {"unzip", "list or extract ZIP archive", solar_os_shell_cmd_unzip},
+#endif
     {"echo", "print text", cmd_echo},
     {"wait", "pause the calling shell", cmd_wait},
     {"apps", "list applications", solar_os_shell_cmd_apps},
@@ -538,6 +584,10 @@ static const shell_command_t shell_builtin_commands[] = {
 #endif
 #if SK_PLAYGROUND
     {"rtc", "show/set UTC clock for HTTPS", solar_os_shell_cmd_rtc},
+#endif
+#if SK_CLOCK
+    {"date", "show or set local date", solar_os_shell_cmd_date},
+    {"time", "show or set local time", solar_os_shell_cmd_time},
 #endif
 #if SK_SETTINGS
     {"identity", "show or save user and hostname", solar_os_shell_cmd_identity},
@@ -820,7 +870,7 @@ static const char * const setterm_ble_values[] = {"default", "on", "off"};
 #endif
 static const char * const setterm_powerkey_values[] = {"sleep", "suspend"};
 static const char * const setterm_keyrate_values[] = {"off"};
-static const char * const setterm_timezone_values[] = {"UTC", "Europe/Berlin"};
+static const char * const setterm_timezone_values[] = {"UTC", "Manitoba", "Europe/Berlin"};
 static const char * const setterm_startup_values[] = {"auto", "flash", "sd"};
 
 static const char * const display_subcommands[] = {
@@ -3843,6 +3893,10 @@ static void shell_format_display_path(const char *path, char *display, size_t di
 
 static void shell_prompt(solar_os_context_t *ctx)
 {
+#if SK_LCD_CONSOLE
+    extern void sk_console_input_boundary(void);
+    sk_console_input_boundary();
+#endif
     solar_os_shell_io_t *io = shell_io(ctx);
     char identity[SOLAR_OS_IDENTITY_USER_MAX + SOLAR_OS_IDENTITY_HOSTNAME_MAX + 2];
     char display_path[SHELL_PATH_MAX];
@@ -9427,7 +9481,7 @@ static bool shell_handle_watch_event(solar_os_context_t *ctx, const solar_os_eve
 
     if (event->type == SOLAR_OS_EVENT_CHAR) {
         const uint8_t ch = (uint8_t)event->data.ch;
-        if (ch == SOLAR_OS_KEY_APP_EXIT ||
+        if (ch == SOLAR_OS_KEY_APP_EXIT || ch == SOLAR_OS_KEY_ESCAPE || ch == 3 ||
             ch == 'q' ||
             ch == 'Q') {
             shell_watch_stop(ctx);

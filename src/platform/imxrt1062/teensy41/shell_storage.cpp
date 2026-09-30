@@ -10,25 +10,26 @@
 #include "platform.h"
 #include "solar_os_storage.h"
 #include "flash_storage.h"
+#include "storage_lock.h"
+#include "usb_storage.h"
+#include "sd_storage.h"
 
 // Serialize each storage operation across consoles and Playground's worker.
 #include <semphr.h>
 static StaticSemaphore_t storage_mutex_buffer;
 static SemaphoreHandle_t storage_mutex;
-struct StorageLock {
-    StorageLock() {
-        taskENTER_CRITICAL();
-        if (!storage_mutex) storage_mutex=xSemaphoreCreateRecursiveMutexStatic(&storage_mutex_buffer);
-        taskEXIT_CRITICAL();
-        configASSERT(storage_mutex);
-        xSemaphoreTakeRecursive(storage_mutex,portMAX_DELAY);
-    }
-    ~StorageLock() { xSemaphoreGiveRecursive(storage_mutex); }
-};
+StorageLock::StorageLock() {
+    taskENTER_CRITICAL();
+    if (!storage_mutex) storage_mutex=xSemaphoreCreateRecursiveMutexStatic(&storage_mutex_buffer);
+    taskEXIT_CRITICAL();
+    configASSERT(storage_mutex);
+    xSemaphoreTakeRecursive(storage_mutex,portMAX_DELAY);
+}
+StorageLock::~StorageLock() { xSemaphoreGiveRecursive(storage_mutex); }
 // libc streams use funopen; no syscall overrides affect FreeRTOS or USB.
 struct Route {
     char path[SOLAR_OS_STORAGE_PATH_MAX];
-    bool flash=false, root=false, mount_root=false, sd_alias=false;
+    bool flash=false, root=false, mount_root=false, sd_alias=false, usb=false;
 };
 static bool route_path(const char *path, Route &r, bool require_ready=true) {
     if (!path || path[0]!='/') { errno=EINVAL; return false; }
@@ -40,14 +41,60 @@ static bool route_path(const char *path, Route &r, bool require_ready=true) {
     else if (!strncmp(local,"/sd",3) && (!local[3] || local[3]=='/')) { r.sd_alias=true; local+=3; }
     r.root=!strcmp(normalized,"/");
 #endif
+#if SK_USB_STORAGE
+    if (!r.flash && !r.sd_alias && !strncmp(local,"/usb",4) && (!local[4] || local[4]=='/')) { r.usb=true; local+=4; }
+#endif
     strlcpy(r.path,*local ? local : "/",sizeof(r.path));
     r.mount_root=!strcmp(r.path,"/");
     if (!require_ready || r.root) return true;
 #if SK_QSPI_FLASH
     if (r.flash) { if (sk_flash_mounted()) return true; errno=ENODEV; return false; }
 #endif
+#if SK_USB_STORAGE
+    if (r.usb) { if (sk_usb_storage_mounted()) return true; errno=ENODEV; return false; }
+#endif
+#if SK_SD_RECOVERY
+    if (!sk_sd_media_ready()) { errno=ENODEV; return false; }
+#else
     if (!sk_sd_is_mounted()) { errno=ENODEV; return false; }
+#endif
     return true;
+}
+static FsVolume *fat_volume(const Route &r) {
+#if SK_USB_STORAGE
+    if (r.usb) return sk_usb_storage_volume();
+#endif
+#if SK_SD_RECOVERY
+    return sk_sd_volume();
+#else
+    return SD.sdfs.vol();
+#endif
+}
+static bool media_ready(bool usb, bool sd) {
+#if SK_USB_STORAGE
+    if (usb && !sk_usb_storage_mounted()) { errno=ENODEV; return false; }
+#endif
+#if SK_SD_RECOVERY
+    if (sd && !sk_sd_media_ready()) { errno=ENODEV; return false; }
+#endif
+    return true;
+}
+static bool media_acquire(bool usb, bool sd) {
+#if SK_USB_STORAGE
+    if (usb) sk_usb_storage_acquire();
+#endif
+#if SK_SD_RECOVERY
+    if (sd && !sk_sd_acquire()) { errno=ENODEV; return false; }
+#endif
+    return true;
+}
+static void media_release(bool usb, bool sd) {
+#if SK_USB_STORAGE
+    if (usb) sk_usb_storage_release();
+#endif
+#if SK_SD_RECOVERY
+    if (sd) sk_sd_release();
+#endif
 }
 #if SK_QSPI_FLASH
 static int flash_result(int value) {
@@ -70,8 +117,8 @@ static int flash_result(int value) {
 }
 #endif
 struct sk_directory {
-    File file; struct dirent entry;
-    bool flash=false, root=false; unsigned synthetic=0;
+    FsFile file; struct dirent entry;
+    bool flash=false, root=false, usb=false, sd=false; unsigned synthetic=0;
 #if SK_QSPI_FLASH
     lfs_dir_t little{};
 #endif
@@ -80,7 +127,7 @@ extern "C" DIR *opendir(const char *path) { StorageLock lock;
     Route r; if (!route_path(path,r)) return nullptr;
     auto *dir=new (std::nothrow) sk_directory;
     if (!dir) { errno=ENOMEM; return nullptr; }
-    dir->flash=r.flash; dir->root=r.root;
+    dir->flash=r.flash; dir->root=r.root; dir->usb=r.usb; dir->sd=!r.flash && !r.root && !r.usb;
 #if SK_QSPI_FLASH
     if (r.flash) {
         if (flash_result(lfs_dir_open(sk_flash_fs(),&dir->little,r.path))<0) { delete dir; return nullptr; }
@@ -89,10 +136,11 @@ extern "C" DIR *opendir(const char *path) { StorageLock lock;
 #endif
     // The namespace root lists mounts only. SD entries belong under /sd.
     if (r.root) return dir;
-    dir->file=SD.open(r.path,FILE_READ);
+    dir->file=fat_volume(r)->open(r.path,O_RDONLY);
     if (!dir->file || !dir->file.isDirectory()) {
         errno=dir->file ? ENOTDIR : ENOENT; delete dir; return nullptr;
     }
+    if (!media_acquire(dir->usb,dir->sd)) { delete dir; return nullptr; }
     return dir;
 }
 extern "C" struct dirent *readdir(DIR *dir) { StorageLock lock;
@@ -106,20 +154,26 @@ extern "C" struct dirent *readdir(DIR *dir) { StorageLock lock;
         dir->entry.d_type=info.type==LFS_TYPE_DIR ? DT_DIR : DT_REG;
         strlcpy(dir->entry.d_name,info.name,sizeof(dir->entry.d_name)); return &dir->entry;
     }
-    if (dir->root) while(dir->synthetic<2) {
+    if (dir->root) while(dir->synthetic<3) {
         unsigned mount=dir->synthetic++;
         if ((mount==0 && sk_sd_is_mounted()) || (mount==1 && sk_flash_mounted())) {
             dir->entry.d_type=DT_DIR;
             strcpy(dir->entry.d_name,mount==0 ? "sd" : "flash"); return &dir->entry;
         }
+#if SK_USB_STORAGE
+        if (mount==2 && sk_usb_storage_mounted()) {
+            dir->entry.d_type=DT_DIR;
+            strcpy(dir->entry.d_name,"usb"); return &dir->entry;
+        }
+#endif
     }
 #endif
-    if (!dir->file) return nullptr;
+    if (!media_ready(dir->usb,dir->sd) || !dir->file) return nullptr;
     for (;;) {
-        File entry=dir->file.openNextFile(FILE_READ);
+        FsFile entry=dir->file.openNextFile(O_RDONLY);
         if (!entry) return nullptr;
         dir->entry.d_type=entry.isDirectory() ? DT_DIR : DT_REG;
-        strlcpy(dir->entry.d_name,entry.name(),sizeof(dir->entry.d_name)); return &dir->entry;
+        entry.getName(dir->entry.d_name,sizeof(dir->entry.d_name)); return &dir->entry;
     }
 }
 extern "C" int closedir(DIR *dir) { StorageLock lock;
@@ -128,7 +182,9 @@ extern "C" int closedir(DIR *dir) { StorageLock lock;
 #if SK_QSPI_FLASH
     if (dir->flash) { ret=flash_result(lfs_dir_close(sk_flash_fs(),&dir->little)); sk_flash_release(); }
 #endif
-    delete dir; return ret;
+    bool usb=dir->usb, sd=dir->sd;
+    if (!media_ready(usb,sd)) ret=-1;
+    delete dir; media_release(usb,sd); return ret;
 }
 extern "C" int __wrap_stat(const char *path, struct stat *out) { StorageLock lock;
     if (!out) { errno=EINVAL; return -1; }
@@ -143,14 +199,15 @@ extern "C" int __wrap_stat(const char *path, struct stat *out) { StorageLock loc
         out->st_size=info.size; out->st_dev=1; return 0;
     }
 #endif
-    File file=SD.open(r.path,FILE_READ);
+    FsFile file=fat_volume(r)->open(r.path,O_RDONLY);
     if (!file) { errno=ENOENT; return -1; }
     out->st_mode=(file.isDirectory() ? S_IFDIR : S_IFREG)|0666;
-    out->st_size=file.size(); return 0;
+    if (file.size()>INT32_MAX) { errno=EOVERFLOW; return -1; }
+    out->st_size=file.size(); out->st_dev=r.usb ? 2 : 0; return 0;
 }
 static constexpr int first_fd=3, file_limit=16;
 struct OpenFile {
-    FsFile file; FILE *stream=nullptr; bool used=false; int access=O_RDONLY;
+    FsFile file; FILE *stream=nullptr; bool used=false, usb=false, sd=false, append=false; int access=O_RDONLY;
 #if SK_QSPI_FLASH
     lfs_file_t *little=nullptr;
 #endif
@@ -169,6 +226,7 @@ extern "C" int __wrap_open(const char *path,int flags,...) { StorageLock lock;
     while(slot<file_limit && files[slot].used) ++slot;
     if (slot==file_limit) { errno=EMFILE; return -1; }
     auto &f=files[slot];
+    f.usb=r.usb; f.sd=!r.flash && !r.usb; f.append=flags&O_APPEND;
 #if SK_QSPI_FLASH
     if (r.flash) {
         int mode=(flags&O_ACCMODE)==O_RDONLY ? LFS_O_RDONLY : (flags&O_ACCMODE)==O_WRONLY ? LFS_O_WRONLY : LFS_O_RDWR;
@@ -183,17 +241,21 @@ extern "C" int __wrap_open(const char *path,int flags,...) { StorageLock lock;
     } else
 #endif
     {
-        if (SD.exists(r.path)) {
-            File check=SD.open(r.path,FILE_READ);
+        if (fat_volume(r)->exists(r.path)) {
+            FsFile check=fat_volume(r)->open(r.path,O_RDONLY);
             if (check && check.isDirectory()) { errno=EISDIR; return -1; }
             if ((flags&(O_CREAT|O_EXCL))==(O_CREAT|O_EXCL)) { errno=EEXIST; return -1; }
         } else if (!(flags&O_CREAT)) { errno=ENOENT; return -1; }
-        if (!f.file.open(r.path,flags)) { errno=EIO; return -1; }
+        if (!f.file.open(fat_volume(r),r.path,flags)) { errno=EIO; return -1; }
     }
+    if (!r.flash && f.file.fileSize()>INT32_MAX) {
+        f.file.close(); errno=EFBIG; return -1;
+    }
+    if (!media_acquire(f.usb,f.sd)) { f.file.close(); return -1; }
     f.used=true; f.stream=nullptr; f.access=flags&O_ACCMODE; return first_fd+slot;
 }
 extern "C" ssize_t __wrap_read(int fd,void *data,size_t size) { StorageLock lock;
-    auto *f=lookup(fd); if (!f) return -1;
+    auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
     if (f->access==O_WRONLY) { errno=EBADF; return -1; }
 #if SK_QSPI_FLASH
     if (f->little) return flash_result(lfs_file_read(sk_flash_fs(),f->little,data,size));
@@ -201,16 +263,17 @@ extern "C" ssize_t __wrap_read(int fd,void *data,size_t size) { StorageLock lock
     int n=f->file.read(data,size); if (n<0) errno=EIO; return n;
 }
 extern "C" ssize_t __wrap_write(int fd,const void *data,size_t size) { StorageLock lock;
-    auto *f=lookup(fd); if (!f) return -1;
+    auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
     if (f->access==O_RDONLY) { errno=EBADF; return -1; }
 #if SK_QSPI_FLASH
     if (f->little) return flash_result(lfs_file_write(sk_flash_fs(),f->little,data,size));
 #endif
+    if (size>size_t(INT32_MAX) || (f->append ? f->file.fileSize() : f->file.curPosition())+size>INT32_MAX) { errno=EFBIG; return -1; }
     size_t n=f->file.write(data,size);
     if (n<size) { errno=EIO; if (!n && size) return -1; } return n;
 }
 extern "C" int __wrap_fsync(int fd) { StorageLock lock;
-    auto *f=lookup(fd); if (!f) return -1;
+    auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
 #if SK_QSPI_FLASH
     if (f->little) return flash_result(lfs_file_sync(sk_flash_fs(),f->little));
 #endif
@@ -226,10 +289,12 @@ extern "C" int __wrap_close(int fd) { StorageLock lock;
     } else
 #endif
     if (!f->file.close()) { errno=EIO; ret=-1; }
+    if (!media_ready(f->usb,f->sd)) ret=-1;
+    media_release(f->usb,f->sd); f->usb=f->sd=false;
     f->used=false; f->stream=nullptr; return ret;
 }
 extern "C" off_t __wrap_lseek(int fd,off_t offset,int whence) { StorageLock lock;
-    auto *f=lookup(fd); if (!f) return -1;
+    auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
 #if SK_QSPI_FLASH
     if (f->little) {
         int mode=whence==SEEK_SET ? LFS_SEEK_SET : whence==SEEK_CUR ? LFS_SEEK_CUR : whence==SEEK_END ? LFS_SEEK_END : -1;
@@ -244,7 +309,7 @@ extern "C" off_t __wrap_lseek(int fd,off_t offset,int whence) { StorageLock lock
     if (target<0 || target>INT32_MAX || !f->file.seekSet(target)) { errno=EINVAL; return -1; } return target;
 }
 extern "C" int __wrap_fstat(int fd,struct stat *out) { StorageLock lock;
-    auto *f=lookup(fd); if (!f) return -1;
+    auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
     if (!out) { errno=EINVAL; return -1; }
     memset(out,0,sizeof(*out)); out->st_mode=S_IFREG|0666; out->st_nlink=1;
 #if SK_QSPI_FLASH
@@ -253,7 +318,7 @@ extern "C" int __wrap_fstat(int fd,struct stat *out) { StorageLock lock;
         out->st_size=n; out->st_dev=1; return 0;
     }
 #endif
-    out->st_size=f->file.fileSize(); return 0;
+    out->st_size=f->file.fileSize(); out->st_dev=f->usb ? 2 : 0; return 0;
 }
 extern "C" int __real_fileno(FILE *stream);
 extern "C" int __wrap_fileno(FILE *stream) { StorageLock lock;
@@ -267,10 +332,11 @@ static fpos_t file_seek(void *cookie, fpos_t offset, int whence) { return __wrap
 static int file_close(void *cookie) { return __wrap_close(int(intptr_t(cookie))); }
 extern "C" FILE *__wrap_fopen(const char *path, const char *mode) { StorageLock lock;
     if (!mode || !*mode) { errno = EINVAL; return nullptr; }
-    bool plus = false, binary = false;
+    bool plus = false, binary = false, exclusive = false;
     for (const char *m = mode + 1; *m; ++m) {
         if (*m == '+' && !plus) plus = true;
         else if (*m == 'b' && !binary) binary = true;
+        else if (*m == 'x' && !exclusive && *mode == 'w') exclusive = true;
         else { errno = EINVAL; return nullptr; }
     }
     int flags;
@@ -280,6 +346,7 @@ extern "C" FILE *__wrap_fopen(const char *path, const char *mode) { StorageLock 
     case 'a': flags = (plus ? O_RDWR : O_WRONLY) | O_CREAT | O_APPEND; break;
     default: errno = EINVAL; return nullptr;
     }
+    if (exclusive) flags |= O_EXCL;
     int fd = __wrap_open(path, flags);
     if (fd < 0) return nullptr;
     FILE *stream = funopen(reinterpret_cast<void *>(intptr_t(fd)),
@@ -295,8 +362,8 @@ extern "C" int __wrap_mkdir(const char *path,mode_t) { StorageLock lock;
 #if SK_QSPI_FLASH
     if (r.flash) return flash_result(lfs_mkdir(sk_flash_fs(),r.path));
 #endif
-    if (SD.exists(r.path)) { errno=EEXIST; return -1; }
-    if (!SD.sdfs.mkdir(r.path,false)) { errno=EIO; return -1; } return 0;
+    if (fat_volume(r)->exists(r.path)) { errno=EEXIST; return -1; }
+    if (!fat_volume(r)->mkdir(r.path,false)) { errno=EIO; return -1; } return 0;
 }
 extern "C" int __wrap_unlink(const char *path) { StorageLock lock;
     struct stat info; if (__wrap_stat(path,&info)) return -1;
@@ -305,7 +372,7 @@ extern "C" int __wrap_unlink(const char *path) { StorageLock lock;
 #if SK_QSPI_FLASH
     if (r.flash) return flash_result(lfs_remove(sk_flash_fs(),r.path));
 #endif
-    if (!SD.sdfs.remove(r.path)) { errno=EIO; return -1; } return 0;
+    if (!fat_volume(r)->remove(r.path)) { errno=EIO; return -1; } return 0;
 }
 extern "C" int __wrap_rmdir(const char *path) { StorageLock lock;
     Route r; if (!route_path(path,r)) return -1;
@@ -315,7 +382,7 @@ extern "C" int __wrap_rmdir(const char *path) { StorageLock lock;
 #if SK_QSPI_FLASH
     if (r.flash) return flash_result(lfs_remove(sk_flash_fs(),r.path));
 #endif
-    if (!SD.sdfs.rmdir(r.path)) { errno=ENOTEMPTY; return -1; } return 0;
+    if (!fat_volume(r)->rmdir(r.path)) { errno=ENOTEMPTY; return -1; } return 0;
 }
 extern "C" int __wrap_remove(const char *path) { StorageLock lock;
     struct stat info; if (__wrap_stat(path,&info)) return -1;
@@ -324,7 +391,7 @@ extern "C" int __wrap_remove(const char *path) { StorageLock lock;
 extern "C" int __wrap_rename(const char *oldpath,const char *newpath) { StorageLock lock;
     Route a,b; if (!route_path(oldpath,a) || !route_path(newpath,b)) return -1;
     if (a.mount_root || b.mount_root) { errno=EBUSY; return -1; }
-    if (a.flash!=b.flash) { errno=EXDEV; return -1; }
+    if (a.flash!=b.flash || a.usb!=b.usb) { errno=EXDEV; return -1; }
     struct stat info; if (__wrap_stat(oldpath,&info)) return -1;
     if (!strcmp(a.path,b.path)) return 0;
     if (__wrap_stat(newpath,&info)==0) { errno=EEXIST; return -1; }
@@ -332,7 +399,7 @@ extern "C" int __wrap_rename(const char *oldpath,const char *newpath) { StorageL
 #if SK_QSPI_FLASH
     if (a.flash) return flash_result(lfs_rename(sk_flash_fs(),a.path,b.path));
 #endif
-    if (!SD.sdfs.rename(a.path,b.path)) { errno=EIO; return -1; } return 0;
+    if (!fat_volume(a)->rename(a.path,b.path)) { errno=EIO; return -1; } return 0;
 }
 #if SK_SETTINGS
 // LittleFS rename atomically replaces a regular destination. Keep general shell
@@ -354,7 +421,38 @@ extern "C" bool solar_os_storage_flash_is_mounted() { StorageLock lock;
     return false;
 #endif
 }
-extern "C" bool solar_os_storage_is_mounted() { StorageLock lock; return sk_sd_is_mounted() || solar_os_storage_flash_is_mounted(); }
+extern "C" bool solar_os_storage_is_mounted() { StorageLock lock; return solar_os_storage_mount_count()!=0; }
+extern "C" esp_err_t solar_os_storage_get_usage_for_path(const char *path,solar_os_storage_usage_t *out) {
+    StorageLock lock;
+    if(!out)return ESP_ERR_INVALID_ARG;
+    memset(out,0,sizeof(*out));
+    Route r;
+    if(!route_path(path,r))return ESP_ERR_INVALID_STATE;
+    if(r.root)return ESP_ERR_INVALID_ARG;
+#if SK_QSPI_FLASH
+    if(r.flash) {
+        auto *fs=sk_flash_fs();
+        const lfs_ssize_t used=lfs_fs_size(fs);
+        if(used<0)return ESP_FAIL;
+        out->total_bytes=uint64_t(fs->cfg->block_count)*fs->cfg->block_size;
+        out->used_bytes=uint64_t(used)*fs->cfg->block_size;
+    } else
+#endif
+    {
+        auto *volume=fat_volume(r);
+        if(!volume)return ESP_ERR_INVALID_STATE;
+        const int32_t free_clusters=volume->freeClusterCount();
+        if(free_clusters<0 || !media_ready(r.usb,!r.usb))return ESP_FAIL;
+        const uint64_t cluster_bytes=uint64_t(volume->sectorsPerCluster())*512;
+        out->total_bytes=uint64_t(volume->clusterCount())*cluster_bytes;
+        out->free_bytes=uint64_t(free_clusters)*cluster_bytes;
+        if(out->free_bytes>out->total_bytes)return ESP_FAIL;
+        out->used_bytes=out->total_bytes-out->free_bytes;
+    }
+    if(out->used_bytes>out->total_bytes)return ESP_FAIL;
+    out->free_bytes=out->total_bytes-out->used_bytes;
+    return ESP_OK;
+}
 extern "C" bool solar_os_storage_sd_is_mounted() { StorageLock lock; return sk_sd_is_mounted(); }
 extern "C" bool solar_os_storage_root_is_mounted() { StorageLock lock;
 #if SK_QSPI_FLASH
@@ -364,7 +462,11 @@ extern "C" bool solar_os_storage_root_is_mounted() { StorageLock lock;
 #endif
 }
 extern "C" size_t solar_os_storage_mount_count() { StorageLock lock;
-    return size_t(sk_sd_is_mounted()) + size_t(solar_os_storage_flash_is_mounted());
+    return size_t(sk_sd_is_mounted()) + size_t(solar_os_storage_flash_is_mounted())
+#if SK_USB_STORAGE
+        + size_t(sk_usb_storage_mounted())
+#endif
+        ;
 }
 extern "C" bool solar_os_storage_get_mount(size_t index, solar_os_storage_mount_info_t *out) { StorageLock lock;
     if (!out) return false;
@@ -378,12 +480,23 @@ extern "C" bool solar_os_storage_get_mount(size_t index, solar_os_storage_mount_
         }
         --index;
     }
-    if (!index && solar_os_storage_flash_is_mounted()) {
+    if (solar_os_storage_flash_is_mounted()) {
+      if (!index) {
         strlcpy(out->mount_point, "/flash", sizeof(out->mount_point));
         strlcpy(out->name, "QSPI flash", sizeof(out->name));
         out->type = SOLAR_OS_STORAGE_MOUNT_FLASH;
         return true;
+      }
+      --index;
     }
+#if SK_USB_STORAGE
+    if (!index && sk_usb_storage_mounted()) {
+        strlcpy(out->mount_point,"/usb",sizeof(out->mount_point));
+        strlcpy(out->name,"USB",sizeof(out->name));
+        out->type=SOLAR_OS_STORAGE_MOUNT_USB;
+        return true;
+    }
+#endif
     return false;
 }
 extern "C" const char *solar_os_storage_mount_point() { StorageLock lock; return "/"; }
@@ -403,6 +516,7 @@ extern "C" esp_err_t solar_os_storage_path_mount_point(const char *path,char *ou
 #if SK_QSPI_FLASH
     if (r.sd_alias) mount="/sd";
 #endif
+    if (r.usb) mount="/usb";
     if (strlen(mount)>=len) return ESP_ERR_INVALID_SIZE;
     strcpy(out,mount); return ESP_OK;
 }

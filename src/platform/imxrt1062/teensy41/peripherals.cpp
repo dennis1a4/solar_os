@@ -1,6 +1,11 @@
 #include <arduino_freertos.h>
 #include "board.h"
 #include "platform.h"
+#if SK_USB_STORAGE
+#include "storage_lock.h"
+#include "usb_storage.h"
+#include "sd_storage.h"
+#endif
 
 // Enable only after confirming the actual panel and connector wiring.
 #ifndef SK_PRIMARY_RA8875
@@ -157,65 +162,122 @@ void sk_display_write(const char *text, size_t length) {
 static USBHost host;
 static USBHub hub1(host), hub2(host);
 static USBHIDParser hid1(host), hid2(host), hid3(host);
-static KeyboardController keyboard(host);
+#include "keyboard_input.h"
+static TeensyKeyboardInput keyboard_input;
+struct KeyboardIrqGuard {
+    uint32_t mask=__get_PRIMASK();
+    KeyboardIrqGuard() { __disable_irq(); }
+    ~KeyboardIrqGuard() { __set_PRIMASK(mask); }
+};
+class RepeatingKeyboard : public KeyboardController {
+public:
+    explicit RepeatingKeyboard(USBHost &h):KeyboardController(h) {}
+protected:
+    bool hid_process_in_data(const Transfer_t *transfer) override {
+        const bool handled=KeyboardController::hid_process_in_data(transfer);
+        if(handled && transfer->length==8) {
+            KeyboardIrqGuard guard;
+            keyboard_input.leds=LEDS();
+            keyboard_input.boot_report(static_cast<const uint8_t *>(transfer->buffer),millis());
+        }
+        return handled;
+    }
+    void hid_input_begin(uint32_t usage,uint32_t type,int min,int max) override {
+        variable_keys=(usage==0x10006) && (type&2);
+        KeyboardController::hid_input_begin(usage,type,min,max);
+    }
+    void hid_input_data(uint32_t usage,int32_t value) override {
+        {
+            KeyboardIrqGuard guard;
+            if(usage>=0x700e0 && usage<=0x700e7) {
+                const uint8_t bit=1u<<(usage-0x700e0);
+                if(value)keyboard_input.modifiers|=bit;
+                else keyboard_input.modifiers&=~bit;
+            } else if(variable_keys && usage>=0x70004 && usage<=0x70073) {
+                keyboard_input.leds=LEDS();
+                if(value)keyboard_input.press(uint8_t(usage),millis());
+                else keyboard_input.release(uint8_t(usage));
+            }
+        }
+        KeyboardController::hid_input_data(usage,value);
+    }
+    void disconnect_collection(Device_t *device) override {
+        KeyboardController::disconnect_collection(device);
+        if(!bool(*this)) { KeyboardIrqGuard guard;keyboard_input.disconnect(); }
+    }
+private:
+    bool variable_keys=false;
+};
+static RepeatingKeyboard keyboard(host);
 bool sk_usb_keyboard_connected() { return bool(keyboard); }
 void sk_usb_status(char *out,size_t len) {
-    snprintf(out,len,"host port=%08lx status=%08lx command=%08lx hub=%u/%u keyboard=%04x:%04x",
-        (unsigned long)USB2_PORTSC1,(unsigned long)USB2_USBSTS,(unsigned long)USB2_USBCMD,
-        unsigned(bool(hub1)),unsigned(bool(hub2)),keyboard.idVendor(),keyboard.idProduct());
+    uint32_t presses,repeats,dropped; unsigned key;
+    { KeyboardIrqGuard guard;
+      key=keyboard_input.repeat_key(); presses=keyboard_input.presses;
+      repeats=keyboard_input.repeats; dropped=keyboard_input.dropped; }
+    snprintf(out,len,"hub=%u/%u keyboard=%04x:%04x repeat=%u delay=%lu rate=%lu press=%lu repeat-count=%lu drop=%lu",
+        unsigned(bool(hub1)),unsigned(bool(hub2)),keyboard.idVendor(),keyboard.idProduct(),
+        key,(unsigned long)TeensyKeyboardInput::delay_ms,
+        (unsigned long)TeensyKeyboardInput::interval_ms,(unsigned long)presses,
+        (unsigned long)repeats,(unsigned long)dropped);
 }
+// Diagnostic injection is independent of physical key state and disconnects.
 static uint8_t keys[512];
 static volatile unsigned head, tail;
-static void enqueue_key(uint8_t key) {
-    const unsigned next=(head+1)%sizeof(keys);
-    if(next!=tail) { keys[head]=key; head=next; }
-}
+static bool last_read_physical;
+bool sk_usb_last_read_physical() { return last_read_physical; }
 void sk_usb_inject(const char *text) {
-    // HID callbacks may run in the host ISR; keep diagnostic and escape-key
-    // sequences atomic with respect to that producer.
-    const uint32_t mask=__get_PRIMASK(); __disable_irq();
-    while(*text) enqueue_key(*text++);
-    __set_PRIMASK(mask);
+    KeyboardIrqGuard guard;
+    const size_t length=strlen(text),free=(tail+sizeof(keys)-head-1)%sizeof(keys);
+    if(length>free)return; // Never enqueue a partial escape sequence/command.
+    while(*text) { keys[head]=*text++;head=(head+1)%sizeof(keys); }
 }
-static void key_pressed(int unicode) {
-    const char *seq=nullptr;
-    switch(unicode) {
-    case KEYD_UP: seq="\033[A"; break; case KEYD_DOWN: seq="\033[B"; break;
-    case KEYD_RIGHT: seq="\033[C"; break; case KEYD_LEFT: seq="\033[D"; break;
-    case KEYD_HOME: seq="\033[H"; break; case KEYD_END: seq="\033[F"; break;
-    case KEYD_INSERT: seq="\033[2~"; break; case KEYD_DELETE: seq="\033[3~"; break;
-    case KEYD_PAGE_UP: seq="\033[5~"; break; case KEYD_PAGE_DOWN: seq="\033[6~"; break;
-    case KEYD_F1: seq="\033OP"; break; case KEYD_F2: seq="\033OQ"; break;
-    case KEYD_F3: seq="\033OR"; break; case KEYD_F4: seq="\033OS"; break;
-    case KEYD_F5: seq="\033[15~"; break; case KEYD_F6: seq="\033[17~"; break;
-    case KEYD_F7: seq="\033[18~"; break; case KEYD_F8: seq="\033[19~"; break;
-    case KEYD_F9: seq="\033[20~"; break; case KEYD_F10: seq="\033[21~"; break;
-    case KEYD_F11: seq="\033[23~"; break; case KEYD_F12: seq="\033[24~"; break;
-    }
-    if(seq) { sk_usb_inject(seq); return; }
-    if(unicode<=0 || unicode>127) return;
-    if((keyboard.getModifiers()&0x11) && unicode>='@' && unicode<='~') unicode&=31;
-    enqueue_key(unicode);
+void sk_usb_input_boundary() { KeyboardIrqGuard guard;keyboard_input.boundary(); }
+uint32_t sk_usb_input_generation() { KeyboardIrqGuard guard;return keyboard_input.generation; }
+static void key_pressed(int) {
+    KeyboardIrqGuard guard;
+    keyboard_input.modifiers=keyboard.getModifiers();keyboard_input.leds=keyboard.LEDS();
+    keyboard_input.press(keyboard.getOemKey(),millis());
 }
+static void key_released(uint8_t key) { KeyboardIrqGuard guard;keyboard_input.release(key); }
+
 #endif
 void sk_usb_begin() {
 #if SK_USB_HOST
     keyboard.attachPress(key_pressed);
+    keyboard.attachRawRelease(key_released);
+#if SK_USB_STORAGE
+    sk_usb_storage_begin();
+#endif
     host.begin();
 #endif
 }
 void sk_usb_poll() {
 #if SK_USB_HOST
+#if SK_USB_STORAGE
+    StorageLock lock;
+#endif
     host.Task();
+#if SK_USB_STORAGE
+    sk_usb_storage_poll();
+#if SK_SD_RECOVERY
+    sk_sd_poll();
+#endif
+#endif
 #endif
 }
 int sk_usb_read() {
 #if SK_USB_HOST
-    if (head != tail) {
-        int key = keys[tail]; tail = (tail + 1) % sizeof(keys); return key;
-    }
-#endif
+    KeyboardIrqGuard guard;
+    keyboard_input.leds=keyboard.LEDS();
+    // Finish a physical escape sequence before allowing another producer in.
+    if(keyboard_input.in_sequence()) { last_read_physical=true;return keyboard_input.read(millis()); }
+    if(head!=tail) { last_read_physical=false;int key=keys[tail];tail=(tail+1)%sizeof(keys);return key; }
+    last_read_physical=true;
+    return keyboard_input.read(millis());
+#else
     return -1;
+#endif
 }
 
 #if SK_AUDIO_SGTL5000 && !SK_AUDIO_PLAYER
@@ -263,8 +325,9 @@ extern "C" void sk_lcd_graphics_mode(bool enabled) {
     graphics_mode=enabled;
     if (!enabled && lcd) memset(lcd->dirty,1,sizeof(lcd->dirty));
 }
-extern "C" void sk_lcd_pixels(int x,int y,int width,int height,const uint16_t *pixels) {
-    if(sk_spi_lock(0)) { primary.writeRect(x,y,width,height,pixels); sk_spi_unlock(0); }
+extern "C" bool sk_lcd_pixels(int x,int y,int width,int height,const uint16_t *pixels) {
+    if(!sk_spi_lock(0)) return false;
+    primary.writeRect(x,y,width,height,pixels); sk_spi_unlock(0); return true;
 }
 extern "C" void sk_lcd_graphics_presented(uint32_t elapsed) {
     ++graphics_frames;graphics_ms=elapsed;

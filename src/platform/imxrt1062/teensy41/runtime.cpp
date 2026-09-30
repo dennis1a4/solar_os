@@ -29,6 +29,11 @@ extern "C" void esp_restart() {
 }
 extern "C" esp_err_t solar_os_log_write(solar_os_log_level_t level,
                                          const char *tag, const char *fmt, ...) {
+#if SK_PLAYGROUND && !SK_CURL_DIAGNOSTICS
+    // Curl sends progress/errors through its owning console's event queue.
+    // Its worker must not also write raw URL diagnostics to the USB console.
+    if (tag && !strcmp(tag,"solar_os_curl")) return ESP_OK;
+#endif
 #if SK_GRAPHICS && !SK_GFX_DIAGNOSTICS
     // These local graphics lifecycle diagnostics must not interrupt USB prompts.
     if (tag && (!strcmp(tag,"gfx") || !strcmp(tag,"solar_os_view"))) return ESP_OK;

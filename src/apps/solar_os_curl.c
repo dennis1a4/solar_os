@@ -23,6 +23,9 @@
 #include "solar_os_task.h"
 #include "solar_os_terminal.h"
 #include "solar_os_wifi.h"
+#if SK_ETHERNET
+#include "solar_os_network.h"
+#endif
 
 #define CURL_TASK_STACK 12288
 #define CURL_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
@@ -324,6 +327,13 @@ static esp_err_t curl_check_ready(solar_os_context_t *ctx)
 {
     solar_os_shell_io_t *io = curl_io(ctx);
 
+#if SK_ETHERNET
+    solar_os_network_path_info_t network;
+    if (!solar_os_network_path_get_preferred(&network) || !network.ready) {
+        solar_os_shell_io_writeln(io, "curl: network not connected; run network up");
+        return ESP_ERR_INVALID_STATE;
+    }
+#else
     solar_os_wifi_status_t wifi;
     solar_os_wifi_get_status(&wifi);
     if (!wifi.started || !wifi.connected || !wifi.has_ip) {
@@ -331,6 +341,7 @@ static esp_err_t curl_check_ready(solar_os_context_t *ctx)
         solar_os_shell_io_flush(io);
         return ESP_ERR_INVALID_STATE;
     }
+#endif
 
     if (curl_app.options.output_to_file && !solar_os_storage_is_mounted()) {
         solar_os_shell_io_writeln(io, "curl: storage required for -o");
@@ -634,7 +645,7 @@ static bool curl_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     }
 
     const uint8_t ch = (uint8_t)event->data.ch;
-    if (ch == SOLAR_OS_KEY_APP_EXIT) {
+    if (ch == SOLAR_OS_KEY_APP_EXIT || ch == SOLAR_OS_KEY_ESCAPE || ch == 3) {
         if (curl_app.running) {
             solar_os_shell_io_t *io = curl_io(ctx);
             solar_os_shell_io_writeln(io, "\ncurl: stopping");
@@ -646,6 +657,7 @@ static bool curl_event(solar_os_context_t *ctx, const solar_os_event_t *event)
             curl_app.running ? "curl: cancelled" : NULL);
         return true;
     }
+#if !SOLAR_OS_HEADLESS
     if (ch == SOLAR_OS_KEY_PAGE_UP) {
         solar_os_terminal_t *term = curl_terminal(ctx);
         if (term != NULL) {
@@ -660,6 +672,7 @@ static bool curl_event(solar_os_context_t *ctx, const solar_os_event_t *event)
         }
         return true;
     }
+#endif
     return true;
 }
 

@@ -48,9 +48,11 @@ bool solar_os_task_admit(const char *name, uint32_t size,
 #endif
 void solar_os_shell_cmd_apps(solar_os_context_t *ctx, int argc, char **argv) {
     (void)argc; (void)argv;
+    solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
     for (size_t i = 0; i < solar_os_app_registry_count(); ++i) {
         const solar_os_app_registry_entry_t *app = solar_os_app_registry_get(i);
-        solar_os_shell_io_printf(solar_os_context_shell_io(ctx), "%s - %s\n", app->name, app->summary);
+        solar_os_shell_io_write_bold(io, app->name);
+        solar_os_shell_io_printf(io, " - %s\n", app->summary);
     }
 }
 void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv) {
@@ -72,8 +74,26 @@ void solar_os_shell_cmd_clear(solar_os_context_t *ctx, int argc, char **argv) {
     (void)argc; (void)argv; solar_os_shell_io_clear(solar_os_context_shell_io(ctx));
 }
 // Geometry is explicit because a serial connection does not carry window size.
+#if SK_CLOCK
+#include "solar_os_time.h"
+#endif
 void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) {
     solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
+#if SK_CLOCK
+    if ((argc==2 || argc==3) && !strcmp(argv[1],"timezone")) {
+        if (argc==3) {
+            esp_err_t err=solar_os_time_set_timezone(argv[2]);
+            if (err!=ESP_OK) {
+                solar_os_shell_io_printf(io,"timezone not saved: %s\n",esp_err_to_name(err));
+                return;
+            }
+        }
+        char name[SOLAR_OS_TIMEZONE_NAME_MAX], posix[SOLAR_OS_TIMEZONE_POSIX_MAX];
+        solar_os_time_get_timezone(name,sizeof(name),posix,sizeof(posix));
+        solar_os_shell_io_printf(io,"timezone %s (%s); RTC stays UTC\n",name,posix);
+        return;
+    }
+#endif
 #if SK_SETTINGS
     if (argc == 1) {
         char path[SOLAR_OS_STORAGE_PATH_MAX];
@@ -104,6 +124,12 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) 
         if (*argv[2] && *argv[3] && !*end_col && !*end_row &&
             cols >= 20 && cols <= 300 && rows >= 8 && rows <= 120) {
 #if SK_SETTINGS
+#if SK_TELNETD
+            extern bool sk_console_is_remote(void);
+            if(sk_console_is_remote()) {
+                solar_os_shell_io_writeln(io,"Telnet geometry comes from the client window (NAWS)."); return;
+            }
+#endif
             nvs_handle_t h;
             esp_err_t err=nvs_open("usb_terminal",NVS_READWRITE,&h);
             if (err==ESP_OK) {
@@ -122,6 +148,9 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) 
             return;
         }
     }
+#if SK_CLOCK
+    solar_os_shell_io_writeln(io,"       setterm timezone [UTC|Manitoba|UTC+/-offset|Europe/Berlin|POSIX-TZ]");
+#endif
     solar_os_shell_io_writeln(io, "usage: setterm size <cols 20..300> <rows 8..120> (default 80 24)");
 #if SK_SETTINGS
     solar_os_shell_io_writeln(io,"       setterm startup <auto|flash|sd>; setterm (show settings)");

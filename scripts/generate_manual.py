@@ -75,6 +75,7 @@ DERIVED_ALIAS_OWNERS = {
     ("app.python", "python"): "python",
     ("job.controls", "controls"): "controls",
     ("job.daq", "daq"): "command.daq",
+    ("job.telnetd", "telnetd"): "command.telnetd",
     ("job.espnow-link", "espnow-link"): "link",
     ("job.log", "log"): "command.log",
     ("job.meshcore", "meshcore"): "meshcore",
