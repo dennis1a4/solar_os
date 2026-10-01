@@ -27,6 +27,10 @@ features remain backlog; they do not precede RAMFS in this approved sequence.
 
 ## Current position
 
+**2026-10-01 Python highlighting:** shared lexer gains built-ins, definitions
+and constants, with TUI colors and incremental editor caches. Host/device
+acceptance passes; see [syntax notes](teensy41-syntax.md).
+
 **2026-10-01 RAMFS:** original item 7 is installed. The approved workstation
 sequence is complete within documented limits; choose the next feature from
 the command audit/backlog.

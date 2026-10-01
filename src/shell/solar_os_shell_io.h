@@ -37,6 +37,7 @@ struct solar_os_shell_io {
     uint16_t footer_rows;
     size_t cursor_row;
     size_t cursor_col;
+    uint8_t foreground; /* 0 default, 1..7 portable bright syntax palette */
     bool bold;
     bool italic;
     bool underline;
@@ -108,3 +109,5 @@ esp_err_t solar_os_shell_io_set_footer(solar_os_shell_io_t *io,
                                        const char *text);
 esp_err_t solar_os_shell_io_clear_footer(solar_os_shell_io_t *io);
 esp_err_t solar_os_shell_io_flush(solar_os_shell_io_t *io);
+
+esp_err_t solar_os_shell_io_set_foreground(solar_os_shell_io_t *io, uint8_t color);

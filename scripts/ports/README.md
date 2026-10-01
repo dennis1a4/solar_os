@@ -577,3 +577,16 @@ file/app routing, busy worker handles, quotas, completion, accounting and cleanu
 `--edges-only` selects editor/multiple-mount/LCD/flash coverage. `--reboot` adds a
 board restart to verify volatility. Host sanitizer tests compile the actual
 shared backend. See [limits](../../doc/ports/teensy41-ramfs.md).
+
+## Python syntax highlighting
+
+```sh
+bash scripts/ports/test_teensy41_syntax_host.sh
+/tmp/solaros-ssh-testenv/bin/python scripts/ports/test_teensy41_syntax.py --log /tmp/teensy-syntax-device.json
+```
+
+The device script needs pyserial and pyte (the existing test venv supplies both),
+exclusive USB and idle consoles. It creates/removes `/syntax-test` in RAMFS;
+that mount name must be unused. Checks token colors, selection, multiline edits,
+resume, shell color restoration, LCD text and stable editor cleanup. See
+[syntax limits](../../doc/ports/teensy41-syntax.md).

@@ -353,3 +353,14 @@ See [RAMFS notes](teensy41-ramfs.md). Final main acceptance:
   visibility, four mounts, flash transfer and actual reboot volatility.
 - [ ] **RAMFS-5 — Long-running workload:** sustained background logging with
   concurrent app use, varying quotas and fragmentation under realistic data rates.
+
+## Python syntax highlighting
+
+- [x] **SYNTAX-1 — Lexer/cache:** sanitizer token tests, randomized incremental
+  equivalence, bounded propagation and large-file convergence.
+- [x] **SYNTAX-2 — Device:** all colors, selection contrast, triple-quote edits,
+  resume, shell color restoration, LCD text and exact five-cycle cleanup.
+- [ ] **SYNTAX-3 — Physical readability:** inspect Python colors and selection
+  on the actual LCD; try editing and scrolling a representative large script.
+
+See [syntax notes](teensy41-syntax.md) and `/tmp/teensy-syntax-device.json`.

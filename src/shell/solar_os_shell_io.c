@@ -1092,3 +1092,17 @@ esp_err_t solar_os_shell_io_flush(solar_os_shell_io_t *io)
     }
     return io->kind == SOLAR_OS_SHELL_IO_KIND_NONE ? ESP_ERR_INVALID_STATE : ESP_OK;
 }
+
+esp_err_t solar_os_shell_io_set_foreground(solar_os_shell_io_t *io,uint8_t color)
+{
+    static const char *const colors[]={"\x1b[39m","\x1b[94m","\x1b[92m","\x1b[96m","\x1b[93m","\x1b[95m","\x1b[90m","\x1b[97m"};
+    if(!io || color>=sizeof(colors)/sizeof(*colors))return ESP_ERR_INVALID_ARG;
+    if(io->foreground==color)return ESP_OK;
+    esp_err_t err=ESP_OK;
+    /* Monochrome displays and dumb terminals retain the existing attributes.
+     * VT100 emulators may support color; physical VT100s ignore these SGRs. */
+    if(shell_io_port_supports_ansi_controls(io))
+        err=shell_io_port_write_bytes(io,colors[color],strlen(colors[color]));
+    if(err==ESP_OK)io->foreground=color;
+    return err;
+}

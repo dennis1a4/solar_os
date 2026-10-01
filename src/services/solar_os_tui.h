@@ -14,6 +14,14 @@ typedef enum {
     SOLAR_OS_TUI_ATTR_INVERSE = 1U << 1,
     SOLAR_OS_TUI_ATTR_ITALIC = 1U << 2,
     SOLAR_OS_TUI_ATTR_UNDERLINE = 1U << 3,
+    SOLAR_OS_TUI_FG_BLUE = 1U << 4,
+    SOLAR_OS_TUI_FG_GREEN = 2U << 4,
+    SOLAR_OS_TUI_FG_CYAN = 3U << 4,
+    SOLAR_OS_TUI_FG_YELLOW = 4U << 4,
+    SOLAR_OS_TUI_FG_MAGENTA = 5U << 4,
+    SOLAR_OS_TUI_FG_GRAY = 6U << 4,
+    SOLAR_OS_TUI_FG_WHITE = 7U << 4,
+    SOLAR_OS_TUI_FG_MASK = 7U << 4,
 } solar_os_tui_attr_t;
 
 typedef struct {

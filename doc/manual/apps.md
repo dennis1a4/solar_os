@@ -636,6 +636,15 @@ selection, clipboard operations, text-size changes, and syntax highlighting for
 known source files. The editor supports files up to 256 KiB on boards with
 PSRAM and 32 KiB on boards without PSRAM. Use `hexedit` for binary files.
 
+Use `edit` to write MicroPython scripts, then run the saved file with `python`.
+Python `.py`/`.pyw` files highlight keywords, strings, comments, numbers,
+built-ins, function/class definition names, and `True`, `False`, `None`.
+Color-capable terminals display token colors; monochrome displays retain text
+attributes. Highlighting uses cached line states and visible-row styles, with
+incremental updates after edits. This is lexical highlighting, not syntax
+validation or name resolution. The interactive Python REPL is separate and is
+not highlighted.
+
 Usage:
 
 ```text

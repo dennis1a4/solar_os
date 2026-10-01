@@ -23,8 +23,18 @@ do not maintain a separate device or website copy.
 The SuperKeyboard port now runs independent RA8875 LCD/USB-host-keyboard and
 USB serial terminals, writable SD/QSPI flash storage, MicroPython, Ethernet,
 an SSH client, Files, editor, calculator, less, Notes, Sheet, a terminal synth,
-native Plot graphics, and the Playground catalog browser.
-The tested display profile builds with `pio run -e teensy41_display`.
+native Plot graphics, and the Playground catalog browser. Workstation additions
+include retained sessions, background Python jobs, Tab completion, network and
+hardware commands, and PSRAM-backed temporary filesystems.
+
+Use `edit /sd/example.py` to edit MicroPython scripts with automatic syntax
+highlighting, then `python /sd/example.py` to run them. `Ctrl+S` saves and
+`Ctrl+]` exits the editor. The interactive Python REPL is separate and does not
+have syntax highlighting. See [Python editing notes](doc/ports/teensy41-syntax.md).
+
+The installed profile builds with `pio run -e teensy41_telnet_legacy`.
+The normal `teensy41_display` profile requires the wiring changes documented
+in the port README.
 
 Start with the [Teensy 4.1 README](doc/ports/README.md) for hardware, temporary
 LCD wiring, build/upload instructions, commands, test coverage, and limitations.

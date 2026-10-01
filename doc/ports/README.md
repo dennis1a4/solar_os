@@ -15,6 +15,12 @@ saved timezone. See [usage and limits](teensy41-network-diagnostics.md).
 works at the cursor and lists ambiguous matches on a second Tab. See
 [completion usage and shared API](teensy41-completion.md).
 
+**Python editing:** automatic token colors and incremental line-state caching
+for `.py` files in `edit`. For example, `edit /sd/example.py`, save with
+`Ctrl+S`, exit with `Ctrl+]`, then run `python /sd/example.py`. There is no
+separate MicroPython editor; REPL highlighting is not implemented. See
+[syntax highlighting](teensy41-syntax.md).
+
 **Temporary storage:** `ramfs mount /ram 1m` creates a volatile PSRAM volume
 usable by the shell, Files/Edit and Python. See [RAMFS limits and usage](teensy41-ramfs.md).
 

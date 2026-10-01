@@ -12,13 +12,39 @@ The normal `teensy41_display` image requires that wiring change and disables
 Serial1. Both scope and USB-PD demo apps are available on the installed image.
 
 Installed HEX SHA256:
-`bd46884e615f35e899cc6d3372d0836d97f45597a12a4d5517937b125517603a`.
-Flash 1,416,488 bytes; RAM1 438,880; RAM2 340,848.
+`f390b353701243770a15e81a6927117ba7172d2be0b63a53cac2acc9d1882878`.
+Flash 1,419,968 bytes; RAM1 438,880; RAM2 340,848.
 Microsoft keyboard `045e:0750`, powered USB host hub, RA8875 LCD, native SD,
 USB drive, QSPI flash and 8 MiB PSRAM. Audio shield was absent in recent tests.
 See [quick-start and wiring](README.md).
 
-## Latest addition: PSRAM RAMFS (original item 7)
+## Latest addition: lightweight Python highlighting
+
+Installed in `edit`: Python keywords, strings, comments, numbers, built-ins,
+definition names and constants have distinct colors. Shared TUI foreground
+attributes support the LCD and serial terminal emulators, with monochrome
+attribute fallback. Selection keeps default foreground/inverse contrast.
+
+The shared lexer has compact line-start checkpoints and the editor caches
+visible row styles. Edits propagate state in bounded batches and stop at a
+matching unchanged suffix; cursor-only redraws reuse cached work. See
+[syntax limits and tests](teensy41-syntax.md) and
+[demo source](../../examples/teensy41/syntax_demo.py).
+
+Host ASan/UBSan passes 4,000 randomized edit comparisons plus large-file/budget
+checks; five editor key-policy tests pass. Device color/selection/multiline/
+resume/exit tests pass, as do LCD text rendering and exact five-cycle cleanup.
+Evidence: `/tmp/teensy-syntax-device.json`. Test editors are closed and temporary
+RAMFS removed. Physical LCD color readability remains a manual check.
+
+Recovery checkpoint: `../solar_os-baselines/2026-10-01-syntax/`.
+Syntax highlighting is included in the commit accompanying this handover.
+RAMFS and earlier workstation work are committed/pushed (`9435980`, `d6a16f9`).
+Unrelated DNP3 work is untouched. The installed firmware remains the tested
+image identified above; the expanded editor manual text is a documentation
+update for the next firmware build.
+
+## Previous addition: PSRAM RAMFS (original item 7)
 
 Installed quota-backed temporary mounts using shared SolarOS RAMFS:
 `ramfs mount /ram 1m`, ordinary file/app paths, `df`, Files/Edit, Python,
@@ -196,7 +222,8 @@ STUSB4500 and CAN prerequisites remain in the master checklist.
 ## Recovery and repository state
 
 Local firmware/source/log checkpoints are in `../solar_os-baselines/`:
-`2026-10-01-ramfs/` is the installed RAMFS build;
+`2026-10-01-syntax/` is the installed editor-highlighting build;
+`2026-10-01-ramfs/` is the preceding RAMFS build;
 `2026-09-30-hardware/` is the prior hardware-command build;
 `2026-09-30-completion/` is the earlier completion build;
 `2026-09-30-netdiag/` is the prior diagnostic build;
@@ -207,7 +234,8 @@ are earlier workstation checkpoints;
 The keyboard snapshot predates the final user confirmation; current docs record it.
 
 The prior integrated port checkpoint is committed/pushed as `d51761a` on
-`teensy41`. Current stage 1/2/2b/3 changes are uncommitted. Unrelated unfinished `solar_os_dnp3_bridge.*` and `src/vendor/opendnp3/`
+`teensy41`. Stages 1/2/2b/3/4 are committed as `d6a16f9`, and RAMFS as
+`9435980`. Unrelated unfinished `solar_os_dnp3_bridge.*` and `src/vendor/opendnp3/`
 remain local, untracked and outside the tested port. Do not resume DNP3 implicitly.
 Unique SD workstation fixtures remain for inspection; no user files were removed.
 

@@ -39,7 +39,7 @@ static bool tui_diff_active(const solar_os_tui_t *tui)
 
 static uint8_t tui_attr_from_io(const solar_os_shell_io_t *io)
 {
-    uint8_t attr = SOLAR_OS_TUI_ATTR_NORMAL;
+    uint8_t attr = io ? (io->foreground << 4) : SOLAR_OS_TUI_ATTR_NORMAL;
     if (io != NULL && io->bold) {
         attr |= SOLAR_OS_TUI_ATTR_BOLD;
     }
@@ -65,6 +65,7 @@ static void tui_set_attr(solar_os_tui_t *tui, uint8_t attr)
         return;
     }
 
+    (void)solar_os_shell_io_set_foreground(tui->io, (attr & SOLAR_OS_TUI_FG_MASK) >> 4);
     (void)solar_os_shell_io_set_bold(tui->io, (attr & SOLAR_OS_TUI_ATTR_BOLD) != 0);
     (void)solar_os_shell_io_set_italic(tui->io, (attr & SOLAR_OS_TUI_ATTR_ITALIC) != 0);
     (void)solar_os_shell_io_set_underline(tui->io, (attr & SOLAR_OS_TUI_ATTR_UNDERLINE) != 0);
@@ -75,13 +76,13 @@ static void tui_restore_attr(solar_os_tui_t *tui,
                              bool bold,
                              bool italic,
                              bool underline,
-                             bool inverse)
+                             bool inverse, uint8_t foreground)
 {
     if (!tui_valid(tui)) {
         return;
     }
     if (tui_diff_active(tui)) {
-        tui->draw_attr = SOLAR_OS_TUI_ATTR_NORMAL |
+        tui->draw_attr = (foreground << 4) |
             (bold ? SOLAR_OS_TUI_ATTR_BOLD : 0) |
             (italic ? SOLAR_OS_TUI_ATTR_ITALIC : 0) |
             (underline ? SOLAR_OS_TUI_ATTR_UNDERLINE : 0) |
@@ -89,6 +90,7 @@ static void tui_restore_attr(solar_os_tui_t *tui,
         return;
     }
 
+    (void)solar_os_shell_io_set_foreground(tui->io, foreground);
     (void)solar_os_shell_io_set_bold(tui->io, bold);
     (void)solar_os_shell_io_set_italic(tui->io, italic);
     (void)solar_os_shell_io_set_underline(tui->io, underline);
@@ -99,8 +101,10 @@ static void tui_save_attr(const solar_os_tui_t *tui,
                           bool *bold,
                           bool *italic,
                           bool *underline,
-                          bool *inverse)
+                          bool *inverse, uint8_t *foreground)
 {
+    *foreground = tui_diff_active(tui) ? (tui->draw_attr & SOLAR_OS_TUI_FG_MASK) >> 4 :
+        (tui && tui->io ? tui->io->foreground : 0);
     if (bold != NULL) {
         *bold = tui_diff_active(tui) ?
             (tui->draw_attr & SOLAR_OS_TUI_ATTR_BOLD) != 0 :
@@ -652,7 +656,7 @@ static esp_err_t tui_emit_attr(solar_os_tui_t *tui, uint8_t attr)
         return ESP_ERR_INVALID_STATE;
     }
 
-    esp_err_t err = ESP_OK;
+    esp_err_t err = solar_os_shell_io_set_foreground(tui->io,(attr & SOLAR_OS_TUI_FG_MASK) >> 4);
     const bool bold = (attr & SOLAR_OS_TUI_ATTR_BOLD) != 0;
     const bool italic = (attr & SOLAR_OS_TUI_ATTR_ITALIC) != 0;
     const bool underline = (attr & SOLAR_OS_TUI_ATTR_UNDERLINE) != 0;
@@ -831,10 +835,11 @@ esp_err_t solar_os_tui_write(solar_os_tui_t *tui, const char *text, uint8_t attr
     bool italic = false;
     bool underline = false;
     bool inverse = false;
-    tui_save_attr(tui, &bold, &italic, &underline, &inverse);
+    uint8_t foreground = 0;
+    tui_save_attr(tui, &bold, &italic, &underline, &inverse, &foreground);
     tui_set_attr(tui, attr);
     const esp_err_t err = tui_write_text(tui, text);
-    tui_restore_attr(tui, bold, italic, underline, inverse);
+    tui_restore_attr(tui, bold, italic, underline, inverse, foreground);
     return err;
 }
 
@@ -866,10 +871,11 @@ esp_err_t solar_os_tui_putch(solar_os_tui_t *tui,
     bool italic = false;
     bool underline = false;
     bool inverse = false;
-    tui_save_attr(tui, &bold, &italic, &underline, &inverse);
+    uint8_t foreground = 0;
+    tui_save_attr(tui, &bold, &italic, &underline, &inverse, &foreground);
     tui_set_attr(tui, attr);
     const esp_err_t write_err = tui_write_codepoint(tui, codepoint);
-    tui_restore_attr(tui, bold, italic, underline, inverse);
+    tui_restore_attr(tui, bold, italic, underline, inverse, foreground);
     return write_err;
 }
 
@@ -896,7 +902,8 @@ esp_err_t solar_os_tui_hline(solar_os_tui_t *tui,
     bool italic = false;
     bool underline = false;
     bool inverse = false;
-    tui_save_attr(tui, &bold, &italic, &underline, &inverse);
+    uint8_t foreground = 0;
+    tui_save_attr(tui, &bold, &italic, &underline, &inverse, &foreground);
     tui_set_attr(tui, attr);
     err = solar_os_tui_move(tui, row, col);
     for (size_t i = 0; i < draw_width; i++) {
@@ -904,7 +911,7 @@ esp_err_t solar_os_tui_hline(solar_os_tui_t *tui,
             err = tui_write_codepoint(tui, glyph);
         }
     }
-    tui_restore_attr(tui, bold, italic, underline, inverse);
+    tui_restore_attr(tui, bold, italic, underline, inverse, foreground);
     return err;
 }
 
@@ -931,7 +938,8 @@ esp_err_t solar_os_tui_vline(solar_os_tui_t *tui,
     bool italic = false;
     bool underline = false;
     bool inverse = false;
-    tui_save_attr(tui, &bold, &italic, &underline, &inverse);
+    uint8_t foreground = 0;
+    tui_save_attr(tui, &bold, &italic, &underline, &inverse, &foreground);
     tui_set_attr(tui, attr);
     esp_err_t write_err = ESP_OK;
     for (size_t i = 0; i < draw_height; i++) {
@@ -943,7 +951,7 @@ esp_err_t solar_os_tui_vline(solar_os_tui_t *tui,
             write_err = err;
         }
     }
-    tui_restore_attr(tui, bold, italic, underline, inverse);
+    tui_restore_attr(tui, bold, italic, underline, inverse, foreground);
     return write_err;
 }
 
@@ -1060,7 +1068,8 @@ esp_err_t solar_os_tui_fill(solar_os_tui_t *tui,
     bool italic = false;
     bool underline = false;
     bool inverse = false;
-    tui_save_attr(tui, &bold, &italic, &underline, &inverse);
+    uint8_t foreground = 0;
+    tui_save_attr(tui, &bold, &italic, &underline, &inverse, &foreground);
     tui_set_attr(tui, attr);
     esp_err_t write_err = ESP_OK;
     for (size_t y = 0; y < draw_height; y++) {
@@ -1074,7 +1083,7 @@ esp_err_t solar_os_tui_fill(solar_os_tui_t *tui,
             write_err = err;
         }
     }
-    tui_restore_attr(tui, bold, italic, underline, inverse);
+    tui_restore_attr(tui, bold, italic, underline, inverse, foreground);
     return write_err;
 }
 

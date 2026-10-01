@@ -91,7 +91,7 @@ static bool syntax_keyword_match(const char *word,
 static bool python_keyword(const char *word, size_t len)
 {
     static const char *const keywords[] = {
-        "False", "None", "True", "and", "as", "assert", "async", "await",
+        "and", "as", "assert", "async", "await",
         "break", "class", "continue", "def", "del", "elif", "else", "except",
         "finally", "for", "from", "global", "if", "import", "in", "is",
         "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try",
@@ -99,6 +99,17 @@ static bool python_keyword(const char *word, size_t len)
     };
 
     return syntax_keyword_match(word, len, keywords, sizeof(keywords) / sizeof(keywords[0]));
+}
+
+static bool python_builtin(const char *word,size_t len)
+{
+    static const char *const names[]={"abs","all","any","bin","bool","bytearray","bytes",
+        "callable","chr","classmethod","dict","dir","divmod","enumerate","eval","exec",
+        "filter","float","getattr","hasattr","hash","hex","id","input","int","isinstance",
+        "issubclass","iter","len","list","map","max","memoryview","min","next","object",
+        "oct","open","ord","pow","print","property","range","repr","reversed","round",
+        "set","setattr","slice","sorted","staticmethod","str","sum","super","tuple","type","zip"};
+    return syntax_keyword_match(word,len,names,sizeof(names)/sizeof(*names));
 }
 
 static bool lua_keyword(const char *word, size_t len)
@@ -142,6 +153,27 @@ static size_t syntax_parse_number(const char *line, size_t line_len, size_t pos)
     return i > pos ? i : pos + 1;
 }
 
+static size_t python_number(const char *line,size_t len,size_t i)
+{
+    if(i+1<len && line[i]=='0' && strchr("xXbBoO",line[i+1])) {
+        char base=line[i+1];i+=2;
+        while(i<len && (line[i]=='_' ||
+            ((base=='x'||base=='X') ? isxdigit((unsigned char)line[i]) :
+             (line[i]>='0' && line[i]<=((base=='b'||base=='B')?'1':'7')))))++i;
+        return i;
+    }
+    while(i<len && (isdigit((unsigned char)line[i]) || line[i]=='_'))++i;
+    if(i<len && line[i]=='.') {++i;while(i<len && (isdigit((unsigned char)line[i]) || line[i]=='_'))++i;}
+    if(i<len && (line[i]=='e' || line[i]=='E')) {
+        size_t end=i+1;if(end<len && (line[end]=='+' || line[end]=='-'))++end;
+        if(end<len && isdigit((unsigned char)line[end])) {
+            i=end+1;while(i<len && (isdigit((unsigned char)line[i]) || line[i]=='_'))++i;
+        }
+    }
+    if(i<len && (line[i]=='j' || line[i]=='J'))++i;
+    return i;
+}
+
 static bool syntax_match_repeated(const char *line,
                                   size_t line_len,
                                   size_t pos,
@@ -162,6 +194,7 @@ static bool syntax_match_repeated(const char *line,
 static size_t python_find_triple_end(const char *line, size_t line_len, size_t pos, char quote)
 {
     while (pos + 2 < line_len) {
+        if (line[pos] == '\\') { pos += 2; continue; }
         if (syntax_match_repeated(line, line_len, pos, quote, 3)) {
             return pos;
         }
@@ -201,6 +234,7 @@ static void python_highlight_line(solar_os_syntax_state_t *state,
                                   size_t visible_len)
 {
     size_t i = 0;
+    bool definition = false;
 
     if (state->mode == SOLAR_OS_SYNTAX_MODE_PY_TRIPLE_SINGLE ||
         state->mode == SOLAR_OS_SYNTAX_MODE_PY_TRIPLE_DOUBLE) {
@@ -276,8 +310,8 @@ static void python_highlight_line(solar_os_syntax_state_t *state,
             continue;
         }
 
-        if (isdigit((unsigned char)ch)) {
-            const size_t end = syntax_parse_number(line, line_len, i);
+        if (isdigit((unsigned char)ch) || (ch=='.' && i+1<line_len && isdigit((unsigned char)line[i+1]))) {
+            const size_t end = python_number(line, line_len, i);
             syntax_mark(visible_offset,
                         styles,
                         visible_len,
@@ -294,14 +328,22 @@ static void python_highlight_line(solar_os_syntax_state_t *state,
             while (i < line_len && syntax_ident(line[i])) {
                 i++;
             }
-            if (python_keyword(&line[start], i - start)) {
-                syntax_mark(visible_offset,
-                            styles,
-                            visible_len,
-                            start,
-                            i,
-                            SOLAR_OS_SYNTAX_STYLE_KEYWORD);
-            }
+            solar_os_syntax_style_t style=SOLAR_OS_SYNTAX_STYLE_NORMAL;
+            size_t n=i-start;
+            size_t previous=start;while(previous && isspace((unsigned char)line[previous-1]))--previous;
+            bool string_prefix=i<line_len && (line[i]=='\'' || line[i]=='"') &&
+                ((n==1 && strchr("rRbBuUfF",line[start])) ||
+                 (n==2 && ((strchr("rR",line[start]) && strchr("bBfF",line[start+1])) ||
+                           (strchr("bBfF",line[start]) && strchr("rR",line[start+1])))));
+            if(string_prefix)style=SOLAR_OS_SYNTAX_STYLE_STRING;
+            else if(definition) {style=SOLAR_OS_SYNTAX_STYLE_DEFINITION;definition=false;}
+            else if((n==4 && !strncmp(line+start,"True",4)) || (n==5 && !strncmp(line+start,"False",5)) ||
+                    (n==4 && !strncmp(line+start,"None",4))) style=SOLAR_OS_SYNTAX_STYLE_CONSTANT;
+            else if(python_keyword(line+start,n)) {
+                style=SOLAR_OS_SYNTAX_STYLE_KEYWORD;
+                definition=(n==3 && !strncmp(line+start,"def",3)) || (n==5 && !strncmp(line+start,"class",5));
+            } else if((previous==0 || line[previous-1]!='.') && python_builtin(line+start,n)) style=SOLAR_OS_SYNTAX_STYLE_BUILTIN;
+            syntax_mark(visible_offset,styles,visible_len,start,i,style);
             continue;
         }
 
@@ -560,5 +602,67 @@ void solar_os_syntax_highlight_line(solar_os_syntax_language_t language,
     case SOLAR_OS_SYNTAX_NONE:
     default:
         break;
+    }
+}
+
+size_t solar_os_syntax_line_count(const char *text, size_t len)
+{
+    size_t n=1; for(size_t i=0;i<len;++i) if(text[i]=='\n') ++n; return n;
+}
+void solar_os_syntax_cache_init(solar_os_syntax_cache_t *c,
+    solar_os_syntax_checkpoint_t *lines,size_t capacity,const char *text,size_t len)
+{
+    memset(c,0,sizeof(*c)); c->lines=lines;c->capacity=capacity;
+    c->count=solar_os_syntax_line_count(text,len);
+    if(!lines || capacity<c->count) {c->count=0;return;}
+    memset(lines,0,c->count*sizeof(*lines));lines[0].known=1;
+    c->valid=1;c->dirty_through=c->count;
+}
+size_t solar_os_syntax_cache_edit(solar_os_syntax_cache_t *c,
+    const char *text,size_t len,size_t start,size_t removed,const char *inserted,size_t added)
+{
+    if(start>len || removed>len-start || !c->count)return 0;
+    size_t first=solar_os_syntax_line_count(text,start)-1;
+    size_t gone=solar_os_syntax_line_count(text+start,removed)-1;
+    size_t extra=solar_os_syntax_line_count(inserted,added)-1;
+    size_t count=c->count-gone+extra;
+    if(count>c->capacity) {c->count=0;c->valid=0;return first;}
+    size_t last=first+gone;
+    memmove(c->lines+first+extra+1,c->lines+last+1,
+        (c->count-last-1)*sizeof(*c->lines));
+    memset(c->lines+first+1,0,extra*sizeof(*c->lines));
+    size_t dirty=first+extra;
+    size_t frontier=c->dirty_through;
+    if(c->valid && frontier<c->valid-1)frontier=c->valid-1;
+    if(c->valid<c->count && frontier>last)dirty=frontier-gone+extra;
+    c->dirty_through=dirty;c->count=count;
+    if(c->valid>first+1)c->valid=first+1;
+    return first;
+}
+int solar_os_syntax_cache_state(const solar_os_syntax_cache_t *c,size_t line,solar_os_syntax_state_t *s)
+{
+    solar_os_syntax_state_init(s);
+    if(!s || line>=c->valid || line>=c->count)return 0;
+    s->mode=(solar_os_syntax_mode_t)c->lines[line].mode;s->lua_long_equals=c->lines[line].equals;return 1;
+}
+void solar_os_syntax_cache_step(solar_os_syntax_cache_t *c,solar_os_syntax_language_t language,
+    const char *text,size_t len,size_t through,size_t line_budget,size_t byte_budget)
+{
+    if(!c->count || !c->valid || through<c->valid || !line_budget || !byte_budget)return;
+    size_t row=c->valid-1,pos=0;
+    for(size_t i=0;i<row && pos<len;++i) {while(pos<len && text[pos]!='\n')++pos;if(pos<len)++pos;}
+    size_t bytes=0,work=0;
+    while(c->valid<c->count && c->valid<=through && work<line_budget && bytes<byte_budget) {
+        size_t end=pos;while(end<len && text[end]!='\n')++end;
+        solar_os_syntax_state_t state;solar_os_syntax_cache_state(c,row,&state);
+        solar_os_syntax_highlight_line(language,&state,text+pos,end-pos,0,NULL,0);
+        ++work;++c->lexed_lines;bytes+=end-pos+1;++row;
+        solar_os_syntax_checkpoint_t old=c->lines[row];
+        c->lines[row]=(solar_os_syntax_checkpoint_t){(uint8_t)state.mode,state.lua_long_equals,1};
+        c->valid=row+1;pos=end<len?end+1:len;
+        if(row>c->dirty_through && old.known && old.mode==state.mode && old.equals==state.lua_long_equals) {
+            while(c->valid<c->count && c->lines[c->valid].known)++c->valid;
+            if(c->valid>row+1)break; /* resume at new frontier on next call */
+        }
     }
 }
