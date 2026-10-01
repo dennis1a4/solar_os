@@ -17,6 +17,8 @@ esp_err_t solar_os_shell_startup_append_command(const char *command, bool *added
 
 solar_os_shell_session_t *solar_os_shell_session_create(void);
 void solar_os_shell_session_destroy(solar_os_shell_session_t *session);
+/* At an empty prompt, with no foreground app, watch, log follow or script. */
+bool solar_os_shell_session_is_idle(const solar_os_shell_session_t *session);
 solar_os_shell_io_t *solar_os_shell_session_io(solar_os_shell_session_t *session);
 const solar_os_app_t *solar_os_shell_session_foreground_app(solar_os_shell_session_t *session);
 void solar_os_shell_session_set_foreground_app(solar_os_shell_session_t *session,

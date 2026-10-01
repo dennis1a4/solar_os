@@ -695,6 +695,8 @@ sources = [
   "services/solar_os_timezone.c",
   "services/solar_os_tui.c",
   "services/solar_os_tui_widgets.c",
+  "services/solar_os_completion.c",
+  "services/solar_os_completion_files.c",
 ]
 requires = [
   "esp_driver_gpio",

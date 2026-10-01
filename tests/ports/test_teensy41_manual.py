@@ -15,15 +15,24 @@ class ManualTest(unittest.TestCase):
         cls.pages=PORT.select_pages(GEN.load_pages(ROOT/'doc/manual',ROOT/'packages/solar_os_packages.toml'),GEN.markdown_to_terminal_text)
         cls.by_id={p['id']:p for p in cls.pages}
     def test_workstation_topics(self):
-        for name in ('man','watch','session','sessions','df','top','pwd','date','time','zip','unzip'):
+        for name in ('man','watch','session','sessions','fg','close','df','top','pwd','date','time','zip','unzip','ping','netscan','ntp'):
             self.assertIn('command.'+name,self.by_id)
+    def test_hardware_topics(self):
+        for name in ("gpio", "i2c", "spi", "uart", "expansion"):
+            self.assertIn("command."+name,self.by_id)
+        for name in ("io", "com"):
+            self.assertIn("app."+name,self.by_id)
+        self.assertIn("UART3 conflicts",self.by_id["command.uart"]["body"])
+        self.assertIn("Ctrl+Z",self.by_id["app.com"]["body"])
+
     def test_excludes_unavailable_services(self):
-        for name in ('wifi','espnow','ota','nvs','job','jobs','fg'):
+        for name in ('wifi','espnow','ota','nvs'):
             self.assertNotIn('command.'+name,self.by_id)
-    def test_sessions_dont_promise_retained_apps(self):
+    def test_sessions_document_retention_and_limits(self):
         text=self.by_id['command.session']['body']
         self.assertIn('not integrated',text)
-        self.assertNotIn('session create',text)
+        self.assertIn('Ctrl+Z',text)
+        self.assertIn('discards unsaved',text)
     def test_aliases(self):
         for name in ('man','watch','pwd','session','sessions','top'):
             self.assertIn(name,self.by_id['command.'+name]['aliases'])

@@ -80,3 +80,8 @@ int solar_os_micropython_resolve_path(const char *input,
 void solar_os_micropython_vm_hook(void);
 
 #define MICROPY_VM_HOOK_LOOP                    solar_os_micropython_vm_hook();
+
+#if SK_BACKGROUND_JOBS
+extern const struct _mp_obj_fun_builtin_var_t sk_python_input_obj;
+#define MICROPY_PORT_BUILTINS { MP_ROM_QSTR(MP_QSTR_input), MP_ROM_PTR(&sk_python_input_obj) },
+#endif

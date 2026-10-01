@@ -2,13 +2,39 @@
 
 **Testing:** [Master outstanding test checklist](teensy41-test-checklist.md).
 
-Last updated: 2026-09-29.
+Last updated: 2026-09-30.
 
 This is the working plan and idea backlog for porting SolarOS from ESP32 to
 Teensy 4.1, then bringing up the SuperKeyboard hardware. Keep technical details
 and test evidence in the [port notes](teensy41.md).
 
+## Approved workstation sequence — 2026-09-30
+
+Complete and validate one stage before moving to the next:
+
+1. Retained application sessions, suspend/resume, `fg` and `close` — implemented; automated checks pass;
+   user confirmation passed.
+2. Background jobs and scheduling (`jobs`, `job`, `schedule`) — implemented; host/device acceptance passes. See [jobs notes](teensy41-jobs.md).
+   Stage 2b: detachable MicroPython worker (`Ctrl+Z`/`bg`/`fg`), retained input/output,
+   safe stop and `tail` — installed; final-image workflow, edge, network and graphics acceptance passes.
+3. Network diagnostics and clock synchronization (`ntp`, `ping`, `netscan`) — implemented, installed and host/device acceptance passed; see [diagnostics notes](teensy41-network-diagnostics.md).
+4. Hardware resource management and terminal access (GPIO/buses, `io`,
+   `expansion`, `com`, with pin ownership) — installed; host/device acceptance and physical UART8 loopback pass. See [hardware notes](teensy41-hardware-resources.md).
+5. PSRAM-backed temporary storage (`ramfs`).
+
+The fifth stage is item 7 from the command-gap review. Monitoring and transfer
+features remain backlog; they do not precede RAMFS in this approved sequence.
+
 ## Current position
+
+**2026-09-30 hardware resources:** stage 4 is complete within the fixed-routing
+scope documented above. PSRAM RAMFS (original item 7) is next.
+
+**2026-09-30 shared completion:** cursor-aware Tab completion and bounded
+on-demand filesystem providers are implemented; reusable C/TUI and raw-field
+APIs are available. See [completion notes](teensy41-completion.md). This user-requested
+addition does not replace stage 4 in the approved sequence.
+
 
 **2026-09-29 keyboard repeat:** implemented and flashed on AmpEn40 legacy wiring;
 400 ms delay / 33 ms interval. Host sanitizer and child lifecycle tests pass.
@@ -17,9 +43,9 @@ remain pending. See [keyboard notes](teensy41-keyboard.md).
 
 **2026-09-29 workstation shell:** embedded Help/Man, Watch, task/system/storage
 diagnostics, Date/Time, archives and Curl added and tested on legacy wiring.
-Session listing is integrated; retained sessions and fg/close are still next
-work. See the [complete command audit](teensy41-workstation.md). Current state
-is the keyboard-repeat legacy image; query network status after its reboot.
+Retained app sessions and fg/close were added on 2026-09-30; see
+[session notes](teensy41-sessions.md). See the [complete command audit](teensy41-workstation.md). Current state
+is the stage 4 legacy image; query network status after its reboot.
 
 Current firmware, validation and recovery instructions are in the
 [handoff](teensy41-handoff.md); older pause/unplug entries are historical.
@@ -105,8 +131,8 @@ step. Partial implementations and compile checks do not mean full integration.
 | 4 | Get the SolarOS shell prompt. | Verified: independent LCD and USB upstream shells with a reduced command table. Bootstrap retained for recovery; full upstream session coverage remains. |
 | 5 | Implement SDIO and mount the SD card. | Mount and reads verified, including writable shell/SD file operations, editor saves and Python files. Startup failure root cause, physical validation of the new hot-removal recovery candidate and full VFS semantics remain. |
 | 6 | Implement the primary display. | Adafruit RA8875 800x480 text terminal and shared TUI apps verified on temporary wiring. Shared pixel graphics/View/Python are integrated; final PCB wiring remains. |
-| 7 | Implement I²C/SPI/UART abstraction. | Initial adapters compile. Hardware tests and upstream service/resource integration remain. |
-| 8 | Implement expansion slots. | Initial pin descriptors and exclusive slot claims implemented. Manifest/driver registry integration and hardware tests remain. |
+| 7 | Implement I²C/SPI/UART abstraction. | Fixed-bus commands, shared resource claims and COM UART adapter installed; physical UART8 loopback passes. External I²C/SPI devices and broader bus service APIs remain. |
+| 8 | Implement expansion slots. | Fixed descriptors and protected SPI CS leases installed, with independent UART leases. Manifest/driver registry and external peripheral tests remain. |
 | 9 | Add PSRAM allocation. | Allocation adapter and 4 KiB test implemented. Missing-PSRAM handling and fitted 8 MiB / repeated 4 KiB checks verified; full-capacity testing remains. |
 | 10 | Add audio. | Rev D shield headphone output and aplay MP3/WAV verified in teensy41_audio. Mic WAV capture verified with speaker tone; 60 Hz hum remains. Custom-board supply/wiring and full audio services remain. |
 | 11 | Add secondary display. | Optional ST7735 bring-up compiles. Controller confirmation, hardware tests and second-terminal support remain. |
@@ -117,7 +143,8 @@ step. Partial implementations and compile checks do not mean full integration.
 
 - [x] Add workstation commands and keyboard repeat; basic repeat/release confirmed.
 - [ ] Complete remaining physical keyboard checks in the master checklist.
-- [ ] Implement retained sessions/fg/close and cooperative cold DF scans.
+- [x] Implement bounded retained app sessions/fg/close and owner-console requests.
+- [ ] Make cold DF scans cooperative.
 
 The earlier bring-up follow-ups below remain open where unchecked.
 

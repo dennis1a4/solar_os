@@ -258,6 +258,14 @@ static void clean_test_storage(void)
     (void)rmdir(TEST_STORAGE_ROOT);
 }
 
+#if SOLAR_OS_SCHEDULE_RUNNER_QUEUES
+static bool reject_script;
+static esp_err_t enqueue_test(const char *path) {
+    assert(strcmp(path, "/sd/test.sh") == 0);
+    return reject_script ? ESP_ERR_NO_MEM : ESP_OK;
+}
+#endif
+
 int main(int argc, char **argv)
 {
     if (argc == 2 && strcmp(argv[1], "--reload") == 0) {
@@ -336,6 +344,20 @@ int main(int argc, char **argv)
     solar_os_schedule_poll();
     assert(fake_rtc_countdown_seconds == 90);
 
+#if SOLAR_OS_SCHEDULE_RUNNER_QUEUES
+    solar_os_schedule_set_script_runner(enqueue_test);
+    assert(solar_os_schedule_add_relative("script-test", 10,
+        SOLAR_OS_SCHEDULE_ACTION_SCRIPT, "/sd/test.sh", false) == ESP_OK);
+    assert(solar_os_schedule_run("script-test") == ESP_OK);
+    reject_script = true;
+    assert(solar_os_schedule_run("script-test") != ESP_OK);
+    solar_os_schedule_entry_t queued;
+    assert(solar_os_schedule_get_by_name("script-test", &queued) == ESP_OK);
+    assert(queued.run_count == 2 && queued.skipped_count == 1);
+    solar_os_schedule_set_script_runner(NULL);
+    assert(solar_os_schedule_run("script-test") != ESP_OK);
+    assert(solar_os_schedule_remove("script-test") == ESP_OK);
+#endif
     char reload_command[512];
     const int written = snprintf(reload_command, sizeof(reload_command),
                                  "%s --reload", argv[0]);

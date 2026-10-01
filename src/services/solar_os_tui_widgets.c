@@ -569,3 +569,16 @@ esp_err_t solar_os_tui_draw_input_ex(solar_os_tui_t *tui,
     if (err == ESP_OK) err = solar_os_tui_set_cursor_visible(tui, true);
     return err;
 }
+
+solar_os_completion_result_t solar_os_tui_input_complete(
+    char *text, size_t capacity, solar_os_tui_input_state_t *state,
+    size_t visible_cells, solar_os_completion_kind_t kind,
+    const solar_os_completion_registry_t *providers, bool repeated_tab,
+    solar_os_completion_emit_t display, void *user)
+{
+    if (!state) return (solar_os_completion_result_t){.failed = true};
+    solar_os_completion_result_t result = solar_os_completion_apply(text, capacity,
+        &state->cursor, kind, providers, repeated_tab, display, user);
+    if (result.changed) tui_widget_input_visible(text, state, visible_cells ? visible_cells : 1);
+    return result;
+}

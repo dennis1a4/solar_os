@@ -432,6 +432,7 @@ void solar_os_schedule_set_script_runner(solar_os_schedule_script_runner_t runne
     schedule_unlock();
 }
 
+#if !SOLAR_OS_SCHEDULE_RUNNER_QUEUES
 static void script_task(void *arg)
 {
     (void)arg;
@@ -452,6 +453,7 @@ static void script_task(void *arg)
     solar_os_task_delete_internal(NULL);
 }
 
+#endif
 static bool trigger_locked(solar_os_schedule_entry_t *entry)
 {
     entry->run_count++;
@@ -462,6 +464,15 @@ static bool trigger_locked(solar_os_schedule_entry_t *entry)
         SOLAR_OS_LOGI(TAG, "alarm due: %s", entry->name);
         return true;
     }
+#if SOLAR_OS_SCHEDULE_RUNNER_QUEUES
+    // A bounded platform job runner takes ownership without creating a worker
+    // while the schedule lock is held. It must enqueue, never execute a script.
+    if (state.script_runner == NULL || state.script_runner(entry->value) != ESP_OK) {
+        entry->skipped_count++;
+        return false;
+    }
+    return true;
+#else
     if (state.script_task != NULL || state.pending_script[0] != '\0' ||
         state.script_runner == NULL) {
         entry->skipped_count++;
@@ -482,6 +493,7 @@ static bool trigger_locked(solar_os_schedule_entry_t *entry)
         return false;
     }
     return true;
+#endif
 }
 
 static void service_alarm_sound(uint64_t now_ms)
@@ -509,6 +521,13 @@ static void service_alarm_sound(uint64_t now_ms)
             .drop_if_busy = true,
         };
         (void)solar_os_audio_tone_enqueue(&request, NULL);
+    }
+#elif SK_BACKGROUND_JOBS
+    extern void sk_clock_alarm_sound(bool on);
+    if(state.alarm_active && (state.last_alarm_tone_ms==0 ||
+        now_ms-state.last_alarm_tone_ms>=SCHEDULE_ALARM_TONE_INTERVAL_MS)) {
+        state.last_alarm_tone_ms=now_ms;
+        sk_clock_alarm_sound(true);
     }
 #else
     (void)now_ms;
@@ -1034,6 +1053,10 @@ void solar_os_schedule_stop_alarm(void)
     state.alarm_active = false;
     state.alarm_name[0] = '\0';
     schedule_unlock();
+#if SK_BACKGROUND_JOBS
+    extern void sk_clock_alarm_sound(bool on);
+    sk_clock_alarm_sound(false);
+#endif
 }
 
 bool solar_os_schedule_next_wake_us(uint64_t *wake_after_us)

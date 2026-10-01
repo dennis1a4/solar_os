@@ -3,7 +3,21 @@
 **Workstation commands:** [Command audit and integration](teensy41-workstation.md).
 `help` now browses the embedded manual; use `commands` for the command list,
 `man watch` for a topic and `watch -n 2 top` for task monitoring. `session list`
-currently inspects fixed consoles; retained sessions and `fg` remain pending.
+now lists fixed consoles and retained app chains. `Ctrl+Z` suspends a resumable
+app, `fg [ID]` resumes it and `close ID` discards its state. See
+[retained sessions](teensy41-sessions.md).
+
+**Network diagnostics:** `ping`, bounded TCP `netscan`, and `ntp` now run on
+native Ethernet. `ntp -q` queries time; `ntp` sets UTC without changing the
+saved timezone. See [usage and limits](teensy41-network-diagnostics.md).
+
+**Tab completion:** commands, paths with spaces, session/job IDs and settings;
+works at the cursor and lists ambiguous matches on a second Tab. See
+[completion usage and shared API](teensy41-completion.md).
+
+**Hardware commands:** protected GPIO, I2C/SPI transfers, UARTs, expansion CS
+leases, `io` inspection and resumable `com`. Physical UART8 loopback passed. See
+[usage, routing and limits](teensy41-hardware-resources.md).
 
 **Keyboard:** [Repeat timing and validation](teensy41-keyboard.md), physically
 confirmed for letters, Left, Backspace and Shift changes.
@@ -154,7 +168,7 @@ The USB prompt stays independent while Plot owns the LCD.
 
 After `network up`, use `playground refresh` to fetch the community catalog.
 Then `playground install hello-python` and `playground run hello-python` provide
-a small example. Lua and graphical Python scripts remain unavailable. See
+a small example. Lua remains unavailable; local Python graphics are supported. See
 [Plot/Playground notes](teensy41-plot-playground.md) for controls, HTTPS trust,
 storage, compatibility limits, and tests.
 
@@ -224,3 +238,8 @@ USB flash-drive integration and limits: [Teensy USB storage](teensy41-usb-storag
 
 - [Single-channel scope](teensy41-scope.md): graphical ADC snapshots, controls,
   pending pin move and validation.
+
+Background scripts and scheduling: see [jobs notes](teensy41-jobs.md).
+
+Detachable MicroPython workers (`Ctrl+Z`, `bg`, `fg`, `job stop`) and log snapshots
+with `tail`: see [process jobs](teensy41-process-jobs.md).

@@ -28,6 +28,7 @@ solar_os_gfx_t *sk_lcd_gfx() {
     }
     return &gfx;
 }
+extern "C" void sk_gfx_invalidate_presenter() { presenter.reset(); }
 extern "C" void __wrap_solar_os_gfx_prepare_surface(solar_os_gfx_t *g) {
     __real_solar_os_gfx_prepare_surface(g);sk_lcd_graphics_mode(true);
 }

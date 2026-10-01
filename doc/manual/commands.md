@@ -110,6 +110,8 @@ The display-shell app exit chord is `CTRL+ALT+DEL`. Port shells use `Ctrl+]`.
 | `nvs` | `nvs restore [file]` | Validate and restore a complete NVS backup, then reboot. The default is `/.solar/nvs.bin`. |
 | `nvs` | `nvs clear` | Erase all NVS-backed settings and reboot immediately. |
 | `sessions` | `sessions` | List display app sessions, display shell sessions, and port shell sessions. |
+| `tail` | `tail [-n N] FILE` | Teensy workstation: read a snapshot of the last lines of a file. |
+| `bg` | `bg [session-id]` | Teensy workstation: continue a suspended standalone text Python process in the background. |
 | `fg` | `fg [session-id]` | Resume a display session or a port-owned app on its owning terminal. Without an ID, restore the calling port shell's most recently suspended app. |
 | `close` | `close <session-id>` | Close a display app, display shell, or retained port app, or stop a port shell session. The final interactive shell cannot be closed. |
 | `inbox` | `inbox` | Open the universal incoming-message browser. |

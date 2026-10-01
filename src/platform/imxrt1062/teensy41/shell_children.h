@@ -3,6 +3,7 @@
 // in PSRAM, not on the console stack.
 struct AppFrame {
     AppFrame *parent;
+    uint32_t id;
     const solar_os_app_t *app;
     solar_os_tui_t *tui;
     solar_os_context_t context;
@@ -65,6 +66,14 @@ static void launch_error(const char *message) {
     } else solar_os_shell_session_prompt(&shell_context, session);
 }
 static void service_requests() {
+#if SK_BACKGROUND_JOBS
+    // Only the worker may tear down its VM; an exit flag can become visible
+    // while a native finalizer yields during cleanup.
+    if(app_frame && app_frame==process.frame && !process.done)return;
+#endif
+#if SK_LCD_CONSOLE
+    if(solar_os_context_take_suspend_request(current_context())) { suspend_app(); return; }
+#endif
     if (solar_os_context_take_exit_request(current_context())) {
         if (app_frame) finish_app();
 #if SK_TELNETD
@@ -92,6 +101,9 @@ static void service_requests() {
         !(foreground->flags & SOLAR_OS_APP_FLAG_RESUMABLE))) {
         launch_error("This application cannot launch another child."); return;
     }
+#if SK_LCD_CONSOLE
+    if(!app_frame && next_app_id<4) { launch_error("Session ID space exhausted; reboot required."); return; }
+#endif
     auto *child = static_cast<AppFrame *>(solar_os_memory_calloc(1, sizeof(AppFrame),
         SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "usb-app-frame"));
     if (!child) { launch_error("Not enough memory to launch app."); return; }
@@ -100,6 +112,9 @@ static void service_requests() {
         solar_os_memory_free(child); launch_error(esp_err_to_name(err)); return;
     }
     child->app = app;
+#if SK_LCD_CONSOLE
+    child->id = app_frame ? app_frame->id : next_app_id++;
+#endif
     child->context = *ctx;
     child->argc = ctx->argc;
     memcpy(child->argv, ctx->argv, sizeof(child->argv));

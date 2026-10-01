@@ -226,8 +226,27 @@ static void test_masked_input_draw(void)
     assert(test_cursor_visible);
 }
 
+static bool completion_values(const solar_os_completion_request_t *request,
+    solar_os_completion_emit_t emit, void *sink, void *user)
+{
+    (void)request; (void)user;
+    return emit(sink,"sample");
+}
+static void test_shared_completion(void)
+{
+    char text[32]="sa later";
+    solar_os_tui_input_state_t state={.cursor=2};
+    solar_os_completion_registry_t providers={0};
+    providers.providers[SOLAR_OS_COMPLETE_CUSTOM].enumerate=completion_values;
+    solar_os_completion_result_t result=solar_os_tui_input_complete(text,sizeof(text),
+        &state,4,SOLAR_OS_COMPLETE_CUSTOM,&providers,false,NULL,NULL);
+    assert(result.changed && !strcmp(text,"sample later") && state.cursor==6);
+    assert(state.view>0);
+}
+
 int main(void)
 {
+    test_shared_completion();
     test_viewport();
     test_layout();
     test_fullscreen_key();

@@ -1,5 +1,8 @@
 #if SK_UPSTREAM_SHELL
-// Single-session MicroPython integration. No ESP services or worker tasks.
+// One MicroPython VM. Workstation builds execute its lifecycle on an admitted worker.
+#if SK_BACKGROUND_JOBS
+#include "process_job.h"
+#endif
 #include <errno.h>
 #if SK_ETHERNET
 #include "network_socket.h"
@@ -98,10 +101,26 @@ static bool execute(const char *text, bool file, bool repl) {
     mp_obj_print_exception(&mp_plat_print, MP_OBJ_FROM_PTR(nlr.ret_val));
     return false;
 }
+#if SK_BACKGROUND_JOBS
+static mp_obj_t process_input(size_t argc,const mp_obj_t *argv) {
+    if(argc)mp_obj_print_helper(&mp_plat_print,argv[0],PRINT_STR);
+    vstr_t line;vstr_init(&line,32);
+    while(true) {
+        int ch=sk_process_stdin();
+        if(ch==-2){vstr_clear(&line);mp_raise_type(&mp_type_KeyboardInterrupt);}
+        if(ch==4 && !line.len){vstr_clear(&line);mp_raise_type(&mp_type_EOFError);}
+        if(ch=='\r' || ch=='\n'){mp_hal_stdout_tx_strn_cooked("\n",1);break;}
+        if(ch==8 || ch==127){if(line.len){vstr_cut_tail_bytes(&line,1);mp_hal_stdout_tx_strn_cooked("\b \b",3);}}
+        else if(ch>=32){if(line.len>=4096){vstr_clear(&line);mp_raise_ValueError(MP_ERROR_TEXT("input exceeds 4096 bytes"));}vstr_add_char(&line,ch);char c=ch;mp_hal_stdout_tx_strn_cooked(&c,1);}
+    }
+    return mp_obj_new_str_from_vstr(&line);
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(sk_python_input_obj,0,1,process_input);
+#endif
 static void prompt(void) {
     solar_os_shell_io_write(solar_os_context_shell_io(context), source_len ? "... " : ">>> ");
 }
-static void python_stop(solar_os_context_t *ctx) {
+static void python_stop_sync(solar_os_context_t *ctx) {
     (void)ctx;
 #if SK_GRAPHICS
     sk_python_gfx_destroy();
@@ -121,7 +140,7 @@ static void python_stop(solar_os_context_t *ctx) {
     solar_os_memory_free(heap); heap = NULL;
     context = NULL;
 }
-static esp_err_t python_start(solar_os_context_t *ctx) {
+static esp_err_t python_start_sync(solar_os_context_t *ctx) {
     context = ctx;
     source_len = line_start = 0;
     heap = solar_os_memory_alloc(PY_HEAP_BYTES, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "python-heap");
@@ -181,7 +200,7 @@ static esp_err_t python_start(solar_os_context_t *ctx) {
     }
     return ESP_OK;
 }
-static bool python_event(solar_os_context_t *ctx, const solar_os_event_t *event) {
+static bool python_event_sync(solar_os_context_t *ctx, const solar_os_event_t *event) {
     if (event->type != SOLAR_OS_EVENT_CHAR) return false;
     unsigned char ch = event->data.ch;
     solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
@@ -213,9 +232,23 @@ static bool python_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     }
     return true;
 }
+#if SK_BACKGROUND_JOBS
+static esp_err_t python_start(solar_os_context_t *ctx) {
+    return sk_process_start(ctx,python_start_sync,python_event_sync,python_stop_sync);
+}
+#define python_stop sk_process_stop
+#define python_event sk_process_event
+#else
+#define python_start python_start_sync
+#define python_stop python_stop_sync
+#define python_event python_event_sync
+#endif
 const solar_os_app_t solar_os_python_app = {
     .name = "python", .summary = "MicroPython REPL and SD scripts",
     .app_class = SOLAR_OS_APP_CLASS_TUI,
     .start = python_start, .stop = python_stop, .event = python_event,
+#if SK_BACKGROUND_JOBS
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE, .suspend = sk_process_suspend, .resume = sk_process_resume,
+#endif
 };
 #endif

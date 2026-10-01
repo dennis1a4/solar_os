@@ -485,3 +485,80 @@ The user confirmed basic physical repeat/release on the installed legacy image.
 KEY-2 through KEY-5 retain broader physical checks; injection cannot verify them.
 Read `lcd` over USB for repeat counters without sending local keystrokes.
 See [keyboard notes](../../doc/ports/teensy41-keyboard.md).
+
+## Retained application sessions
+
+```sh
+bash scripts/ports/test_teensy41_sessions_host.sh
+python3 scripts/ports/test_teensy41_sessions.py --log /tmp/sessions.json
+python3 scripts/ports/test_teensy41_sessions_graphics.py --log /tmp/sessions-graphics.json
+python3 scripts/ports/test_teensy41_telnet.py --log /tmp/sessions-telnet.json
+```
+
+Run hardware scripts sequentially with exclusive USB and an idle keyboard.
+Session acceptance creates a uniquely named SD editor fixture. The optional
+`--cleanup-id ID` closes a known test session from an interrupted run; never
+supply an unrelated user's app ID. Telnet uses its existing temporary credential
+fixture and includes remote Ctrl+Z/fg and retained-app disconnect cleanup.
+Physical chords and display readability remain separate tests.
+
+### Background jobs and scheduling
+
+`bash scripts/ports/test_teensy41_jobs_host.sh` runs the actual shared lifecycle
+and Teensy runner with sanitizers, date-conversion checks, and both shared
+scheduler execution modes. `python3 scripts/ports/test_teensy41_jobs.py --log
+/tmp/teensy-jobs-device.json --reboot` tests an idle board over exclusive USB,
+creates unique SD fixtures, removes its schedule entries and verifies persistence.
+See [jobs notes](../../doc/ports/teensy41-jobs.md) for command limits.
+
+### Detachable Python processes
+
+`test_teensy41_process.py`, `test_teensy41_process_edges.py` and
+`test_teensy41_process_graphics.py` accept `--log PATH` and require idle consoles
+and exclusive USB. They cover real VM/worker lifecycle, detached logging with
+Calc/tail, input preservation, cross-console reattachment, disconnect policy,
+output limits, coexistence with ZIP, graphics and cleanup. The main script's
+`--cleanup-only ID` stops a known test process left by an interrupted run.
+See [process jobs](../../doc/ports/teensy41-process-jobs.md).
+
+## Network diagnostics and time synchronization (stage 3)
+
+```sh
+bash scripts/ports/test_teensy41_netdiag_host.sh
+python3 scripts/ports/test_teensy41_netdiag.py --log /tmp/teensy-netdiag-device.json
+```
+
+The host test covers bounded target/port parsing and NTP validation with sanitizers.
+The device test uses local TCP/NTP fixtures and exclusive USB; keep the keyboard
+idle. It sets the RTC to host UTC, preserves timezone, leaves Ethernet running,
+and checks cancellation, memory recovery and LCD/USB cooperation. See
+[feature notes](../../doc/ports/teensy41-network-diagnostics.md).
+
+## Shared Tab completion
+
+```sh
+bash scripts/ports/test_teensy41_completion_host.sh
+python3 scripts/ports/test_teensy41_completion.py --log /tmp/teensy-completion-device.json
+```
+
+The device suite needs exclusive USB and an idle keyboard. It creates a unique SD
+fixture, exercises middle-of-line/quoted paths, retained session and Python job
+IDs, bounded USB/LCD listings and memory recovery. It leaves the fixtures for
+inspection. See [completion API and limits](../../doc/ports/teensy41-completion.md).
+
+## Hardware ownership and serial terminals
+
+```sh
+bash scripts/ports/test_teensy41_hardware_host.sh
+python3 scripts/ports/test_teensy41_hardware.py --log /tmp/teensy-hardware-device.json
+# Only after installing RX34–TX35 jumper, with no other devices on these pins:
+python3 scripts/ports/test_teensy41_hardware.py --loopback uart8 --log /tmp/teensy-hardware-device.json
+```
+
+The host suite compiles the real resource/bus adapters with ASan/UBSan and mocked
+hardware. Device checks require exclusive USB and an idle keyboard; they open
+UART7/8, use spare pins as inputs and claim slot1 CS. They check board reservation
+rejection, USB/LCD exclusion, COM suspension/resume, disconnect cleanup,
+completion and stable memory. No external I2C/SPI data is written. Optional
+loopback checks actual raw UART and COM echo. See
+[hardware notes](../../doc/ports/teensy41-hardware-resources.md).

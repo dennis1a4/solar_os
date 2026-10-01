@@ -2,6 +2,10 @@
 
 #include "solar_os_shell_commands.h"
 #include "solar_os_shell_completion.h"
+#include "solar_os_shell_completion_providers.h"
+#if SK_HW_RESOURCES
+#include "hardware_commands.h"
+#endif
 #include "solar_os_shell_common.h"
 #include "solar_os_shell_io.h"
 #include "solar_os_shell_launch.h"
@@ -534,6 +538,10 @@ void solar_os_shell_cmd_telnetd(solar_os_context_t *, int, char **);
 #if SK_UPSTREAM_SHELL
 void sk_shell_cmd_pwd(solar_os_context_t *, int, char **);
 void sk_shell_cmd_session(solar_os_context_t *, int, char **);
+void sk_shell_cmd_fg(solar_os_context_t *, int, char **);
+void sk_shell_cmd_bg(solar_os_context_t *, int, char **);
+void sk_shell_cmd_tail(solar_os_context_t *, int, char **);
+void sk_shell_cmd_close(solar_os_context_t *, int, char **);
 #endif
 #if SK_TEXT_APPS
 #define SHELL_CORE_HELP solar_os_shell_cmd_help
@@ -551,6 +559,25 @@ static const shell_command_t shell_builtin_commands[] = {
     {"usb", "USB drive status, mount or eject", solar_os_shell_cmd_usb},
 #endif
 #if SOLAR_OS_SHELL_CORE_ONLY
+#if SK_HW_RESOURCES
+    {"gpio", "claim and control free GPIO pins", solar_os_shell_cmd_gpio},
+    {"i2c", "bounded I2C probing and transfers", solar_os_shell_cmd_i2c},
+    {"spi", "transfer through owned expansion selects", solar_os_shell_cmd_spi},
+    {"uart", "claim and use expansion UARTs", solar_os_shell_cmd_uart},
+    {"expansion", "inspect and lease expansion slots", solar_os_shell_cmd_expansion},
+#endif
+#if SK_NET_DIAGNOSTICS
+    {"ping", "send ICMP echo requests", solar_os_shell_cmd_ping},
+    {"netscan", "scan TCP ports", solar_os_shell_cmd_netscan},
+    {"ntp", "query network time or synchronize RTC", solar_os_shell_cmd_ntp},
+#endif
+#if SK_BACKGROUND_JOBS
+    {"tail", "show the last lines of a file", sk_shell_cmd_tail},
+    {"bg", "continue a suspended Python process in background", sk_shell_cmd_bg},
+    {"jobs", "list background processes and script jobs", solar_os_shell_cmd_jobs},
+    {"job", "start, inspect or stop a background job", solar_os_shell_cmd_job},
+    {"schedule", "manage persistent alarms and scheduled scripts", solar_os_shell_cmd_schedule},
+#endif
     {"help", "manual and shell help", SHELL_CORE_HELP},
 #if SK_TEXT_APPS
     {"man", "read or search the manual", solar_os_shell_cmd_man},
@@ -565,7 +592,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"df", "show mounted filesystem space", solar_os_shell_cmd_df},
     {"pwd", "print working directory", sk_shell_cmd_pwd},
 #if SK_LCD_CONSOLE
-    {"session", "inspect console sessions", sk_shell_cmd_session},
+    {"session", "list and manage retained app sessions", sk_shell_cmd_session},
+    {"fg", "resume a retained app on its console", sk_shell_cmd_fg},
+    {"close", "close an app session and discard its state", sk_shell_cmd_close},
     {"sessions", "list console sessions", sk_shell_cmd_session},
 #endif
 #if SK_FILES
@@ -3761,6 +3790,10 @@ static void cmd_wait(solar_os_context_t *ctx, int argc, char **argv)
 
 #if SK_LCD_CONSOLE
     extern void sk_console_delay_ms(uint32_t ms);
+#if SK_BACKGROUND_JOBS
+    extern bool sk_background_wait(uint32_t);
+    if(sk_background_wait((uint32_t)seconds*1000U))return;
+#endif
     sk_console_delay_ms((uint32_t)seconds * 1000U);
 #else
     vTaskDelay(pdMS_TO_TICKS((uint32_t)seconds * 1000U));
@@ -5311,6 +5344,87 @@ static void shell_complete_builtin_command(solar_os_context_t *ctx, bool show_ma
     if (show_matches) {
         shell_print_builtin_command_matches(ctx, shell_session(ctx)->input);
     }
+}
+
+/* Registry adapters only: token parsing, editing, LCP and listing limits live
+ * in the shared line-input completion engine. */
+__attribute__((weak)) bool solar_os_shell_completion_runtime(
+    const solar_os_completion_request_t *r, solar_os_completion_emit_t emit,
+    void *sink, void *user)
+{ (void)r; (void)emit; (void)sink; (void)user; return true; }
+typedef struct { solar_os_completion_emit_t emit; void *sink; bool ok; } shell_completion_alias_sink_t;
+static bool shell_completion_alias_name(const char *name,int argc,char **argv,void *user)
+{
+    (void)argc;(void)argv;
+    shell_completion_alias_sink_t *state=user;
+    if (shell_builtin_command_exists(name)) return true;
+    for (size_t i=0;i<solar_os_app_registry_count();++i) {
+        const solar_os_app_registry_entry_t *app=solar_os_app_registry_get(i);
+        if (app && app->name && !strcmp(app->name,name)) return true;
+    }
+    state->ok=state->emit(state->sink,name);return state->ok;
+}
+static bool shell_completion_names(const solar_os_completion_request_t *r,
+    solar_os_completion_emit_t emit, void *sink, void *user)
+{
+    (void)user;
+    if (r->kind == SOLAR_OS_COMPLETE_COMMAND)
+        for (size_t i=0; i<shell_builtin_command_count; ++i)
+            if (!emit(sink, shell_builtin_commands[i].name)) return false;
+    for (size_t i=0; i<solar_os_app_registry_count(); ++i) {
+        const solar_os_app_registry_entry_t *app=solar_os_app_registry_get(i);
+        if (app && app->name && (r->kind==SOLAR_OS_COMPLETE_APP || !shell_builtin_command_exists(app->name)))
+            if (!emit(sink, app->name)) return false;
+    }
+    if (r->kind == SOLAR_OS_COMPLETE_COMMAND) {
+        shell_completion_alias_sink_t aliases={emit,sink,true};
+        (void)shell_for_each_alias(shell_completion_alias_name,&aliases);
+        return aliases.ok;
+    }
+    return true;
+}
+static bool shell_completion_settings(const solar_os_completion_request_t *r,
+    solar_os_completion_emit_t emit, void *sink, void *user)
+{
+    (void)user;
+    if (r->argument > 1) {
+        char tokens[2][64];size_t starts[2],count;bool trailing;
+        if (r->argument != 2 || !solar_os_shell_completion_parse(r->line,r->start,
+                &tokens[0][0],sizeof(tokens[0]),2,starts,&count,&trailing) || count != 2) return true;
+        static const char *zones[]={"UTC","Manitoba","Europe/Berlin"};
+        static const char *sources[]={"auto","flash","sd"};
+        const char *const *values=NULL;size_t n=0;
+        if (!strcmp(tokens[1],"timezone")) {values=zones;n=3;}
+        if (!strcmp(tokens[1],"startup")) {values=sources;n=3;}
+        for (size_t i=0;i<n;++i) if (!emit(sink,values[i])) return false;
+        return true;
+    }
+    static const char *names[]={"size",
+#if SK_CLOCK
+        "timezone",
+#endif
+#if SK_SETTINGS
+        "startup",
+#endif
+    };
+    for (size_t i=0;i<sizeof(names)/sizeof(names[0]);++i) if (!emit(sink,names[i])) return false;
+    return true;
+}
+__attribute__((weak)) bool solar_os_shell_completion_yield(void *user)
+{ (void)user; return false; }
+void solar_os_shell_completion_providers(solar_os_context_t *ctx,
+    solar_os_completion_registry_t *registry, solar_os_completion_files_t *files)
+{
+    memset(registry,0,sizeof(*registry));
+    files->cwd=shell_session(ctx)->cwd;
+    files->cancel=solar_os_shell_completion_yield;files->user=ctx;
+    registry->providers[SOLAR_OS_COMPLETE_FILE]=(solar_os_completion_provider_entry_t){solar_os_completion_files,files};
+    registry->providers[SOLAR_OS_COMPLETE_DIRECTORY]=registry->providers[SOLAR_OS_COMPLETE_FILE];
+    registry->providers[SOLAR_OS_COMPLETE_COMMAND]=(solar_os_completion_provider_entry_t){shell_completion_names,ctx};
+    registry->providers[SOLAR_OS_COMPLETE_APP]=registry->providers[SOLAR_OS_COMPLETE_COMMAND];
+    registry->providers[SOLAR_OS_COMPLETE_SESSION]=(solar_os_completion_provider_entry_t){solar_os_shell_completion_runtime,ctx};
+    registry->providers[SOLAR_OS_COMPLETE_JOB]=registry->providers[SOLAR_OS_COMPLETE_SESSION];
+    registry->providers[SOLAR_OS_COMPLETE_SETTING]=(solar_os_completion_provider_entry_t){shell_completion_settings,ctx};
 }
 
 #if !SOLAR_OS_SHELL_CORE_ONLY
@@ -8172,13 +8286,67 @@ static void shell_update_common_prefix(char *common, size_t common_len, const ch
     (void)common_len;
     common[solar_os_shell_completion_common_prefix(common, name)] = '\0';
 }
+static bool shell_completion_list(void *user, const char *text)
+{
+    solar_os_context_t *ctx=user;
+    solar_os_shell_io_writeln(shell_io(ctx),text); return true;
+}
 static void shell_complete_command(solar_os_context_t *ctx, bool show_matches)
 {
-    if (shell_session(ctx)->input_cursor == shell_session(ctx)->input_len &&
-        strpbrk(shell_session(ctx)->input, " \t") == NULL) {
-        shell_complete_builtin_command(ctx, show_matches);
+    struct completion_work {
+        solar_os_completion_request_t request;
+        solar_os_completion_registry_t registry;
+        solar_os_completion_files_t files;
+        char line[SHELL_INPUT_MAX];
+        char command[SOLAR_OS_COMPLETION_TOKEN_MAX];
+    } *w=solar_os_memory_calloc(1,sizeof(*w),SOLAR_OS_MEMORY_TRANSIENT,"shell.complete");
+    if (!w) return;
+    strlcpy(w->line,shell_session(ctx)->input,sizeof(w->line));
+    size_t cursor=shell_session(ctx)->input_cursor;
+    if (!solar_os_completion_request(w->line,cursor,&w->request)) goto done;
+    /* Decode the first token independently of the cursor's argument. */
+    size_t argument=w->request.argument;
+    size_t first=0; while (isspace((unsigned char)w->line[first])) ++first;
+    if (!solar_os_completion_request(w->line,first,&w->request) ||
+        !solar_os_completion_request(w->line,w->request.end,&w->request)) goto done;
+    strlcpy(w->command,w->request.prefix,sizeof(w->command));
+    solar_os_completion_kind_t kind=SOLAR_OS_COMPLETE_COMMAND;
+    if (argument) {
+        if (!strcmp(w->command,"fg") || !strcmp(w->command,"bg") || !strcmp(w->command,"close")) kind=SOLAR_OS_COMPLETE_SESSION;
+        else if (!strcmp(w->command,"job") && argument>1) kind=SOLAR_OS_COMPLETE_JOB;
+        else if (!strcmp(w->command,"setterm")) kind=SOLAR_OS_COMPLETE_SETTING;
+#if SK_HW_RESOURCES
+        else if (!strcmp(w->command,"io") || !strcmp(w->command,"gpio") || !strcmp(w->command,"uart") ||
+                 !strcmp(w->command,"com") || !strcmp(w->command,"i2c") || !strcmp(w->command,"spi") ||
+                 !strcmp(w->command,"expansion")) kind=SOLAR_OS_COMPLETE_CUSTOM;
+#endif
+        else if (!strcmp(w->command,"cd")) kind=SOLAR_OS_COMPLETE_DIRECTORY;
+        else if (shell_is_path_command(w->command) || !strcmp(w->command,"tail")) kind=SOLAR_OS_COMPLETE_FILE;
+        else goto done;
     }
+    solar_os_shell_completion_providers(ctx,&w->registry,&w->files);
+#if SK_HW_RESOURCES
+    w->registry.providers[SOLAR_OS_COMPLETE_CUSTOM]=(solar_os_completion_provider_entry_t){sk_hardware_complete,ctx};
+#endif
+    /* A listing gets its own line; restore the original input and cursor below. */
+    if (show_matches) solar_os_shell_io_newline(shell_io(ctx));
+    solar_os_completion_result_t result=solar_os_completion_apply(w->line,
+        shell_max_input_len(ctx)+1,&cursor,kind,&w->registry,show_matches,
+        shell_completion_list,ctx);
+    if (show_matches) {
+        if (result.matches>result.displayed && result.displayed)
+            solar_os_shell_io_printf(shell_io(ctx),"... %u more matches\n",(unsigned)(result.matches-result.displayed));
+        shell_prompt(ctx);
+    }
+    if (result.changed || show_matches) {
+        shell_session(ctx)->history_browsing=false;shell_session(ctx)->history_index=-1;
+        shell_replace_input(ctx,w->line);
+        if (shell_can_redraw_input(ctx)) {shell_session(ctx)->input_cursor=cursor;shell_render_input(ctx);}
+    }
+done:
+    solar_os_memory_free(w);
 }
+
 #endif
 
 static void shell_script_discard_rest_of_line(FILE *file)
@@ -9719,6 +9887,13 @@ bool solar_os_shell_session_event(solar_os_context_t *ctx,
 
     shell_handle_char(ctx, event->data.ch);
     return true;
+}
+
+bool solar_os_shell_session_is_idle(const solar_os_shell_session_t *session)
+{
+    return session && !session->foreground_app && !session->input_len &&
+        !session->watch_active && !session->watch_executing &&
+        !session->log_follow_active && !session->script_depth;
 }
 
 esp_err_t solar_os_shell_session_submit_command(solar_os_context_t *ctx,

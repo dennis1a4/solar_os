@@ -15,6 +15,15 @@
 #include "py/runtime.h"
 #include "py/stream.h"
 
+#if SK_BACKGROUND_JOBS
+extern void sk_process_io_unlock(void);
+extern void sk_process_io_lock(void);
+#undef MP_THREAD_GIL_EXIT
+#undef MP_THREAD_GIL_ENTER
+#define MP_THREAD_GIL_EXIT() sk_process_io_unlock()
+#define MP_THREAD_GIL_ENTER() sk_process_io_lock()
+#endif
+
 #define SOLAR_OS_FILE_IO_CHUNK (4096U)
 
 typedef struct {

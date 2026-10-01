@@ -4,8 +4,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef SOLAR_OS_BUS_PORTABLE
+#define SOLAR_OS_BUS_PORTABLE 0
+#endif
+#if !SOLAR_OS_BUS_PORTABLE
 #include "driver/i2c_master.h"
 #include "driver/spi_master.h"
+#endif
 #include "esp_err.h"
 #include "solar_os_bus_types.h"
 
@@ -71,9 +76,11 @@ esp_err_t solar_os_bus_i2c_write_reg(const char *name,
                                      const uint8_t *data,
                                      size_t len);
 /* The caller must hold an I2C bus lease while it uses this driver handle. */
+#if !SOLAR_OS_BUS_PORTABLE
 esp_err_t solar_os_bus_i2c_get_handle(const char *name,
                                       i2c_master_bus_handle_t *handle,
                                       int *port);
+#endif
 
 esp_err_t solar_os_bus_uart_write(const char *name,
                                   const uint8_t *data,
@@ -126,9 +133,11 @@ esp_err_t solar_os_bus_onewire_transfer(const char *name,
                                         uint8_t *rx_data,
                                         size_t rx_len);
 
+#if !SOLAR_OS_BUS_PORTABLE
 esp_err_t solar_os_bus_spi_add_device(const char *name,
                                       const spi_device_interface_config_t *device_config,
                                       spi_device_handle_t *device);
+#endif
 esp_err_t solar_os_bus_spi_transfer(const char *name,
                                     int cs_pin,
                                     uint8_t mode,

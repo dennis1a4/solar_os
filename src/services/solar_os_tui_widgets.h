@@ -6,6 +6,7 @@
 
 #include "esp_err.h"
 #include "solar_os_tui.h"
+#include "solar_os_completion.h"
 
 typedef struct {
     solar_os_tui_rect_t title;
@@ -121,3 +122,11 @@ esp_err_t solar_os_tui_draw_input_ex(solar_os_tui_t *tui,
                                      solar_os_tui_input_state_t *state,
                                      uint8_t attr,
                                      bool masked);
+
+/* Opt-in Tab handling; ordinary input_key and Tab-navigation semantics remain
+ * unchanged. Caller tracks consecutive Tabs and renders the bounded listing. */
+solar_os_completion_result_t solar_os_tui_input_complete(
+    char *text, size_t capacity, solar_os_tui_input_state_t *state,
+    size_t visible_cells, solar_os_completion_kind_t kind,
+    const solar_os_completion_registry_t *providers, bool repeated_tab,
+    solar_os_completion_emit_t display, void *user);

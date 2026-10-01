@@ -1,6 +1,6 @@
 # Teensy / SuperKeyboard outstanding test checklist
 
-Updated 2026-09-29. **Use this as the master test queue.** Feature notes linked
+Updated 2026-09-30. **Use this as the master test queue.** Feature notes linked
 below contain procedures and historical evidence; the roadmap tracks development.
 Unchecked items are outstanding, not failed unless explicitly described as such.
 Do not check off a physical test based on simulation, injected input or a build.
@@ -11,7 +11,7 @@ Do not check off a physical test based on simulation, injected input or a build.
 | --- | --- | --- |
 | USB-storage baseline | Historical, preserved checkpoint | Earlier physical USB/keyboard checks passed here; no SD recovery or Clock |
 | Clock image | Prior validated checkpoint | Includes SD recovery and OBD demo; AmpEn is still pin 40; Clock remote checks passed |
-| Workstation + keyboard legacy image | Currently installed; workstation/Telnet/dual-console tests and basic physical repeat passed | AmpEn40, scope ADC disabled, Serial1 retained; includes scope/pdpower demos |
+| Workstation legacy image, stages 1–4 | Currently installed; sessions/jobs/processes/network diagnostics/hardware ownership device tests, UART8 loopback and basic physical repeat passed | AmpEn40, scope ADC disabled, Serial1 retained; includes scope/pdpower demos |
 | Normal display candidate | Built, not flashed | Telnet plus scope ADC40/AmpEn0; Serial1 UART disabled; USB/LCD retained |
 
 - [ ] **SETUP-1 — Pending pin move:** move AmpEn to pin 0 before installing the
@@ -241,5 +241,98 @@ passes precisely; do not mark an entire group done after one happy-path check.
 - [x] WORK-3: remote man/watch/session and Telnet lifecycle regression.
 - [ ] WORK-4: physical Help/Man LCD readability and navigation confirmation.
 - [ ] WORK-5: make cold DF scans cooperative (51 seconds on attached media).
-- [ ] WORK-6: retained sessions/fg/close, background jobs and network diagnostics
-  require implementation; see the command audit rather than treating these as tests.
+- [ ] WORK-6: network diagnostics remain pending; background jobs pass host/device validation;
+  retained app sessions/fg/close are implemented (SESS checks below).
+
+## Retained app sessions — 2026-09-30
+
+- [x] SESS-1: host sanitizer lifecycle, four-slot limit, nested chains, ownership,
+  busy-owner rejection, stale IDs, allocation/start failures and 1,000 cycles.
+- [x] SESS-2: USB/LCD device retention, calculator input, editor save after resume,
+  memory recovery, cross-console ownership and USB disconnect isolation.
+- [x] SESS-3: graphical Plot suspend/text switch/resume and continuing frame output.
+- [x] SESS-4: Telnet retention/resume and disconnect cleanup on final image.
+- [x] SESS-5: user confirmed physical Ctrl+Z, calculator input retention and Plot redraw.
+  Editor save/state has automated coverage; broader editor visual checks remain follow-up.
+
+Dynamic shell creation, arbitrary migration and session create/send/focus remain
+unimplemented. See [session notes](teensy41-sessions.md).
+
+## Background jobs and schedules
+
+- [x] JOBS-1: sanitizer tests for four slots, cooperative waits/stops, bounded output,
+  rejection, file/allocation errors and 1000 cleanup cycles.
+- [x] JOBS-2: shared scheduler worker/queue modes, save/reload and rejected queue;
+  Teensy local/UTC conversion, DST gap and RTC upper boundary tests.
+- [x] JOBS-3: USB/LCD responsiveness, isolated cwd/output, disconnect survival,
+  repeated-job memory recovery and device error paths.
+- [x] JOBS-4: shared Clock countdown while retained, schedule trigger/skip/manual
+  run and disabled entry persistence across reboot.
+- [x] JOBS-5: recovered startup RAM-bank regression; link-time RAM1 headroom guard.
+
+## Detachable Python processes (stage 2b)
+
+- [x] PROC-1: safe Ctrl+Z/bg/fg, one VM admission, continued file logging beside
+  Calc, tail inspection and shared IDs across USB/LCD reattachment.
+- [x] PROC-2: partial input()/REPL preservation, no detached shell-key consumption,
+  bounded output and completed-job reattachment beside an archive worker.
+- [x] PROC-3: cooperative stop from running/suspended states, file closure,
+  eight repeated CPU-loop stops with exact warm heap/PSRAM recovery.
+- [x] PROC-4: detached USB disconnect survival; foreground disconnect cancellation
+  and cleanup; foreground graphics remain functional and cannot detach.
+- [x] PROC-5: Python network regression: DNS/TCP, exact file download, timeout,
+  Ctrl+C, GC/socket cleanup and restart. Tail newline/empty-file boundaries pass.
+- [ ] PROC-6: user physical-key confirmation of Ctrl+Z/bg/fg for a Python logger;
+  firmware key-injection and USB control-byte acceptance already pass.
+
+## Network diagnostics and time synchronization (stage 3)
+
+See [feature notes](teensy41-network-diagnostics.md). Final-image evidence:
+`/tmp/teensy-netdiag-device.json`; recovery snapshot `2026-09-30-netdiag`.
+
+- [x] **NETDIAG-1 — Protocol bounds:** ASan/UBSan target/port parser checks, NTP
+  malformed/source-token rules, unsynchronized/denied replies, timestamp ordering,
+  2036 rollover and 2106 RTC bound. Source endpoint checks also run on-device.
+- [x] **NETDIAG-2 — Local interoperability:** ICMP replies/loss/RTT, TCP open/closed
+  ports and /32 targets, NTP query-only, actual UTC synchronization, bad replies,
+  denial and rollover. Six embedded-manual tests pass.
+- [x] **NETDIAG-3 — Cancellation and ownership:** Ctrl+C for all three commands,
+  concurrent LCD/USB diagnostics, link down/up recovery; five repeated cycles
+  recover exactly 29,124 internal / 8,163,984 PSRAM bytes free.
+
+No public-server availability, service fingerprinting, authenticated time or
+long-term clock-discipline claim is implied by these local tests.
+
+## Shared Tab completion
+
+See [API and limits](teensy41-completion.md). Final device evidence:
+`/tmp/teensy-completion-device.json`; checkpoint `2026-09-30-completion`.
+
+- [x] **COMPLETE-1 — Shared engine:** ASan/UBSan checks for cursor token replacement,
+  later-argument preservation, quoted/escaped spaces, raw fields, directory-only
+  filtering, longest common prefix, repeat Tab, capacity/error atomicity and
+  bounded listings. Shared TUI widget and existing shell completion tests pass.
+- [x] **COMPLETE-2 — Console integration:** USB command/path/settings completion,
+  earlier source argument in `cp`, retained Calc `fg`/`close` IDs, detached Python
+  `job status` ID, and LCD second-Tab listing/redraw all pass.
+- [x] **COMPLETE-3 — Cleanup:** five cycles recover exactly 29,188 internal
+  / 8,163,984 PSRAM bytes free. Test SD fixtures remain for inspection.
+- [ ] **COMPLETE-4 — Physical keyboard confirmation:** try `ed<Tab>`, a path with
+  spaces, and a second Tab on an ambiguous directory at the local keyboard.
+  USB/LCD injection is verified; actual keypresses are optional user follow-up.
+
+## Hardware resources and COM (stage 4)
+
+See [routing, commands and limits](teensy41-hardware-resources.md). Evidence:
+`/tmp/teensy-hardware-device.json`; checkpoint `2026-09-30-hardware`.
+
+- [x] **HW-1 — Host ownership:** ASan/UBSan, atomic UART rollback, board pin
+  protection, wrong-owner access, partial/blocked TX and repeated cleanup.
+- [x] **HW-2 — Device lifecycle:** USB/LCD ownership exclusion, retained COM,
+  disconnect cleanup, completion and exact memory recovery over five cycles.
+- [x] **HW-3 — Physical UART8:** jumper RX34/TX35 raw read/write and COM echo.
+  Port closed afterward; user told jumper can be removed.
+- [ ] **HW-4 — External peripherals:** I2C read/write against a known device and
+  SPI mode/rate/data validation against a known peripheral; observe bus signals.
+- [ ] **HW-5 — Wider UART coverage:** physical UART7, sustained RX throughput,
+  overflow behavior and another serial endpoint. UART3 conflicts with display WAIT.

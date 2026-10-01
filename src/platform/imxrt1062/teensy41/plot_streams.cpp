@@ -3,12 +3,13 @@
 extern "C" {
 #include "solar_os_stream.h"
 #include "solar_os_time.h"
+#include "esp_timer.h"
 }
-extern "C" uint64_t solar_os_time_uptime_ms() { return uint64_t(xTaskGetTickCount())*portTICK_PERIOD_MS; }
+extern "C" uint64_t solar_os_time_uptime_ms() { return uint64_t(esp_timer_get_time())/1000; }
 extern "C" esp_err_t solar_os_time_get_utc_epoch_ms(uint64_t *out) {
     if(!out)return ESP_ERR_INVALID_ARG;
     const uint32_t seconds=Teensy3Clock.get();
-    if(seconds<1577836800)return ESP_ERR_INVALID_STATE;
+    if(seconds<946684800)return ESP_ERR_INVALID_STATE;
     *out=uint64_t(seconds)*1000;return ESP_OK;
 }
 static esp_err_t read_uptime(void *,const solar_os_stream_read_options_t *,float *out) {

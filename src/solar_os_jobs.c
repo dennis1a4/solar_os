@@ -7,6 +7,7 @@
 #include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/portmacro.h"
 #include "jobs/solar_os_job_registry.h"
 #include "solar_os_log.h"
 #include "solar_os_memory.h"

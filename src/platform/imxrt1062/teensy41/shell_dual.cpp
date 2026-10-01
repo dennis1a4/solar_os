@@ -16,6 +16,14 @@ extern "C" {
 #include "solar_os_sessions.h"
 #include "solar_os_memory.h"
 #include "solar_os_storage.h"
+#if SK_BACKGROUND_JOBS
+#include "solar_os_jobs.h"
+#include "solar_os_task.h"
+#include "process_job.h"
+#include "jobs/solar_os_job_registry.h"
+#include "solar_os_shell_parse.h"
+#include "solar_os_time.h"
+#endif
 #include "solar_os_tui.h"
 #if SK_CLOCK
 #include "solar_os_schedule.h"
@@ -32,11 +40,44 @@ struct Console {
     const solar_os_app_t *app;
     solar_os_tui_t *tui;
     AppFrame *frame;
+    AppFrame *retained[4];
+    uint32_t request_id;
+    uint8_t request_action;
+    bool quiet;
+    bool dispatching;
     solar_os_port_handle_t port;
     const char *name;
     bool local;
 };
 static Console consoles[2];
+#if SK_BACKGROUND_JOBS
+static TaskHandle_t background_task;
+static Console *background_console;
+#endif
+#if SK_BACKGROUND_JOBS
+struct ProcessJob {
+    Console console;
+    Console *owner_console;
+    AppFrame *frame;
+    TaskHandle_t task;
+    esp_err_t (*start)(solar_os_context_t *);
+    bool (*event)(solar_os_context_t *,const solar_os_event_t *);
+    void (*stop)(solar_os_context_t *);
+    bool paused,detached,done,stopping,interrupt,input_wait,executing;
+    uint64_t started_ms;
+    uint8_t input[256];unsigned input_head,input_tail;
+    char output[8192];size_t output_size;uint32_t dropped;
+};
+EXTMEM static ProcessJob process;
+static void process_attach();
+static void process_reap_stopped();
+static bool process_close_request(uint32_t);
+static bool process_foreground_request(uint32_t);
+static bool process_disconnect_frame(AppFrame *);
+static void process_list(solar_os_shell_io_t *);
+static bool process_command(solar_os_context_t *,int,char **);
+#endif
+static uint32_t next_app_id=4;
 static TaskHandle_t local_task;
 static SemaphoreHandle_t console_gate;
 static Console *audio_owner;
@@ -59,6 +100,12 @@ extern void sk_usb_input_boundary();
 extern uint32_t sk_usb_input_generation();
 extern bool sk_usb_last_read_physical();
 static Console &active() {
+#if SK_BACKGROUND_JOBS
+    if(process.task && xTaskGetCurrentTaskHandle()==process.task)return process.console;
+#endif
+#if SK_BACKGROUND_JOBS
+    if(background_task && xTaskGetCurrentTaskHandle()==background_task && background_console)return *background_console;
+#endif
 #if SK_TELNETD
     if(remote_task && xTaskGetCurrentTaskHandle()==remote_task)return remote_console;
 #endif
@@ -118,7 +165,12 @@ extern "C" bool sk_console_poll_cancel(bool escape) {
     console_yield();
     return stop;
 }
-extern "C" bool sk_python_poll_cancel() { return sk_console_poll_cancel(false); }
+extern "C" bool sk_python_poll_cancel() {
+#if SK_BACKGROUND_JOBS
+    if(process.task && xTaskGetCurrentTaskHandle()==process.task)return sk_process_poll_cancel();
+#endif
+    return sk_console_poll_cancel(false);
+}
 extern "C" void sk_console_delay_ms(uint32_t ms) {
     const uint32_t start=millis();
     while(millis()-start<ms) console_yield();
@@ -137,6 +189,7 @@ extern "C" size_t solar_os_sessions_shell_count() {
 #endif
 }
 static esp_err_t terminal_write(void *user,const uint8_t *data,size_t length,size_t *written) {
+    if(active().quiet) { *written=length; return ESP_OK; }
 #if SK_TELNETD
     if(user==reinterpret_cast<void *>(2)) {
         *written=sk_telnet_write(data,length)?length:0;
@@ -159,22 +212,73 @@ static esp_err_t terminal_read(void *,uint8_t *data,size_t length,uint32_t timeo
 static bool audio_app(const solar_os_app_t *app) {
     return app && (!strcmp(app->name,"synth") || !strcmp(app->name,"aplay") || !strcmp(app->name,"arecord"));
 }
+static bool console_has_audio(const Console &c);
 static bool sk_app_allowed(const solar_os_app_t *app) {
     if(!audio_app(app)) return true;
     for(auto &console:consoles) {
         // Check retained parent apps too through the foreground reservation:
         // audio apps never launch children in this port.
-        if(audio_app(console.app)) return false;
+        if(console_has_audio(console)) return false;
     }
 #if SK_TELNETD
-    if(audio_app(remote_console.app))return false;
+    if(console_has_audio(remote_console))return false;
 #endif
     audio_owner=&active();
     return true;
 }
 extern "C" uint32_t sk_python_random_seed() { return micros() ^ ARM_DWT_CYCCNT; }
+#if SK_PLOT
+extern "C" void sk_lcd_graphics_mode(bool);
+#endif
+#if SK_GRAPHICS
+extern "C" void sk_gfx_invalidate_presenter();
+#endif
+static void session_text_mode() {
+#if SK_GRAPHICS
+    if(active().local)sk_gfx_invalidate_presenter();
+#endif
+#if SK_PLOT
+    if(active().local)sk_lcd_graphics_mode(false);
+#endif
+}
+static bool suspend_app();
 #include "shell_children.h"
+#if SK_HW_RESOURCES
+#include "hardware_commands.h"
+#endif
+#include "shell_retained.h"
+#if SK_BACKGROUND_JOBS
+#include "background_jobs.h"
+#include "process_jobs.h"
+#endif
+#include "solar_os_shell_completion_providers.h"
+extern "C" bool solar_os_shell_completion_yield(void *) { console_yield();return !connected(); }
+extern "C" bool solar_os_shell_completion_runtime(const solar_os_completion_request_t *r,
+    solar_os_completion_emit_t emit, void *sink, void *) {
+    char id[16];
+    if(r->kind==SOLAR_OS_COMPLETE_SESSION) {
+        Console *entries[3];const unsigned count=console_entries(entries);
+        for(unsigned i=0;i<count;++i)for(auto *frame:entries[i]->retained) {
+            if(!frame)continue;
+            snprintf(id,sizeof(id),"%lu",(unsigned long)frame->id);
+            if(!emit(sink,id))return false;
+        }
+    }
+#if SK_BACKGROUND_JOBS
+    if(process.frame && (process.detached || r->kind==SOLAR_OS_COMPLETE_JOB)) {
+        snprintf(id,sizeof(id),"%lu",(unsigned long)process.frame->id);
+        if(!emit(sink,id))return false;
+    }
+    if(r->kind==SOLAR_OS_COMPLETE_JOB) {
+        for(unsigned i=0;i<4;++i)
+            if(script_jobs[i].pending || script_jobs[i].file)
+                if(!emit(sink,script_names[i]))return false;
+    }
+#endif
+    return true;
+}
 static bool emit_key(char ch, void *) {
+    if(ch==26 && foreground) { suspend_app(); return true; }
     solar_os_event_t event{};
     event.type = SOLAR_OS_EVENT_CHAR;
     event.data.ch = ch == 3 && (!foreground || !strcmp(foreground->name, "calc"))
@@ -182,8 +286,13 @@ static bool emit_key(char ch, void *) {
     if (foreground) {
         if (foreground->event) foreground->event(current_context(), &event);
         else if (static_cast<uint8_t>(ch) == SOLAR_OS_KEY_APP_EXIT) solar_os_context_finish(current_context(), 0, nullptr);
-    } else solar_os_shell_session_event(&shell_context, session, &event);
+    } else {
+        active().dispatching=true;
+        solar_os_shell_session_event(&shell_context, session, &event);
+        active().dispatching=false;
+    }
     service_requests();
+    service_session_request();
     return true;
 }
 
@@ -234,14 +343,7 @@ static void run_console(void *) {
         if(sk_console_is_remote()) {
             sk_telnet_poll(!session);
             if(!sk_telnet_connected()) {
-                // Drop the entire app chain without resuming retained parents.
-                while(app_frame) {
-                    auto *old=app_frame;
-                    if(!foreground->state_slot || *foreground->state_slot)
-                        solar_os_app_stop(foreground,current_context());
-                    solar_os_app_registry_release(foreground,owner);
-                    app_frame=old->parent; solar_os_memory_free(old); select_frame();
-                }
+                close_all_apps();
                 if(session) { solar_os_shell_session_destroy(session); session=nullptr; }
                 memset(&shell_context,0,sizeof(shell_context)); active_tui=nullptr;
                 online=false; solar_os_vt100_input_reset(&input);
@@ -254,6 +356,10 @@ static void run_console(void *) {
                 solar_os_shell_io_set_dimensions(remote_io,cols,rows);
         }
 #endif
+#if SK_BACKGROUND_JOBS
+        process_reap_stopped();
+#endif
+        service_session_request();
         auto *io=solar_os_shell_session_io(session);
         if(foreground && foreground->event && millis()-last_tick>=solar_os_app_tick_interval_ms(foreground,25)) {
             last_tick=millis(); solar_os_event_t event{}; event.type=SOLAR_OS_EVENT_TICK; event.data.tick_ms=millis();
@@ -261,16 +367,21 @@ static void run_console(void *) {
         }
         if(connected() && !online) {
             online=true; solar_os_vt100_input_reset(&input); was_cr=false;
-            while(foreground) { solar_os_context_finish(current_context(),0,nullptr); service_requests(); }
+            close_all_apps();
             // Startup belongs to the always-present local terminal, once per boot.
             solar_os_shell_session_start(&shell_context,session,io,false,active().local && SK_SETTINGS);
             service_requests();
-        } else if(!connected()) online=false;
+        } else if(!connected()) {
+            if(online)close_all_apps();
+            online=false;
+        }
         if(online && !foreground && millis()-last_tick>=25) {
             last_tick=millis();
             solar_os_event_t tick{};
             tick.type=SOLAR_OS_EVENT_TICK; tick.data.tick_ms=pdTICKS_TO_MS(xTaskGetTickCount());
+            active().dispatching=true;
             solar_os_shell_session_event(&shell_context,session,&tick);
+            active().dispatching=false;
             service_requests();
         }
         int ch=online?read_key():-1;
@@ -304,6 +415,7 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
     } else if(argc==3 && !strcmp(argv[1],"key") && !active().local) {
         if(!strcmp(argv[2],"exit")) sk_usb_inject("\035");
         else if(!strcmp(argv[2],"ctrlc")) sk_usb_inject("\003");
+        else if(!strcmp(argv[2],"ctrlz")) sk_usb_inject("\032");
         else if(!strcmp(argv[2],"esc")) sk_usb_inject("\033");
         else if(!strcmp(argv[2],"up")) sk_usb_inject("\033[A");
         else if(!strcmp(argv[2],"down")) sk_usb_inject("\033[B");
@@ -314,7 +426,7 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
         else if(!strcmp(argv[2],"tab")) sk_usb_inject("\t");
         else if(!strcmp(argv[2],"space")) sk_usb_inject(" ");
         else if(!strcmp(argv[2],"enter")) sk_usb_inject("\r");
-        else { solar_os_shell_io_writeln(io,"usage: lcd key exit|ctrlc|esc|up|down|left|right|home|end|tab|space|enter"); return; }
+        else { solar_os_shell_io_writeln(io,"usage: lcd key exit|ctrlc|ctrlz|esc|up|down|left|right|home|end|tab|space|enter"); return; }
         solar_os_shell_io_writeln(io,"Queued for LCD session.");
     } else {
         solar_os_shell_io_printf(io,"LCD 100x30; local consoles: usb and lcd; current=%s; keyboard=%s\n",
@@ -323,31 +435,6 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
 #if SK_PLOT
         extern void sk_gfx_status(char *,size_t); sk_gfx_status(status,sizeof(status)); solar_os_shell_io_writeln(io,status);
 #endif
-    }
-}
-extern "C" void sk_shell_cmd_session(solar_os_context_t *ctx,int argc,char **argv) {
-    auto *io=solar_os_context_shell_io(ctx);
-    if(argc>2 || (argc==2 && strcmp(argv[1],"list"))) {
-        solar_os_shell_io_writeln(io,"usage: session [list] | sessions");
-        solar_os_shell_io_writeln(io,"This port has fixed USB/LCD/Telnet consoles; detached sessions and fg are not yet integrated.");
-        return;
-    }
-    solar_os_shell_io_writeln(io,"ID Owner          Connected Foreground       Directory");
-    Console *entries[]={&consoles[0],&consoles[1],
-#if SK_TELNETD
-        &remote_console,
-#endif
-    };
-    for(unsigned i=0;i<sizeof(entries)/sizeof(entries[0]);++i) {
-        Console &c=*entries[i];
-        char path[SOLAR_OS_STORAGE_PATH_MAX]="-";
-        if(c.shell)solar_os_shell_resolve_path(&c.context,nullptr,path,sizeof(path));
-        bool online=c.local || (i==0 && bool(Serial));
-#if SK_TELNETD
-        if(i==2)online=sk_telnet_connected();
-#endif
-        solar_os_shell_io_printf(io,"%u  %-14s %-9s %-16s %s%s\n",i+1,c.name,
-            online?"yes":"no",c.app?c.app->name:"shell",path,&c==&active()?" *":"");
     }
 }
 void sk_upstream_shell_run() {
@@ -372,10 +459,18 @@ void sk_upstream_shell_run() {
     remote_console.name="telnet-shell";
     configASSERT(solar_os_port_claim("telnet0",remote_console.name,&remote_console.port)==ESP_OK);
 #endif
+#if SK_BACKGROUND_JOBS
+    background_begin();
+    process_begin();
+#endif
     // Hold gate until task handles are published.
     xSemaphoreTakeRecursive(console_gate,portMAX_DELAY);
     local_task=xTaskCreateStatic(run_console,"lcd-console",10240,nullptr,2,local_stack,&local_tcb);
     configASSERT(local_task);
+#if SK_BACKGROUND_JOBS
+    background_task=xTaskCreateStatic(background_run,"script-jobs",4096,nullptr,1,background_stack,&background_tcb);
+    configASSERT(background_task);
+#endif
 #if SK_TELNETD
     remote_task=xTaskCreateStatic(run_console,"telnet-console",10240,nullptr,2,remote_stack,&remote_tcb);
     configASSERT(remote_task);

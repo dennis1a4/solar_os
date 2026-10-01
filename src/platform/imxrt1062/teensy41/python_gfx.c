@@ -26,6 +26,10 @@ static solar_os_gfx_t *target(void) {
 static int coordinate(mp_obj_t v) {int n=mp_obj_get_int(v);if(n < -32767 || n>32767)mp_raise_ValueError(MP_ERROR_TEXT("coordinate out of range"));return n;}
 static solar_os_gfx_color_t color_value(mp_obj_t v) {unsigned n=mp_obj_get_int(v);if(!solar_os_gfx_color_is_valid(n))mp_raise_ValueError(MP_ERROR_TEXT("invalid color"));return n;}
 static mp_obj_t begin(size_t n,const mp_obj_t *a) {
+#if SK_BACKGROUND_JOBS
+    extern bool sk_process_graphics_allowed(void);
+    if(!sk_process_graphics_allowed())mp_raise_msg(&mp_type_RuntimeError,MP_ERROR_TEXT("detached Python cannot acquire the display; use fg"));
+#endif
     if(!solar_os_context_gfx(context))mp_raise_msg(&mp_type_RuntimeError,MP_ERROR_TEXT("graphics requires the LCD shell"));
     if(n && a[0]!=mp_const_none && strcmp(mp_obj_str_get_str(a[0]),"display0"))mp_raise_ValueError(MP_ERROR_TEXT("unknown display"));
     solar_os_context_set_graphics_active(context,true);

@@ -54,16 +54,31 @@ extern "C" void solar_os_identity_get_hostname(char *out,size_t size) { strlcpy(
 DMAMEM static StackType_t worker_stack[7168];
 static StaticTask_t worker_tcb;
 static TaskHandle_t worker;
+#if SK_BACKGROUND_JOBS
+DMAMEM static StackType_t process_stack[10240];
+static StaticTask_t process_tcb;
+static TaskHandle_t process_worker;
+#endif
 static void reap() {
     if (worker && eTaskGetState(worker)==eSuspended) { vTaskDelete(worker); worker=nullptr; }
 }
-extern "C" bool solar_os_task_admit(const char *,uint32_t bytes,solar_os_task_role_t,bool external) {
+extern "C" bool solar_os_task_admit(const char *,uint32_t bytes,solar_os_task_role_t role,bool external) {
+#if SK_BACKGROUND_JOBS
+    if(role==SOLAR_OS_TASK_ROLE_BACKGROUND)return !external && bytes<=sizeof(process_stack) && !process_worker;
+#endif
     return !bytes || (!external && bytes<=sizeof(worker_stack) &&
         (!worker || eTaskGetState(worker)==eSuspended));
 }
 extern "C" BaseType_t solar_os_task_create_pinned_internal(TaskFunction_t fn,const char *name,
-    uint32_t bytes,void *arg,UBaseType_t priority,TaskHandle_t *out,BaseType_t,solar_os_task_role_t) {
+    uint32_t bytes,void *arg,UBaseType_t priority,TaskHandle_t *out,BaseType_t,solar_os_task_role_t role) {
     reap();
+#if SK_BACKGROUND_JOBS
+    if(role==SOLAR_OS_TASK_ROLE_BACKGROUND) {
+        if(process_worker || !out || !bytes || bytes>sizeof(process_stack))return pdFAIL;
+        process_worker=xTaskCreateStatic(fn,name,bytes/sizeof(StackType_t),arg,1,process_stack,&process_tcb);
+        *out=process_worker;return process_worker?pdPASS:pdFAIL;
+    }
+#endif
     if (worker || !bytes || bytes>sizeof(worker_stack) || !out) return pdFAIL;
     // App priorities originate on ESP. On this single-core port the USB
     // console and Ethernet owner run at priority 2: foreground workers must
@@ -83,6 +98,9 @@ extern "C" bool solar_os_task_wait_done(TaskHandle_t task,volatile bool *done,ui
         if (millis()-started>=timeout) return false;
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+#if SK_BACKGROUND_JOBS
+    if(task==process_worker){vTaskDelete(process_worker);process_worker=nullptr;return true;}
+#endif
     reap(); return true;
 }
 #endif

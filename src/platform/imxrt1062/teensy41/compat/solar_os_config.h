@@ -1,4 +1,8 @@
 #pragma once
+#if SK_HW_RESOURCES
+#define SOLAR_OS_PACKAGE_APP_COM 1
+#define SOLAR_OS_PACKAGE_APP_IO 1
+#endif
 #if SK_SCOPE
 #define SOLAR_OS_PACKAGE_APP_SCOPE 1
 #endif

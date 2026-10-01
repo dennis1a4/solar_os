@@ -1,6 +1,6 @@
 #if SK_CLOCK
-/* Clock-only transient schedule adapter. Called under the dual-console gate;
- * no persistent scheduler, RTC wake alarms, or arbitrary scripts are exposed. */
+/* RTC/timezone adapter. Full display builds use the shared schedule service;
+ * focused Clock builds retain the transient-only fallback below. */
 #include "esp_timer.h"
 #include "nvs.h"
 #include "solar_os_schedule.h"
@@ -68,12 +68,15 @@ esp_err_t solar_os_time_set_timezone(const char *value) {
     tzset();
     return err;
 }
+#if !SK_BACKGROUND_JOBS
 static struct {
     bool exists, ringing, silenced;
     uint64_t deadline, next_tone;
 } alarm;
 static uint64_t now_ms(void) { return (uint64_t)esp_timer_get_time() / 1000U; }
 static bool clock_name(const char *name) { return name && !strcmp(name, "_clock"); }
+
+#endif
 
 bool solar_os_time_datetime_is_valid(const solar_os_datetime_t *d) {
     if (!d || d->year < 2000 || d->month < 1 || d->month > 12 || !d->day || d->hour > 23 ||
@@ -120,6 +123,7 @@ esp_err_t solar_os_time_set_datetime(const solar_os_datetime_t *d) {
     sk_clock_rtc_set((uint32_t)epoch);
     return ESP_OK;
 }
+#if !SK_BACKGROUND_JOBS
 esp_err_t solar_os_schedule_add_relative(const char *name, uint32_t seconds,
                                          solar_os_schedule_action_t action, const char *value,
                                          bool persistent) {
@@ -183,4 +187,5 @@ esp_err_t solar_os_schedule_remove(const char *name) {
     memset(&alarm, 0, sizeof(alarm));
     return ESP_OK;
 }
+#endif
 #endif

@@ -8,8 +8,12 @@ extern "C" {
 #include "solar_os_memory.h"
 }
 #include <QNEthernet.h>
+#if SK_NET_DIAGNOSTICS
+#include <qnethernet/QNPing.h>
+#include <new>
+#endif
 #include <qnethernet/QNDNSClient.h>
-#if SK_SSH
+#if SK_SSH || SK_NET_DIAGNOSTICS
 extern "C" size_t qnethernet_hal_entropy_available();
 extern "C" size_t qnethernet_hal_fill_entropy(void *,size_t);
 #endif
@@ -17,6 +21,41 @@ extern "C" size_t qnethernet_hal_fill_entropy(void *,size_t);
 #include <cstring>
 #include "network_socket.h"
 using namespace qindesign::network;
+#if SK_NET_DIAGNOSTICS
+struct PingProbe {
+    Ping *client=nullptr; uint32_t token=0,started=0,elapsed=0;
+    IPAddress ip; uint8_t payload[16]={},ttl=0; bool received=false; int error=0;
+};
+static PingProbe probe;
+static uint32_t next_ping_token;
+static void ping_reset() {delete probe.client;probe.client=nullptr;if(probe.token)probe.error=ENETDOWN;}
+static void ping_reply(const PingData &reply) {
+    if(!probe.token || probe.received || reply.ip!=probe.ip || reply.id!=uint16_t(probe.token>>16) ||
+       reply.seq!=uint16_t(probe.token) || reply.dataSize!=sizeof(probe.payload) || !reply.data ||
+       memcmp(reply.data,probe.payload,sizeof(probe.payload)))return;
+    probe.elapsed=micros()-probe.started;probe.ttl=reply.ttl;probe.received=true;
+}
+static void ping_rpc(const sk_net_request &q,sk_net_reply &r,bool ready) {
+    if(q.op==SK_NET_PING_START) {
+        if(!ready){r.error=ENETDOWN;return;}
+        if(probe.token){r.error=EBUSY;return;}
+        if(next_ping_token>=INT32_MAX){r.error=EOVERFLOW;return;}
+        probe=PingProbe{};probe.token=++next_ping_token;probe.ip=IPAddress(q.ip);
+        memcpy(probe.payload,q.data,sizeof(probe.payload));
+        probe.client=new(std::nothrow) Ping(ping_reply);
+        if(!probe.client){probe.token=0;r.error=ENOMEM;return;}
+        PingData data;data.ip=probe.ip;data.id=uint16_t(probe.token>>16);data.seq=uint16_t(probe.token);
+        data.data=probe.payload;data.dataSize=sizeof(probe.payload);probe.started=micros();
+        if(!probe.client->send(data)){r.error=errno?errno:EIO;delete probe.client;probe=PingProbe{};return;}
+        r.value=probe.token;return;
+    }
+    if(!probe.token || uint32_t(q.handle)!=probe.token){r.error=EBADF;return;}
+    if(q.op==SK_NET_PING_CLOSE){delete probe.client;probe=PingProbe{};return;}
+    if(probe.error || !ready){r.error=probe.error?probe.error:ENETDOWN;return;}
+    if(!probe.received){r.error=EAGAIN;return;}
+    r.value=probe.elapsed;r.data[0]=probe.ttl;
+}
+#endif
 static QueueHandle_t requests, replies;
 static StaticQueue_t request_control, reply_control;
 DMAMEM static uint8_t request_storage[sizeof(sk_net_request)], reply_storage[sizeof(sk_net_reply)];
@@ -78,6 +117,9 @@ extern "C" int sk_net_call(sk_net_request *request, sk_net_reply *reply) {
     return result;
 }
 extern "C" void sk_net_transport_reset() {
+#if SK_NET_DIAGNOSTICS
+    ping_reset();
+#endif
 #if SK_TELNETD
     telnet_server.end(); listening=false;
 #endif
@@ -109,6 +151,10 @@ extern "C" void sk_net_transport_poll(int ready) {
     Slot *s=nullptr;
     for (auto &slot:slots) if (slot.handle==q.handle && q.handle>0) s=&slot;
     switch(q.op) {
+#if SK_NET_DIAGNOSTICS
+    case SK_NET_PING_START: case SK_NET_PING_POLL: case SK_NET_PING_CLOSE:
+        ping_rpc(q,r,ready);break;
+#endif
 #if SK_TELNETD
     case SK_NET_LISTEN_START:
         if(!ready) { r.error=ENETDOWN; break; }
@@ -136,7 +182,7 @@ extern "C" void sk_net_transport_poll(int ready) {
         break;
     }
 #endif
-#if SK_SSH
+#if SK_SSH || SK_NET_DIAGNOSTICS
     case SK_NET_ENTROPY: {
         // Ethernet and SSH share one TRNG owner. Never reinitialize it from
         // the SSH task, or race the Ethernet stack's entropy pool.
