@@ -1,8 +1,9 @@
 """Select accurate embedded documentation for the Teensy workstation shell."""
 APP_NAMES = set('io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders mqttx obd clock pdpower scope help curl'.split())
-COMMAND_NAMES = set('gpio i2c spi uart expansion help man commands echo wait watch apps mem uptime clear setterm identity network audio cd ls cat sh mkdir rm mv cp exit reboot version board status top port df pwd session sessions fg bg tail close ping netscan ntp jobs job schedule zip unzip rtc date time flash sd usb lcd telnetd'.split())
+COMMAND_NAMES = set('ramfs gpio i2c spi uart expansion help man commands echo wait watch apps mem uptime clear setterm identity network audio cd ls cat sh mkdir rm mv cp exit reboot version board status top port df pwd session sessions fg bg tail close ping netscan ntp jobs job schedule zip unzip rtc date time flash sd usb lcd telnetd'.split())
 # The reduced service adapters intentionally expose narrower contracts than ESP.
 OVERRIDES = {
+    'ramfs': ('Create volatile PSRAM filesystems.', 'ramfs [status]\nramfs mount /NAME SIZE\nramfs unmount /NAME\nUp to four top-level mounts; names use letters, digits, dash or underscore. /sd, /flash, /usb and / are reserved. SIZE: 1024..4194304 bytes, optional k/m suffix. Keeps 512 KiB PSRAM free for apps. No automatic mount or persistence; reboot/unmount loses all files. Open files/directories block unmount. Close directory iterators before removing or renaming entries. Files, shell and Python use ordinary paths; df includes RAMFS. Use explicit /sd paths; unknown mount paths never fall through to SD.'),
     'io': ('Inspect Teensy pins, buses and claims.', 'io [pins|claims|buses|release]\nrelease restores this console’s GPIO inputs and closes its raw UART/expansion leases. Built-in device reservations and COM app leases cannot be released here. Fixed board routing; no pin remapping or saved runtime claims.'),
     'gpio': ('Claim and control a free header pin.', 'gpio [list|PIN]\ngpio mode PIN in|pullup|pulldown|out [0|1]\ngpio read PIN\ngpio write PIN 0|1\ngpio release PIN\nPins 0..41 only. Existing board/bus reservations cannot be overridden. Claims belong to the calling console; release/disconnect restores input mode.'),
     'i2c': ('Probe or transfer on a fixed I2C bus.', 'i2c [list]\ni2c scan i2c0|i2c1|i2c2\ni2c xfer BUS ADDRESS HEX|- RX_COUNT\nFixed 100 kHz; 7-bit addresses 8..0x77, up to 32 bytes each direction. HEX is contiguous hex bytes; - means no write bytes. Scan is cancellable with Ctrl+C/Esc and skips reserved addresses.'),
@@ -20,7 +21,7 @@ OVERRIDES = {
     'status': ('Show a compact system summary.', 'status\nFirmware, processor, uptime, memory, mounted-volume count and FreeRTOS task count.'),
     'top': ('Snapshot FreeRTOS tasks.', 'top\nTask state, priority, stack high-water headroom in bytes and cumulative CPU utilization.\nwatch -n 2 top repeats the snapshot. CPU is cumulative, not interval utilization.'),
     'port': ('List registered byte-stream ports.', 'port [list]\nShows names, owners and labels. Use uart list and com uart7 or com uart8 for hardware terminals.'),
-    'df': ('Show space on mounted volumes.', 'df\nLists total, used and free KiB for SD, QSPI flash and USB when mounted.\nFAT free-space scanning can take time on large media.'),
+    'df': ('Show space on mounted volumes.', 'df\nLists total, used and free KiB for SD, QSPI flash, USB and RAMFS when mounted.\nFAT free-space scanning can take time on large media.'),
     'pwd': ('Print the calling shell directory.', 'pwd'),
     'session': ('Manage retained app sessions.', 'session [list]\nsession fg [ID]\nsession close ID\nCtrl+Z suspends a resumable app chain; up to four suspended chains per console.\nfg resumes the most recently suspended app on this console, or the named app on its owning console.\nThe owner must be at an empty shell prompt. close discards unsaved state and stops the whole chain.\nUSB/Telnet disconnect closes that console’s apps; local keyboard disconnect preserves LCD sessions.\nFixed consoles have IDs 1-3; app IDs start at 4. Dynamic shells and session create/send are not integrated.'),
     'ping': ('Send bounded ICMP echo requests.', 'ping HOST [1..999]\nDefaults to four probes, one second timeout/interval, 16 data bytes. Ctrl+C/Esc stops. Ethernet must be up. Reports replies, TTL, RTT and packet loss. Only one ICMP probe can be active at a time.'),
@@ -69,7 +70,7 @@ def select_pages(pages, render_text):
             page['contract'] = usage
         if kind == 'command':
             # Upstream conditions describe ESP packages, not the Teensy allowlist.
-            page['condition'] = {'io':'SK_HW_RESOURCES', 'gpio':'SK_HW_RESOURCES', 'i2c':'SK_HW_RESOURCES', 'spi':'SK_HW_RESOURCES', 'uart':'SK_HW_RESOURCES', 'expansion':'SK_HW_RESOURCES', 'date':'SK_CLOCK', 'time':'SK_CLOCK', 'rtc':'SK_PLAYGROUND',
+            page['condition'] = {'ramfs':'SK_RAMFS', 'io':'SK_HW_RESOURCES', 'gpio':'SK_HW_RESOURCES', 'i2c':'SK_HW_RESOURCES', 'spi':'SK_HW_RESOURCES', 'uart':'SK_HW_RESOURCES', 'expansion':'SK_HW_RESOURCES', 'date':'SK_CLOCK', 'time':'SK_CLOCK', 'rtc':'SK_PLAYGROUND',
                 'ping':'SK_NET_DIAGNOSTICS', 'netscan':'SK_NET_DIAGNOSTICS', 'ntp':'SK_NET_DIAGNOSTICS', 'tail':'SK_BACKGROUND_JOBS', 'bg':'SK_BACKGROUND_JOBS', 'jobs':'SK_BACKGROUND_JOBS', 'job':'SK_BACKGROUND_JOBS', 'schedule':'SK_BACKGROUND_JOBS', 'fg':'SK_LCD_CONSOLE', 'close':'SK_LCD_CONSOLE', 'session':'SK_LCD_CONSOLE', 'sessions':'SK_LCD_CONSOLE', 'lcd':'SK_LCD_CONSOLE',
                 'telnetd':'SK_TELNETD', 'usb':'SK_USB_STORAGE', 'sd':'SK_SD_RECOVERY',
                 'flash':'SK_QSPI_FLASH', 'audio':'SK_AUDIO_PLAYER', 'network':'SK_ETHERNET',

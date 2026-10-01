@@ -535,6 +535,9 @@ void solar_os_shell_cmd_sd(solar_os_context_t *ctx, int argc, char **argv);
 #if SK_TELNETD
 void solar_os_shell_cmd_telnetd(solar_os_context_t *, int, char **);
 #endif
+#if SK_RAMFS
+bool sk_ramfs_complete(const solar_os_completion_request_t *, solar_os_completion_emit_t, void *, void *);
+#endif
 #if SK_UPSTREAM_SHELL
 void sk_shell_cmd_pwd(solar_os_context_t *, int, char **);
 void sk_shell_cmd_session(solar_os_context_t *, int, char **);
@@ -559,6 +562,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"usb", "USB drive status, mount or eject", solar_os_shell_cmd_usb},
 #endif
 #if SOLAR_OS_SHELL_CORE_ONLY
+#if SK_RAMFS
+    {"ramfs", "PSRAM-backed temporary filesystems", solar_os_shell_cmd_ramfs},
+#endif
 #if SK_HW_RESOURCES
     {"gpio", "claim and control free GPIO pins", solar_os_shell_cmd_gpio},
     {"i2c", "bounded I2C probing and transfers", solar_os_shell_cmd_i2c},
@@ -8320,6 +8326,9 @@ static void shell_complete_command(solar_os_context_t *ctx, bool show_matches)
                  !strcmp(w->command,"com") || !strcmp(w->command,"i2c") || !strcmp(w->command,"spi") ||
                  !strcmp(w->command,"expansion")) kind=SOLAR_OS_COMPLETE_CUSTOM;
 #endif
+#if SK_RAMFS
+        else if (!strcmp(w->command,"ramfs")) kind=SOLAR_OS_COMPLETE_CUSTOM;
+#endif
         else if (!strcmp(w->command,"cd")) kind=SOLAR_OS_COMPLETE_DIRECTORY;
         else if (shell_is_path_command(w->command) || !strcmp(w->command,"tail")) kind=SOLAR_OS_COMPLETE_FILE;
         else goto done;
@@ -8327,6 +8336,9 @@ static void shell_complete_command(solar_os_context_t *ctx, bool show_matches)
     solar_os_shell_completion_providers(ctx,&w->registry,&w->files);
 #if SK_HW_RESOURCES
     w->registry.providers[SOLAR_OS_COMPLETE_CUSTOM]=(solar_os_completion_provider_entry_t){sk_hardware_complete,ctx};
+#endif
+#if SK_RAMFS
+    if(!strcmp(w->command,"ramfs")) w->registry.providers[SOLAR_OS_COMPLETE_CUSTOM]=(solar_os_completion_provider_entry_t){sk_ramfs_complete,ctx};
 #endif
     /* A listing gets its own line; restore the original input and cursor below. */
     if (show_matches) solar_os_shell_io_newline(shell_io(ctx));

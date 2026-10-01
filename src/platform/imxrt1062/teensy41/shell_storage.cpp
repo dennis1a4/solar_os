@@ -13,6 +13,11 @@
 #include "storage_lock.h"
 #include "usb_storage.h"
 #include "sd_storage.h"
+#if SK_RAMFS
+extern "C" {
+#include "solar_os_ramfs_portable.h"
+}
+#endif
 
 // Serialize each storage operation across consoles and Playground's worker.
 #include <semphr.h>
@@ -30,12 +35,25 @@ StorageLock::~StorageLock() { xSemaphoreGiveRecursive(storage_mutex); }
 struct Route {
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     bool flash=false, root=false, mount_root=false, sd_alias=false, usb=false;
+#if SK_RAMFS
+    void *ram=nullptr;
+#endif
 };
 static bool route_path(const char *path, Route &r, bool require_ready=true) {
     if (!path || path[0]!='/') { errno=EINVAL; return false; }
     char normalized[SOLAR_OS_STORAGE_PATH_MAX];
     if (solar_os_storage_normalize_path(path,normalized,sizeof(normalized))!=ESP_OK) { errno=ENAMETOOLONG; return false; }
     const char *local=normalized;
+#if SK_RAMFS
+    r.ram=solar_os_ramfs_context(normalized);
+    if(r.ram) {
+        char mount[SOLAR_OS_RAMFS_MOUNT_POINT_MAX];
+        solar_os_ramfs_path_mount_point(normalized,mount,sizeof(mount));
+        local+=strlen(mount);
+        strlcpy(r.path,*local ? local : "/",sizeof(r.path));
+        r.mount_root=!strcmp(r.path,"/"); return true;
+    }
+#endif
 #if SK_QSPI_FLASH
     if (!strncmp(local,"/flash",6) && (!local[6] || local[6]=='/')) { r.flash=true; local+=6; }
     else if (!strncmp(local,"/sd",3) && (!local[3] || local[3]=='/')) { r.sd_alias=true; local+=3; }
@@ -43,6 +61,10 @@ static bool route_path(const char *path, Route &r, bool require_ready=true) {
 #endif
 #if SK_USB_STORAGE
     if (!r.flash && !r.sd_alias && !strncmp(local,"/usb",4) && (!local[4] || local[4]=='/')) { r.usb=true; local+=4; }
+#endif
+#if SK_RAMFS
+    // Unknown mount names must not silently become SD paths after RAMFS unmount.
+    if (!r.root && !r.flash && !r.sd_alias && !r.usb) { errno=ENOENT; return false; }
 #endif
     strlcpy(r.path,*local ? local : "/",sizeof(r.path));
     r.mount_root=!strcmp(r.path,"/");
@@ -117,6 +139,9 @@ static int flash_result(int value) {
 }
 #endif
 struct sk_directory {
+#if SK_RAMFS
+    void *ram=nullptr; DIR *ram_dir=nullptr;
+#endif
     FsFile file; struct dirent entry;
     bool flash=false, root=false, usb=false, sd=false; unsigned synthetic=0;
 #if SK_QSPI_FLASH
@@ -127,6 +152,12 @@ extern "C" DIR *opendir(const char *path) { StorageLock lock;
     Route r; if (!route_path(path,r)) return nullptr;
     auto *dir=new (std::nothrow) sk_directory;
     if (!dir) { errno=ENOMEM; return nullptr; }
+#if SK_RAMFS
+    if (r.ram) {
+        dir->ram=r.ram; dir->ram_dir=solar_os_ramfs_ops()->opendir_p(r.ram,r.path);
+        if (!dir->ram_dir) { delete dir; return nullptr; } return dir;
+    }
+#endif
     dir->flash=r.flash; dir->root=r.root; dir->usb=r.usb; dir->sd=!r.flash && !r.root && !r.usb;
 #if SK_QSPI_FLASH
     if (r.flash) {
@@ -145,6 +176,9 @@ extern "C" DIR *opendir(const char *path) { StorageLock lock;
 }
 extern "C" struct dirent *readdir(DIR *dir) { StorageLock lock;
     if (!dir) { errno=EBADF; return nullptr; }
+#if SK_RAMFS
+    if (dir->ram) return solar_os_ramfs_ops()->readdir_p(dir->ram,dir->ram_dir);
+#endif
 #if SK_QSPI_FLASH
     if (dir->flash) {
         lfs_info info; int n;
@@ -154,20 +188,13 @@ extern "C" struct dirent *readdir(DIR *dir) { StorageLock lock;
         dir->entry.d_type=info.type==LFS_TYPE_DIR ? DT_DIR : DT_REG;
         strlcpy(dir->entry.d_name,info.name,sizeof(dir->entry.d_name)); return &dir->entry;
     }
-    if (dir->root) while(dir->synthetic<3) {
-        unsigned mount=dir->synthetic++;
-        if ((mount==0 && sk_sd_is_mounted()) || (mount==1 && sk_flash_mounted())) {
-            dir->entry.d_type=DT_DIR;
-            strcpy(dir->entry.d_name,mount==0 ? "sd" : "flash"); return &dir->entry;
-        }
-#if SK_USB_STORAGE
-        if (mount==2 && sk_usb_storage_mounted()) {
-            dir->entry.d_type=DT_DIR;
-            strcpy(dir->entry.d_name,"usb"); return &dir->entry;
-        }
 #endif
+    if (dir->root) {
+        solar_os_storage_mount_info_t info;
+        if (!solar_os_storage_get_mount(dir->synthetic++,&info)) return nullptr;
+        dir->entry.d_type=DT_DIR;
+        strlcpy(dir->entry.d_name,info.mount_point+1,sizeof(dir->entry.d_name)); return &dir->entry;
     }
-#endif
     if (!media_ready(dir->usb,dir->sd) || !dir->file) return nullptr;
     for (;;) {
         FsFile entry=dir->file.openNextFile(O_RDONLY);
@@ -179,6 +206,9 @@ extern "C" struct dirent *readdir(DIR *dir) { StorageLock lock;
 extern "C" int closedir(DIR *dir) { StorageLock lock;
     if (!dir) { errno=EBADF; return -1; }
     int ret=0;
+#if SK_RAMFS
+    if (dir->ram) { ret=solar_os_ramfs_ops()->closedir_p(dir->ram,dir->ram_dir); delete dir; return ret; }
+#endif
 #if SK_QSPI_FLASH
     if (dir->flash) { ret=flash_result(lfs_dir_close(sk_flash_fs(),&dir->little)); sk_flash_release(); }
 #endif
@@ -191,6 +221,9 @@ extern "C" int __wrap_stat(const char *path, struct stat *out) { StorageLock loc
     Route r; if (!route_path(path,r)) return -1;
     memset(out,0,sizeof(*out)); out->st_nlink=1;
     if (r.root) { out->st_mode=S_IFDIR|0777; return 0; }
+#if SK_RAMFS
+    if (r.ram) return solar_os_ramfs_ops()->stat_p(r.ram,r.path,out);
+#endif
 #if SK_QSPI_FLASH
     if (r.flash) {
         lfs_info info;
@@ -207,6 +240,9 @@ extern "C" int __wrap_stat(const char *path, struct stat *out) { StorageLock loc
 }
 static constexpr int first_fd=3, file_limit=16;
 struct OpenFile {
+#if SK_RAMFS
+    void *ram=nullptr; int ram_fd=-1;
+#endif
     FsFile file; FILE *stream=nullptr; bool used=false, usb=false, sd=false, append=false; int access=O_RDONLY;
 #if SK_QSPI_FLASH
     lfs_file_t *little=nullptr;
@@ -227,6 +263,14 @@ extern "C" int __wrap_open(const char *path,int flags,...) { StorageLock lock;
     if (slot==file_limit) { errno=EMFILE; return -1; }
     auto &f=files[slot];
     f.usb=r.usb; f.sd=!r.flash && !r.usb; f.append=flags&O_APPEND;
+#if SK_RAMFS
+    f.ram=r.ram;
+    if (r.ram) {
+        f.sd=false; f.ram_fd=solar_os_ramfs_ops()->open_p(r.ram,r.path,flags,0666);
+        if(f.ram_fd<0) { f.ram=nullptr; return -1; }
+        f.used=true; f.stream=nullptr; f.access=flags&O_ACCMODE; return first_fd+slot;
+    }
+#endif
 #if SK_QSPI_FLASH
     if (r.flash) {
         int mode=(flags&O_ACCMODE)==O_RDONLY ? LFS_O_RDONLY : (flags&O_ACCMODE)==O_WRONLY ? LFS_O_WRONLY : LFS_O_RDWR;
@@ -257,6 +301,9 @@ extern "C" int __wrap_open(const char *path,int flags,...) { StorageLock lock;
 extern "C" ssize_t __wrap_read(int fd,void *data,size_t size) { StorageLock lock;
     auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
     if (f->access==O_WRONLY) { errno=EBADF; return -1; }
+#if SK_RAMFS
+    if (f->ram) return solar_os_ramfs_ops()->read_p(f->ram,f->ram_fd,data,size);
+#endif
 #if SK_QSPI_FLASH
     if (f->little) return flash_result(lfs_file_read(sk_flash_fs(),f->little,data,size));
 #endif
@@ -265,6 +312,9 @@ extern "C" ssize_t __wrap_read(int fd,void *data,size_t size) { StorageLock lock
 extern "C" ssize_t __wrap_write(int fd,const void *data,size_t size) { StorageLock lock;
     auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
     if (f->access==O_RDONLY) { errno=EBADF; return -1; }
+#if SK_RAMFS
+    if (f->ram) return solar_os_ramfs_ops()->write_p(f->ram,f->ram_fd,data,size);
+#endif
 #if SK_QSPI_FLASH
     if (f->little) return flash_result(lfs_file_write(sk_flash_fs(),f->little,data,size));
 #endif
@@ -274,6 +324,9 @@ extern "C" ssize_t __wrap_write(int fd,const void *data,size_t size) { StorageLo
 }
 extern "C" int __wrap_fsync(int fd) { StorageLock lock;
     auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
+#if SK_RAMFS
+    if (f->ram) return solar_os_ramfs_ops()->fsync_p(f->ram,f->ram_fd);
+#endif
 #if SK_QSPI_FLASH
     if (f->little) return flash_result(lfs_file_sync(sk_flash_fs(),f->little));
 #endif
@@ -282,6 +335,9 @@ extern "C" int __wrap_fsync(int fd) { StorageLock lock;
 extern "C" int __wrap_close(int fd) { StorageLock lock;
     auto *f=lookup(fd); if (!f) return -1;
     int ret=0;
+#if SK_RAMFS
+    if(f->ram) { ret=solar_os_ramfs_ops()->close_p(f->ram,f->ram_fd); f->ram=nullptr; f->ram_fd=-1; f->used=false; f->stream=nullptr; return ret; }
+#endif
 #if SK_QSPI_FLASH
     if (f->little) {
         ret=flash_result(lfs_file_close(sk_flash_fs(),f->little));
@@ -295,6 +351,9 @@ extern "C" int __wrap_close(int fd) { StorageLock lock;
 }
 extern "C" off_t __wrap_lseek(int fd,off_t offset,int whence) { StorageLock lock;
     auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
+#if SK_RAMFS
+    if (f->ram) return solar_os_ramfs_ops()->lseek_p(f->ram,f->ram_fd,offset,whence);
+#endif
 #if SK_QSPI_FLASH
     if (f->little) {
         int mode=whence==SEEK_SET ? LFS_SEEK_SET : whence==SEEK_CUR ? LFS_SEEK_CUR : whence==SEEK_END ? LFS_SEEK_END : -1;
@@ -312,6 +371,9 @@ extern "C" int __wrap_fstat(int fd,struct stat *out) { StorageLock lock;
     auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
     if (!out) { errno=EINVAL; return -1; }
     memset(out,0,sizeof(*out)); out->st_mode=S_IFREG|0666; out->st_nlink=1;
+#if SK_RAMFS
+    if (f->ram) return solar_os_ramfs_ops()->fstat_p(f->ram,f->ram_fd,out);
+#endif
 #if SK_QSPI_FLASH
     if (f->little) {
         int n=flash_result(lfs_file_size(sk_flash_fs(),f->little)); if (n<0) return -1;
@@ -359,6 +421,9 @@ extern "C" FILE *__wrap_fopen(const char *path, const char *mode) { StorageLock 
 extern "C" int __wrap_mkdir(const char *path,mode_t) { StorageLock lock;
     Route r; if (!route_path(path,r)) return -1;
     if (r.mount_root) { errno=EEXIST; return -1; }
+#if SK_RAMFS
+    if (r.ram) return solar_os_ramfs_ops()->mkdir_p(r.ram,r.path,0777);
+#endif
 #if SK_QSPI_FLASH
     if (r.flash) return flash_result(lfs_mkdir(sk_flash_fs(),r.path));
 #endif
@@ -369,6 +434,9 @@ extern "C" int __wrap_unlink(const char *path) { StorageLock lock;
     struct stat info; if (__wrap_stat(path,&info)) return -1;
     if (S_ISDIR(info.st_mode)) { errno=EISDIR; return -1; }
     Route r; if (!route_path(path,r)) return -1;
+#if SK_RAMFS
+    if (r.ram) return solar_os_ramfs_ops()->unlink_p(r.ram,r.path);
+#endif
 #if SK_QSPI_FLASH
     if (r.flash) return flash_result(lfs_remove(sk_flash_fs(),r.path));
 #endif
@@ -379,6 +447,9 @@ extern "C" int __wrap_rmdir(const char *path) { StorageLock lock;
     if (r.mount_root) { errno=EBUSY; return -1; }
     struct stat info; if (__wrap_stat(path,&info)) return -1;
     if (!S_ISDIR(info.st_mode)) { errno=ENOTDIR; return -1; }
+#if SK_RAMFS
+    if (r.ram) return solar_os_ramfs_ops()->rmdir_p(r.ram,r.path);
+#endif
 #if SK_QSPI_FLASH
     if (r.flash) return flash_result(lfs_remove(sk_flash_fs(),r.path));
 #endif
@@ -391,6 +462,10 @@ extern "C" int __wrap_remove(const char *path) { StorageLock lock;
 extern "C" int __wrap_rename(const char *oldpath,const char *newpath) { StorageLock lock;
     Route a,b; if (!route_path(oldpath,a) || !route_path(newpath,b)) return -1;
     if (a.mount_root || b.mount_root) { errno=EBUSY; return -1; }
+#if SK_RAMFS
+    if (a.ram!=b.ram) { errno=EXDEV; return -1; }
+    if (a.ram) return solar_os_ramfs_ops()->rename_p(a.ram,a.path,b.path);
+#endif
     if (a.flash!=b.flash || a.usb!=b.usb) { errno=EXDEV; return -1; }
     struct stat info; if (__wrap_stat(oldpath,&info)) return -1;
     if (!strcmp(a.path,b.path)) return 0;
@@ -429,6 +504,9 @@ extern "C" esp_err_t solar_os_storage_get_usage_for_path(const char *path,solar_
     Route r;
     if(!route_path(path,r))return ESP_ERR_INVALID_STATE;
     if(r.root)return ESP_ERR_INVALID_ARG;
+#if SK_RAMFS
+    if(r.ram) return solar_os_ramfs_get_usage_for_path(path,&out->total_bytes,&out->used_bytes,&out->free_bytes);
+#endif
 #if SK_QSPI_FLASH
     if(r.flash) {
         auto *fs=sk_flash_fs();
@@ -462,7 +540,11 @@ extern "C" bool solar_os_storage_root_is_mounted() { StorageLock lock;
 #endif
 }
 extern "C" size_t solar_os_storage_mount_count() { StorageLock lock;
-    return size_t(sk_sd_is_mounted()) + size_t(solar_os_storage_flash_is_mounted())
+    return
+#if SK_RAMFS
+        solar_os_ramfs_mount_count() +
+#endif
+        size_t(sk_sd_is_mounted()) + size_t(solar_os_storage_flash_is_mounted())
 #if SK_USB_STORAGE
         + size_t(sk_usb_storage_mounted())
 #endif
@@ -490,11 +572,21 @@ extern "C" bool solar_os_storage_get_mount(size_t index, solar_os_storage_mount_
       --index;
     }
 #if SK_USB_STORAGE
-    if (!index && sk_usb_storage_mounted()) {
-        strlcpy(out->mount_point,"/usb",sizeof(out->mount_point));
-        strlcpy(out->name,"USB",sizeof(out->name));
-        out->type=SOLAR_OS_STORAGE_MOUNT_USB;
-        return true;
+    if (sk_usb_storage_mounted()) {
+        if(!index) {
+            strlcpy(out->mount_point,"/usb",sizeof(out->mount_point));
+            strlcpy(out->name,"USB",sizeof(out->name));
+            out->type=SOLAR_OS_STORAGE_MOUNT_USB; return true;
+        }
+        --index;
+    }
+#endif
+#if SK_RAMFS
+    solar_os_ramfs_info_t info;
+    if(solar_os_ramfs_get_info(index,&info)) {
+        strlcpy(out->mount_point,info.mount_point,sizeof(out->mount_point));
+        strlcpy(out->name,"PSRAM",sizeof(out->name));
+        out->type=SOLAR_OS_STORAGE_MOUNT_RAMFS; return true;
     }
 #endif
     return false;
@@ -512,6 +604,9 @@ extern "C" bool solar_os_storage_path_has_mount_prefix(const char *path) { Stora
 extern "C" esp_err_t solar_os_storage_path_mount_point(const char *path,char *out,size_t len) { StorageLock lock;
     if (!out) return ESP_ERR_INVALID_ARG;
     Route r; if (!route_path(path,r,false)) return ESP_ERR_INVALID_ARG;
+#if SK_RAMFS
+    if(r.ram) return solar_os_ramfs_path_mount_point(path,out,len);
+#endif
     const char *mount=r.flash ? "/flash" : "/";
 #if SK_QSPI_FLASH
     if (r.sd_alias) mount="/sd";

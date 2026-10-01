@@ -25,6 +25,11 @@ class ManualTest(unittest.TestCase):
         self.assertIn("UART3 conflicts",self.by_id["command.uart"]["body"])
         self.assertIn("Ctrl+Z",self.by_id["app.com"]["body"])
 
+    def test_ramfs_limits(self):
+        text=self.by_id["command.ramfs"]["body"]
+        for phrase in ("PSRAM", "reboot/unmount", "Open files/directories", "512 KiB"):
+            self.assertIn(phrase,text)
+
     def test_excludes_unavailable_services(self):
         for name in ('wifi','espnow','ota','nvs'):
             self.assertNotIn('command.'+name,self.by_id)

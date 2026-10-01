@@ -2,7 +2,7 @@
 
 **Testing:** [Master outstanding test checklist](teensy41-test-checklist.md).
 
-Last updated: 2026-09-30.
+Last updated: 2026-10-01.
 
 This is the working plan and idea backlog for porting SolarOS from ESP32 to
 Teensy 4.1, then bringing up the SuperKeyboard hardware. Keep technical details
@@ -20,15 +20,19 @@ Complete and validate one stage before moving to the next:
 3. Network diagnostics and clock synchronization (`ntp`, `ping`, `netscan`) — implemented, installed and host/device acceptance passed; see [diagnostics notes](teensy41-network-diagnostics.md).
 4. Hardware resource management and terminal access (GPIO/buses, `io`,
    `expansion`, `com`, with pin ownership) — installed; host/device acceptance and physical UART8 loopback pass. See [hardware notes](teensy41-hardware-resources.md).
-5. PSRAM-backed temporary storage (`ramfs`).
+5. PSRAM-backed temporary storage (`ramfs`) — installed; host/device checks pass. See [RAMFS notes](teensy41-ramfs.md).
 
 The fifth stage is item 7 from the command-gap review. Monitoring and transfer
 features remain backlog; they do not precede RAMFS in this approved sequence.
 
 ## Current position
 
+**2026-10-01 RAMFS:** original item 7 is installed. The approved workstation
+sequence is complete within documented limits; choose the next feature from
+the command audit/backlog.
+
 **2026-09-30 hardware resources:** stage 4 is complete within the fixed-routing
-scope documented above. PSRAM RAMFS (original item 7) is next.
+scope documented above. RAMFS followed on 2026-10-01.
 
 **2026-09-30 shared completion:** cursor-aware Tab completion and bounded
 on-demand filesystem providers are implemented; reusable C/TUI and raw-field

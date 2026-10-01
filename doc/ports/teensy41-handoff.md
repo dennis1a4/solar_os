@@ -1,6 +1,6 @@
 # Teensy / SuperKeyboard handover
 
-Updated 2026-09-30. Branch: `teensy41`; GitHub: `dennis1a4/solar_os`.
+Updated 2026-10-01. Branch: `teensy41`; GitHub: `dennis1a4/solar_os`.
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
@@ -12,13 +12,36 @@ The normal `teensy41_display` image requires that wiring change and disables
 Serial1. Both scope and USB-PD demo apps are available on the installed image.
 
 Installed HEX SHA256:
-`ab156c3f0e28c0000559e5e8673de2927f146279e0cf9aaff2038e9b0bc25576`.
-Flash 1,407,624 bytes; RAM1 438,752; RAM2 340,848.
+`bd46884e615f35e899cc6d3372d0836d97f45597a12a4d5517937b125517603a`.
+Flash 1,416,488 bytes; RAM1 438,880; RAM2 340,848.
 Microsoft keyboard `045e:0750`, powered USB host hub, RA8875 LCD, native SD,
 USB drive, QSPI flash and 8 MiB PSRAM. Audio shield was absent in recent tests.
 See [quick-start and wiring](README.md).
 
-## Latest addition: stage 4 hardware resources
+## Latest addition: PSRAM RAMFS (original item 7)
+
+Installed quota-backed temporary mounts using shared SolarOS RAMFS:
+`ramfs mount /ram 1m`, ordinary file/app paths, `df`, Files/Edit, Python,
+archives and cross-volume transfers. No automatic mount; reboot/unmount loses
+contents. Up to four top-level mounts, 1 KiB–4 MiB each; 512 KiB PSRAM admission
+reserve. Busy file/directory handles block unmount, including background Python.
+Unknown root paths no longer implicitly target SD: use explicit `/sd/...`.
+See [RAMFS usage, API and limits](teensy41-ramfs.md).
+
+Host ASan/UBSan and eight manual tests pass. Main device acceptance passed:
+`/tmp/teensy-ramfs-device.json`; five cycles recovered exactly 28,516 internal /
+8,158,704 PSRAM bytes free. Supplemental device evidence is
+`/tmp/teensy-ramfs-edges.json` passed (editor, LCD, four mounts, flash, reboot).
+The reboot test leaves no RAMFS mounts or retained test apps. Ethernet may need
+`network up` again. No wiring changes were made.
+Recovery checkpoint: `../solar_os-baselines/2026-10-01-ramfs/`.
+
+The original approved workstation sequence (1, 2, 3, 4, 7), plus reusable Tab
+completion, is implemented within the documented port limits. No next feature
+has been selected. Earlier work is committed/pushed as `d6a16f9`; unrelated DNP3
+files remain untouched and excluded from commits/checkpoints.
+
+## Previous addition: stage 4 hardware resources
 
 Installed `gpio`, `i2c`, `spi`, `uart`, `expansion`, inspection `io`, and shared
 resumable `com`, with fixed board pin reservations and atomic UART claims.
@@ -30,8 +53,7 @@ recovery (28,644 internal / 8,160,108 PSRAM free). UART8 is closed; user was tol
 the jumper can be removed. External SPI/I2C devices are not validated.
 
 Recovery checkpoint: `../solar_os-baselines/2026-09-30-hardware/`.
-Next approved stage is PSRAM `ramfs`, original review item 7. The completed workstation
-changes are committed before RAMFS work; unrelated DNP3 work is untouched.
+PSRAM RAMFS followed this checkpoint; see current state above.
 
 ## Previous addition: shared Tab completion
 
@@ -67,8 +89,8 @@ recover exactly 29,124 internal / 8,163,984 PSRAM bytes free. The test synchroni
 the host computer, leaves Ethernet up and preserves the saved timezone. Recovery
 artifacts are in `../solar_os-baselines/2026-09-30-netdiag/`.
 
-Stage 4 has since been completed; RAMFS is next.
-Stage 1/2/2b/3 changes remain local and uncommitted.
+Stages 4 and RAMFS have since been completed.
+Stage 1/2/2b/3 changes are included in commit `d6a16f9`.
 
 ## Detachable MicroPython processes (stage 2b)
 
@@ -154,27 +176,29 @@ that earlier session/keyboard testing; stage 3 now synchronizes UTC via NTP. Use
 and `time HH:MM:SS` to set local time, or the documented `rtc` UTC interface.
 Correct UTC is required for HTTPS. Saved Manitoba timezone is fixed UTC-5.
 
-## Next work
+## Completed sequence and next work
 
-The user approved this order, one stage at a time:
+The user-approved sequence is complete, within the limits in each feature note:
 
 1. Retained app sessions — implemented and automated acceptance passed; user confirmed Ctrl+Z, calculator retention and Plot repaint. Editor visual checks remain optional follow-up.
 2. Background jobs and scheduling (`jobs`, `job`, `schedule`) — implemented; host/device acceptance passes.
    Stage 2b detachable MicroPython (`bg`/`fg`, input/output, safe stop, tail) also passes final-image device tests.
 3. Network diagnostics and clock sync (`ntp`, `ping`, `netscan`) — implemented; see the stage 3 notes above.
 4. Hardware resource management and serial terminals (GPIO/buses, `io`,
-   `expansion`, `com`, with pin ownership).
-5. PSRAM temporary storage (`ramfs`, item 7 of the original recommendation).
+   `expansion`, `com`, with pin ownership) — installed and validated.
+5. PSRAM temporary storage (`ramfs`, item 7 of the original recommendation) — installed and validated.
 
-Do not substitute monitoring or file-transfer features for the approved RAMFS
-stage. General pipes/redirection are separate backlog, not implicit POSIX support.
+No new feature is selected. General pipes/redirection, monitoring and file-transfer
+features remain separate backlog, not implicit POSIX support.
 Cold DF scan cooperation, physical SD removal, Clock audio, scope wiring/ADC,
 STUSB4500 and CAN prerequisites remain in the master checklist.
 
 ## Recovery and repository state
 
 Local firmware/source/log checkpoints are in `../solar_os-baselines/`:
-`2026-09-30-completion/` is the installed completion build;
+`2026-10-01-ramfs/` is the installed RAMFS build;
+`2026-09-30-hardware/` is the prior hardware-command build;
+`2026-09-30-completion/` is the earlier completion build;
 `2026-09-30-netdiag/` is the prior diagnostic build;
 `2026-09-30-process-jobs/`, `2026-09-30-jobs/`, and `2026-09-30-sessions/`
 are earlier workstation checkpoints;

@@ -13,7 +13,11 @@
 #include <unistd.h>
 
 #include "esp_attr.h"
+#if SOLAR_OS_RAMFS_PORTABLE
+#include "solar_os_ramfs_portable.h"
+#else
 #include "esp_vfs.h"
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "solar_os_board_caps.h"
@@ -61,13 +65,16 @@ typedef struct {
     ramfs_block_t *blocks;
     size_t file_count;
     size_t dir_count;
+    size_t open_dirs;
     ramfs_node_t root;
     ramfs_file_t files[RAMFS_MAX_OPEN_FILES];
     SemaphoreHandle_t lock;
 } ramfs_mount_t;
 
 typedef struct {
+#if !SOLAR_OS_RAMFS_PORTABLE
     DIR dir;
+#endif
     ramfs_mount_t *mount;
     ramfs_node_t *dir_node;
     ramfs_node_t *next;
@@ -91,10 +98,13 @@ static bool ramfs_path_is_on_mount(const char *path, const char *mount_point)
         (path[len] == '\0' || path[len] == '/');
 }
 
+#if !SOLAR_OS_RAMFS_PORTABLE
 static const char *ramfs_vfs_base_path(const char *mount_point)
 {
     return mount_point != NULL && strcmp(mount_point, "/") == 0 ? "" : mount_point;
 }
+
+#endif
 
 static void ramfs_lock(ramfs_mount_t *mount)
 {
@@ -623,6 +633,12 @@ static int ramfs_vfs_open(void *ctx, const char *path, int flags, int mode)
     int fd = -1;
 
     ramfs_lock(mount);
+    size_t available = 0;
+    while (available < RAMFS_MAX_OPEN_FILES && mount->files[available].active) ++available;
+    if (available == RAMFS_MAX_OPEN_FILES) { errno = EMFILE; goto out; }
+    if ((flags & O_ACCMODE) > O_RDWR || ((flags & O_TRUNC) && (flags & O_ACCMODE) == O_RDONLY)) {
+        errno = EINVAL; goto out;
+    }
     ramfs_node_t *node = ramfs_find_node(mount, path);
     if (node == NULL) {
         if (!(flags & O_CREAT)) {
@@ -699,6 +715,7 @@ static ssize_t ramfs_vfs_read(void *ctx, int fd, void *dst, size_t size)
         goto out;
     }
 
+    if (!size) { ret = 0; goto out; }
     ramfs_node_t *node = file->node;
     if (file->offset >= node->size) {
         ret = 0;
@@ -737,6 +754,7 @@ static ssize_t ramfs_vfs_write(void *ctx, int fd, const void *data, size_t size)
         goto out;
     }
 
+    if (!size) { ret = 0; goto out; }
     ramfs_node_t *node = file->node;
     if (file->flags & O_APPEND) {
         file->offset = node->size;
@@ -773,6 +791,7 @@ static off_t ramfs_vfs_lseek(void *ctx, int fd, off_t offset, int mode)
         goto out;
     }
 
+    if (offset > INT32_MAX || offset < -INT32_MAX) { errno = EINVAL; goto out; }
     int64_t next = 0;
     switch (mode) {
     case SEEK_SET:
@@ -788,7 +807,7 @@ static off_t ramfs_vfs_lseek(void *ctx, int fd, off_t offset, int mode)
         errno = EINVAL;
         goto out;
     }
-    if (next < 0 || next > SIZE_MAX) {
+    if (next < 0 || next > INT32_MAX) {
         errno = EINVAL;
         goto out;
     }
@@ -850,6 +869,7 @@ static int ramfs_vfs_unlink(void *ctx, const char *path)
     int ret = -1;
 
     ramfs_lock(mount);
+    if (mount->open_dirs) { errno = EBUSY; goto out; }
     ramfs_node_t *node = ramfs_find_node(mount, path);
     if (node == NULL) {
         goto out;
@@ -877,6 +897,7 @@ static int ramfs_vfs_rename(void *ctx, const char *src, const char *dst)
     int ret = -1;
 
     ramfs_lock(mount);
+    if (mount->open_dirs) { errno = EBUSY; goto out; }
     ramfs_node_t *node = ramfs_find_node(mount, src);
     if (node == NULL) {
         goto out;
@@ -894,6 +915,10 @@ static int ramfs_vfs_rename(void *ctx, const char *src, const char *dst)
     if (ramfs_find_child(new_parent, leaf) != NULL) {
         errno = EEXIST;
         goto out;
+    }
+
+    for (ramfs_node_t *ancestor = new_parent; ancestor; ancestor = ancestor->parent) {
+        if (ancestor == node) { errno = EINVAL; goto out; }
     }
 
     char *new_name = ramfs_alloc(mount, strlen(leaf) + 1);
@@ -932,14 +957,13 @@ static DIR *ramfs_vfs_opendir(void *ctx, const char *name)
         goto out;
     }
 
-    dir = solar_os_memory_calloc(1,
-                                 sizeof(*dir),
-                                 SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,
-                                 "ramfs.dir");
+    dir = ramfs_alloc(mount, sizeof(*dir));
     if (dir == NULL) {
         errno = ENOMEM;
         goto out;
     }
+    memset(dir, 0, sizeof(*dir));
+    mount->open_dirs++;
     dir->mount = mount;
     dir->dir_node = node;
     dir->next = node->children;
@@ -1026,7 +1050,12 @@ static int ramfs_vfs_closedir(void *ctx, DIR *pdir)
         errno = EBADF;
         return -1;
     }
-    solar_os_memory_free(pdir);
+    ramfs_dir_t *dir = (ramfs_dir_t *)pdir;
+    ramfs_mount_t *mount = dir->mount;
+    ramfs_lock(mount);
+    mount->open_dirs--;
+    ramfs_free(mount, dir, sizeof(*dir));
+    ramfs_unlock(mount);
     return 0;
 }
 
@@ -1059,6 +1088,7 @@ static int ramfs_vfs_rmdir(void *ctx, const char *name)
     int ret = -1;
 
     ramfs_lock(mount);
+    if (mount->open_dirs) { errno = EBUSY; goto out; }
     ramfs_node_t *node = ramfs_find_node(mount, name);
     if (node == NULL) {
         goto out;
@@ -1127,7 +1157,8 @@ static int ramfs_vfs_ftruncate(void *ctx, int fd, off_t length)
 
     ramfs_lock(mount);
     ramfs_file_t *file = ramfs_get_file(mount, fd);
-    if (file != NULL) {
+    if (file != NULL && (file->flags & O_ACCMODE) == O_RDONLY) { errno = EBADF; }
+    else if (file != NULL) {
         ret = ramfs_resize_node(mount, file->node, (size_t)length);
         if (ret == 0 && file->offset > (size_t)length) {
             file->offset = (size_t)length;
@@ -1148,8 +1179,12 @@ static int ramfs_vfs_fsync(void *ctx, int fd)
     return ret;
 }
 
+#if SOLAR_OS_RAMFS_PORTABLE
+static const solar_os_ramfs_ops_t ramfs_vfs = {
+#else
 static const esp_vfs_t ramfs_vfs = {
     .flags = ESP_VFS_FLAG_CONTEXT_PTR,
+#endif
     .write_p = ramfs_vfs_write,
     .lseek_p = ramfs_vfs_lseek,
     .read_p = ramfs_vfs_read,
@@ -1157,7 +1192,7 @@ static const esp_vfs_t ramfs_vfs = {
     .close_p = ramfs_vfs_close,
     .fstat_p = ramfs_vfs_fstat,
     .fsync_p = ramfs_vfs_fsync,
-#ifdef CONFIG_VFS_SUPPORT_DIR
+#if defined(CONFIG_VFS_SUPPORT_DIR) || SOLAR_OS_RAMFS_PORTABLE
     .stat_p = ramfs_vfs_stat,
     .unlink_p = ramfs_vfs_unlink,
     .rename_p = ramfs_vfs_rename,
@@ -1226,11 +1261,21 @@ static esp_err_t ramfs_validate_mount_point(const char *mount_point)
     if (mount_point == NULL || mount_point[0] != '/') {
         return ESP_ERR_INVALID_ARG;
     }
-    if (strcmp(mount_point, "/") == 0) {
-        return ESP_OK;
-    }
+#if SOLAR_OS_RAMFS_PORTABLE
+    /* Teensy namespace root contains mounts only. Never shadow physical media. */
+    if (!mount_point[1] || !strcmp(mount_point,"/sd") ||
+        !strcmp(mount_point,"/usb") || !strcmp(mount_point,"/flash")) return ESP_ERR_INVALID_ARG;
+    for (const char *p = mount_point + 1; *p; ++p)
+        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+              (*p >= '0' && *p <= '9') || *p == '_' || *p == '-')) return ESP_ERR_INVALID_ARG;
+#else
+    if (strcmp(mount_point, "/") == 0) return ESP_OK;
+#endif
     const size_t len = strlen(mount_point);
-    if (len == 0 || len >= SOLAR_OS_RAMFS_MOUNT_POINT_MAX || len > ESP_VFS_PATH_MAX) {
+#if !SOLAR_OS_RAMFS_PORTABLE
+    if (len > ESP_VFS_PATH_MAX) return ESP_ERR_INVALID_SIZE;
+#endif
+    if (len == 0 || len >= SOLAR_OS_RAMFS_MOUNT_POINT_MAX) {
         return ESP_ERR_INVALID_SIZE;
     }
     if (mount_point[len - 1] == '/') {
@@ -1305,6 +1350,7 @@ esp_err_t solar_os_ramfs_mount(const char *mount_point, size_t quota_bytes)
     }
     strlcpy(mount->mount_point, mount_point, sizeof(mount->mount_point));
 
+#if !SOLAR_OS_RAMFS_PORTABLE
     ret = esp_vfs_register(ramfs_vfs_base_path(mount->mount_point), &ramfs_vfs, mount);
     if (ret != ESP_OK) {
         vSemaphoreDelete(mount->lock);
@@ -1312,6 +1358,7 @@ esp_err_t solar_os_ramfs_mount(const char *mount_point, size_t quota_bytes)
         memset(mount, 0, sizeof(*mount));
         return ret;
     }
+#endif
     mount->active = true;
     return ESP_OK;
 #endif
@@ -1329,6 +1376,7 @@ esp_err_t solar_os_ramfs_unmount(const char *mount_point)
     }
 
     ramfs_lock(mount);
+    if (mount->open_dirs) { ramfs_unlock(mount); return ESP_ERR_INVALID_STATE; }
     for (size_t i = 0; i < RAMFS_MAX_OPEN_FILES; i++) {
         if (mount->files[i].active) {
             ramfs_unlock(mount);
@@ -1337,11 +1385,13 @@ esp_err_t solar_os_ramfs_unmount(const char *mount_point)
     }
     ramfs_unlock(mount);
 
+#if !SOLAR_OS_RAMFS_PORTABLE
     esp_err_t ret = esp_vfs_unregister(ramfs_vfs_base_path(mount->mount_point));
     if (ret != ESP_OK) {
         return ret;
     }
 
+#endif
     ramfs_lock(mount);
     ramfs_free_tree(mount, &mount->root);
     ramfs_unlock(mount);
@@ -1385,6 +1435,7 @@ bool solar_os_ramfs_get_info(size_t index, solar_os_ramfs_info_t *info)
         ramfs_get_space_locked(mount, &info->total_bytes, &info->used_bytes, &info->free_bytes);
         info->file_count = mount->file_count;
         info->dir_count = mount->dir_count;
+        info->open_count = mount->open_dirs;
         for (size_t fd = 0; fd < RAMFS_MAX_OPEN_FILES; fd++) {
             if (mount->files[fd].active) {
                 info->open_count++;
@@ -1438,3 +1489,8 @@ esp_err_t solar_os_ramfs_get_usage_for_path(const char *path,
     ramfs_unlock(mount);
     return ESP_OK;
 }
+
+#if SOLAR_OS_RAMFS_PORTABLE
+const solar_os_ramfs_ops_t *solar_os_ramfs_ops(void) { return &ramfs_vfs; }
+void *solar_os_ramfs_context(const char *path) { return ramfs_find_path_mount(path); }
+#endif

@@ -1,6 +1,6 @@
 # Teensy / SuperKeyboard outstanding test checklist
 
-Updated 2026-09-30. **Use this as the master test queue.** Feature notes linked
+Updated 2026-10-01. **Use this as the master test queue.** Feature notes linked
 below contain procedures and historical evidence; the roadmap tracks development.
 Unchecked items are outstanding, not failed unless explicitly described as such.
 Do not check off a physical test based on simulation, injected input or a build.
@@ -11,7 +11,7 @@ Do not check off a physical test based on simulation, injected input or a build.
 | --- | --- | --- |
 | USB-storage baseline | Historical, preserved checkpoint | Earlier physical USB/keyboard checks passed here; no SD recovery or Clock |
 | Clock image | Prior validated checkpoint | Includes SD recovery and OBD demo; AmpEn is still pin 40; Clock remote checks passed |
-| Workstation legacy image, stages 1–4 | Currently installed; sessions/jobs/processes/network diagnostics/hardware ownership device tests, UART8 loopback and basic physical repeat passed | AmpEn40, scope ADC disabled, Serial1 retained; includes scope/pdpower demos |
+| Workstation legacy image, stages 1–4 plus RAMFS | Currently installed; sessions/jobs/processes/network diagnostics/hardware ownership device tests, UART8 loopback and basic physical repeat passed | AmpEn40, scope ADC disabled, Serial1 retained; includes scope/pdpower demos |
 | Normal display candidate | Built, not flashed | Telnet plus scope ADC40/AmpEn0; Serial1 UART disabled; USB/LCD retained |
 
 - [ ] **SETUP-1 — Pending pin move:** move AmpEn to pin 0 before installing the
@@ -336,3 +336,20 @@ See [routing, commands and limits](teensy41-hardware-resources.md). Evidence:
   SPI mode/rate/data validation against a known peripheral; observe bus signals.
 - [ ] **HW-5 — Wider UART coverage:** physical UART7, sustained RX throughput,
   overflow behavior and another serial endpoint. UART3 conflicts with display WAIT.
+
+## PSRAM RAMFS (original item 7)
+
+See [RAMFS notes](teensy41-ramfs.md). Final main acceptance:
+`/tmp/teensy-ramfs-device.json`; additional app/reboot checks:
+`/tmp/teensy-ramfs-edges.json`; checkpoint `2026-10-01-ramfs`.
+
+- [x] **RAMFS-1 — Backend:** sanitizer tests for quotas, sparse seek/append,
+  busy handles, invalid mounts, rename cycles, descriptor exhaustion and cleanup.
+- [x] **RAMFS-2 — Device routing:** Python, shell, Files, archives, SD copy/move,
+  completion, df, suspended/background worker busy unmount and ENOSPC integrity.
+- [x] **RAMFS-3 — Recovery:** five cycles recover exactly 28,516 internal /
+  8,158,704 PSRAM bytes free after unmount.
+- [x] **RAMFS-4 — App and reboot checks:** editor create/overwrite save, LCD
+  visibility, four mounts, flash transfer and actual reboot volatility.
+- [ ] **RAMFS-5 — Long-running workload:** sustained background logging with
+  concurrent app use, varying quotas and fragmentation under realistic data rates.

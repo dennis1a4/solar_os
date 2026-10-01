@@ -15,6 +15,9 @@ saved timezone. See [usage and limits](teensy41-network-diagnostics.md).
 works at the cursor and lists ambiguous matches on a second Tab. See
 [completion usage and shared API](teensy41-completion.md).
 
+**Temporary storage:** `ramfs mount /ram 1m` creates a volatile PSRAM volume
+usable by the shell, Files/Edit and Python. See [RAMFS limits and usage](teensy41-ramfs.md).
+
 **Hardware commands:** protected GPIO, I2C/SPI transfers, UARTs, expansion CS
 leases, `io` inspection and resumable `com`. Physical UART8 loopback passed. See
 [usage, routing and limits](teensy41-hardware-resources.md).

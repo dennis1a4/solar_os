@@ -562,3 +562,18 @@ rejection, USB/LCD exclusion, COM suspension/resume, disconnect cleanup,
 completion and stable memory. No external I2C/SPI data is written. Optional
 loopback checks actual raw UART and COM echo. See
 [hardware notes](../../doc/ports/teensy41-hardware-resources.md).
+
+## PSRAM RAMFS
+
+```sh
+bash scripts/ports/test_teensy41_ramfs_host.sh
+python3 scripts/ports/test_teensy41_ramfs.py --log /tmp/teensy-ramfs-device.json
+python3 scripts/ports/test_teensy41_ramfs.py --edges-only --reboot --log /tmp/teensy-ramfs-edges.json
+```
+
+Requires idle consoles/exclusive USB and no existing RAMFS mounts. Uses unique
+volatile mounts plus temporary SD/flash files and removes its fixtures. Tests
+file/app routing, busy worker handles, quotas, completion, accounting and cleanup.
+`--edges-only` selects editor/multiple-mount/LCD/flash coverage. `--reboot` adds a
+board restart to verify volatility. Host sanitizer tests compile the actual
+shared backend. See [limits](../../doc/ports/teensy41-ramfs.md).
