@@ -1,5 +1,7 @@
 # SolarOS on Teensy 4.1 / SuperKeyboard
 
+**Quick reference:** [View formats, controls and finding help](teensy41-quick-reference.md).
+
 **Workstation commands:** [Command audit and integration](teensy41-workstation.md).
 `help` now browses the embedded manual; use `commands` for the command list,
 `man watch` for a topic and `watch -n 2 top` for task monitoring. `session list`
@@ -46,6 +48,15 @@ Incoming Ethernet shells are available through [Telnet](teensy41-telnetd.md),
 with explicit startup and password login. The currently tested old-wiring image
 uses `teensy41_telnet_legacy` (AmpEn40, scope ADC disabled). The normal
 `teensy41_display` candidate requires the planned AmpEn0/ADC40 wiring change.
+
+## Revised PCB pinout
+
+The [2026-10-01 PCB target pinout](superkeyboard-pcb-pinout.md) assigns RGB to
+pin 0, AmpEn to pin 1 and DMM input to pin 40. This is **not the bench wiring**.
+The flash-drive ODS has been checked: header 2 is main-display-only and pin 9
+is backlight PWM despite its connector-reference name. Display-specific wiring
+still needs checking before a PCB profile; none has been applied. Earlier AmpEn0 proposals below describe older test
+candidates, not the revised PCB target.
 
 ## Tested hardware and wiring
 

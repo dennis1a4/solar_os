@@ -17,6 +17,7 @@ extern "C" {
 #endif
 
 static bool no_args(solar_os_shell_io_t *io,int argc,char **argv) {
+    io->command_status=argc==1?0:2;
     if(argc==1)return true;
     solar_os_shell_io_printf(io,"usage: %s\n",argv[0]); return false;
 }
@@ -34,6 +35,7 @@ extern "C" void sk_shell_cmd_pwd(solar_os_context_t *ctx,int argc,char **argv) {
     if(!no_args(io,argc,argv))return;
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     if(solar_os_shell_resolve_path(ctx,nullptr,path,sizeof(path))==ESP_OK)solar_os_shell_io_writeln(io,path);
+    else io->command_status=1;
 }
 extern "C" void solar_os_shell_cmd_status(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);
@@ -55,10 +57,10 @@ extern "C" void solar_os_shell_cmd_top(solar_os_context_t *ctx,int argc,char **a
     struct Snapshot { char name[configMAX_TASK_NAME_LEN]; };
     auto *tasks=static_cast<TaskStatus_t *>(solar_os_memory_calloc(capacity,sizeof(TaskStatus_t),
         SOLAR_OS_MEMORY_EXTERNAL_PREFERRED,"top.snapshot"));
-    if(!tasks) { solar_os_shell_io_writeln(io,"top: no memory");return; }
+    if(!tasks) { io->command_status=1;solar_os_shell_io_writeln(io,"top: no memory");return; }
     auto *names=static_cast<Snapshot *>(solar_os_memory_calloc(capacity,sizeof(Snapshot),
         SOLAR_OS_MEMORY_EXTERNAL_PREFERRED,"top.names"));
-    if(!names) { solar_os_memory_free(tasks);solar_os_shell_io_writeln(io,"top: no memory");return; }
+    if(!names) { io->command_status=1;solar_os_memory_free(tasks);solar_os_shell_io_writeln(io,"top: no memory");return; }
     configRUN_TIME_COUNTER_TYPE total=0;
     vTaskSuspendAll();
     const UBaseType_t count=uxTaskGetSystemState(tasks,capacity,&total);
@@ -73,15 +75,16 @@ extern "C" void solar_os_shell_cmd_top(solar_os_context_t *ctx,int argc,char **a
         solar_os_shell_io_printf(io,"%-20s %-7s %u %lu %u.%u%%\n",names[i].name,state,
             (unsigned)t.uxCurrentPriority,(unsigned long)(t.usStackHighWaterMark*sizeof(StackType_t)),tenths/10,tenths%10);
     }
-    if(!count)solar_os_shell_io_writeln(io,"top: task list changed; retry");
+    if(!count){io->command_status=1;solar_os_shell_io_writeln(io,"top: task list changed; retry");}
     solar_os_memory_free(tasks);
     solar_os_memory_free(names);
 }
 extern "C" void solar_os_shell_cmd_port(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);
     if(argc>2 || (argc==2 && strcmp(argv[1],"list"))) {
-        solar_os_shell_io_writeln(io,"usage: port [list]");return;
+        io->command_status=2;solar_os_shell_io_writeln(io,"usage: port [list]");return;
     }
+    io->command_status=0;
     solar_os_port_info_t ports[8];
     const size_t count=solar_os_port_list(ports,8);
     for(size_t i=0;i<count && i<8;++i)solar_os_shell_io_printf(io,"%-10s %-16s %s\n",
@@ -98,7 +101,7 @@ extern "C" void solar_os_shell_cmd_df(solar_os_context_t *ctx,int argc,char **ar
         if(err==ESP_OK)solar_os_shell_io_printf(io,"%-10s %12llu %12llu %12llu\n",mount.mount_point,
             (unsigned long long)(usage.total_bytes/1024),(unsigned long long)(usage.used_bytes/1024),
             (unsigned long long)(usage.free_bytes/1024));
-        else solar_os_shell_io_printf(io,"%s: %s\n",mount.mount_point,esp_err_to_name(err));
+        else {io->command_status=1;solar_os_shell_io_printf(io,"%s: %s\n",mount.mount_point,esp_err_to_name(err));}
     }
 }
 #if SK_CLOCK
@@ -107,6 +110,7 @@ static unsigned digits(const char *s,size_t n) {
 }
 static void datetime_command(solar_os_context_t *ctx,int argc,char **argv,bool date) {
     auto *io=solar_os_context_shell_io(ctx);
+    io->command_status=1;
     solar_os_datetime_t value{};
     esp_err_t err=solar_os_time_get_datetime(&value);
     if(argc>2) { solar_os_shell_io_printf(io,"usage: %s [%s]\n",argv[0],date?"YYYY-MM-DD":"HH:MM[:SS]");return; }
@@ -128,6 +132,7 @@ static void datetime_command(solar_os_context_t *ctx,int argc,char **argv,bool d
         err=solar_os_time_set_datetime(&value);
     }
     if(err!=ESP_OK) { solar_os_shell_io_printf(io,"%s: %s\n",argv[0],esp_err_to_name(err));return; }
+    io->command_status=0;
     if(date)solar_os_shell_io_printf(io,"%04u-%02u-%02u\n",value.year,value.month,value.day);
     else solar_os_shell_io_printf(io,"%02u:%02u:%02u\n",value.hour,value.minute,value.second);
 }

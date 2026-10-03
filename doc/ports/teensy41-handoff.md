@@ -1,8 +1,44 @@
 # Teensy / SuperKeyboard handover
 
-Updated 2026-10-01. Branch: `teensy41`; GitHub: `dennis1a4/solar_os`.
+Updated 2026-10-03. Branch: `teensy41`; GitHub: `dennis1a4/solar_os`.
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
+
+## Revised PCB target — separate from the bench
+
+Dennis supplied a revised PCB pinout on 2026-10-01 and confirmed it is not for
+the connected test system. See [PCB assignments and open questions](superkeyboard-pcb-pinout.md).
+RGB0/AmpEn1/DMM40 supersede the earlier proposed PCB AmpEn0 assignment. Do not
+flash a changed profile. The flash-drive `Pins_v3.ods` was inspected directly:
+header 2 is main-display-only, pin 9 is backlight PWM (`slot2CS` is a connector
+reference), and pin 33 is secondary backlight; its extra Motor mark is stale,
+not intentional USB-C sharing. Display-specific CS wiring and several schematic
+labels still need checking before a PCB profile. Bench wiring remains as below.
+
+## Latest addition: LCD appearance — 2026-10-03
+
+`lcd font 1|2|3` selects 100×30, 50×15, or 33×10 cells. `lcd color FG BG`
+sets default ANSI colors; `lcd colors` lists names and `lcd reset` restores
+1× white on black. Preferences persist in the `lcd_terminal` settings namespace.
+Resize clears the text console and updates shell/app geometry. Changes refuse
+active/retained LCD apps or active graphics. The fixed PSRAM cell buffer is reused;
+build-reported RAM1/RAM2 are unchanged. Apps' explicit ANSI colors are preserved.
+
+Host ANSI tests cover all scales, malformed input, wrapping, and default colors.
+`scripts/ports/test_teensy41_lcd_appearance.py` passed on hardware: all sizes,
+color validation, busy-app rejection, local-shell resize, reboot persistence,
+and restoration of defaults. Physical pixel appearance was not visually inspected.
+Hardware log: `/tmp/teensy-lcd-appearance-test.log`. Board left at 1× white on black.
+
+## PSRAM policy and shell composition — 2026-10-03
+
+Single-PSRAM allocation policy and bounded shell composition are implemented;
+see [feature notes and acceptance steps](teensy41-shell-composition.md). The
+background-script stack uses 16 KiB EXTMEM and settings snapshots use external
+system allocations. `;`, audited `&&`, and 8 KiB bounded pipes are enabled in
+workstation builds. Build, host tests, USB/LCD pipeline acceptance, 7 MiB RAMFS
+pressure, real NTP status/cancellation, background job stack execution, exact
+memory recovery and reboot persistence pass. The legacy profile is installed.
 
 ## Installed firmware and wiring
 
@@ -12,8 +48,8 @@ The normal `teensy41_display` image requires that wiring change and disables
 Serial1. Both scope and USB-PD demo apps are available on the installed image.
 
 Installed HEX SHA256:
-`f390b353701243770a15e81a6927117ba7172d2be0b63a53cac2acc9d1882878`.
-Flash 1,419,968 bytes; RAM1 438,880; RAM2 340,848.
+`888276f3ba37a23596b5ad8a63322aa6ff16fd482d2417b4103a5c2664b4c0d0`.
+Flash 1,430,344 bytes; RAM1 439,936; RAM2 324,464.
 Microsoft keyboard `045e:0750`, powered USB host hub, RA8875 LCD, native SD,
 USB drive, QSPI flash and 8 MiB PSRAM. Audio shield was absent in recent tests.
 See [quick-start and wiring](README.md).

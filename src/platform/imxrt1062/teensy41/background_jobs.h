@@ -13,7 +13,9 @@ struct BackgroundJob {
     size_t output_size;
 };
 EXTMEM static BackgroundJob script_jobs[4];
-DMAMEM static StackType_t background_stack[4096];
+// Non-realtime, cooperative script worker. Keep TCB and interrupt stacks internal.
+// Static EXTMEM is carved out before the external heap is initialized.
+EXTMEM static StackType_t background_stack[4096] __attribute__((aligned(8)));
 static StaticTask_t background_tcb;
 static const char *script_names[]={"script0","script1","script2","script3"};
 static BackgroundJob *executing_job;

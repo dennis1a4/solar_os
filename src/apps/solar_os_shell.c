@@ -551,7 +551,16 @@ void sk_shell_cmd_close(solar_os_context_t *, int, char **);
 #else
 #define SHELL_CORE_HELP cmd_commands
 #endif
+#if SK_SHELL_COMPOSE
+extern int sk_shell_compose(solar_os_context_t *, const char *);
+extern void sk_shell_cmd_filter(solar_os_context_t *, int, char **);
+#endif
 static const shell_command_t shell_builtin_commands[] = {
+#if SK_SHELL_COMPOSE
+    {"grep", "filter piped lines by literal text", sk_shell_cmd_filter},
+    {"head", "show first piped lines", sk_shell_cmd_filter},
+    {"wc", "count piped lines, words and bytes", sk_shell_cmd_filter},
+#endif
 #if SK_TELNETD
     {"telnetd", "start, stop or inspect the Telnet shell server", solar_os_shell_cmd_telnetd},
 #endif
@@ -3757,6 +3766,8 @@ static void cmd_echo(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *io = shell_io(ctx);
 
+    io->command_status = 0;
+
     for (int i = 1; i < argc; i++) {
         if (i > 1) {
             solar_os_shell_io_write(io, " ");
@@ -3871,6 +3882,7 @@ bool solar_os_shell_resolve_path_for_command(solar_os_context_t *ctx,
         return true;
     }
 
+    term->command_status = 1;
     const char *reason = err == ESP_ERR_INVALID_SIZE ? "path too long" : "invalid path";
     solar_os_shell_io_printf(term,
                              "%s: %s: %s\n",
@@ -9562,6 +9574,14 @@ static bool shell_execute_line(solar_os_context_t *ctx,
         return true;
     }
 
+#if SK_SHELL_COMPOSE
+    int composed = sk_shell_compose(ctx, line);
+    if (composed >= 0) {
+        if (add_history) shell_history_add(ctx, line);
+        return composed != 0;
+    }
+#endif
+    io->command_status = -1;
     strlcpy(command, line, sizeof(command));
     const solar_os_shell_parse_result_t parsed =
         solar_os_shell_tokenize(command, argv, SHELL_ARG_MAX);

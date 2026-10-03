@@ -12,6 +12,7 @@ extern "C" void sk_clock_rtc_set(uint32_t epoch) { Teensy3Clock.set(epoch); }
 #endif
 extern "C" void solar_os_shell_cmd_rtc(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);
+    io->command_status=1;
     if(argc==3 && !strcmp(argv[1],"set")) {
         char *end;errno=0;unsigned long long value=strtoull(argv[2],&end,10);
         if(!*argv[2] || *end || errno || value<946684800 || value>UINT32_MAX) {
@@ -21,6 +22,7 @@ extern "C" void solar_os_shell_cmd_rtc(solar_os_context_t *ctx,int argc,char **a
     } else if(argc!=1) {
         solar_os_shell_io_writeln(io,"usage: rtc | rtc set <UTC Unix seconds>");return;
     }
+    io->command_status=0;
     time_t now=Teensy3Clock.get();struct tm utc{};gmtime_r(&now,&utc);
     solar_os_shell_io_printf(io,"RTC UTC %04d-%02d-%02d %02d:%02d:%02d epoch=%llu\n",
         utc.tm_year+1900,utc.tm_mon+1,utc.tm_mday,utc.tm_hour,utc.tm_min,utc.tm_sec,

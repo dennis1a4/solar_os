@@ -383,6 +383,12 @@ esp_err_t solar_os_shell_io_write_len(solar_os_shell_io_t *io, const char *text,
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (io->command_output_fn) {
+        esp_err_t err = io->command_output_fn(text, len, io->command_output_user);
+        if (err != ESP_OK) io->command_status = 1;
+        return err;
+    }
+
     if (shell_io_has_display(io)) {
         for (size_t i = 0; i < len; i++) {
             solar_os_terminal_put_char(io->terminal, text[i]);
@@ -410,6 +416,12 @@ esp_err_t solar_os_shell_io_write_raw(solar_os_shell_io_t *io, const char *data,
     if (io == NULL || (data == NULL && len > 0)) {
         return ESP_ERR_INVALID_ARG;
     }
+    if (io->command_output_fn) {
+        esp_err_t err = io->command_output_fn(data, len, io->command_output_user);
+        if (err != ESP_OK) io->command_status = 1;
+        return err;
+    }
+
     if (len == 0) {
         return ESP_OK;
     }
@@ -478,6 +490,8 @@ esp_err_t solar_os_shell_io_set_bold(solar_os_shell_io_t *io, bool enabled)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (io->command_output_fn) return ESP_OK;
+
     if (shell_io_has_display(io)) {
         solar_os_terminal_set_bold(io->terminal, enabled);
         io->bold = enabled;
@@ -505,6 +519,8 @@ esp_err_t solar_os_shell_io_set_italic(solar_os_shell_io_t *io, bool enabled)
     if (io == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
+
+    if (io->command_output_fn) return ESP_OK;
 
     if (shell_io_has_display(io)) {
         solar_os_terminal_set_italic(io->terminal, enabled);
@@ -534,6 +550,8 @@ esp_err_t solar_os_shell_io_set_underline(solar_os_shell_io_t *io, bool enabled)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (io->command_output_fn) return ESP_OK;
+
     if (shell_io_has_display(io)) {
         solar_os_terminal_set_underline(io->terminal, enabled);
         io->underline = enabled;
@@ -561,6 +579,8 @@ esp_err_t solar_os_shell_io_set_inverse(solar_os_shell_io_t *io, bool enabled)
     if (io == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
+
+    if (io->command_output_fn) return ESP_OK;
 
     if (shell_io_has_display(io)) {
         solar_os_terminal_set_inverse(io->terminal, enabled);
@@ -662,6 +682,12 @@ esp_err_t solar_os_shell_io_put_char(solar_os_shell_io_t *io, char ch)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (io->command_output_fn) {
+        esp_err_t err = io->command_output_fn(&ch, 1, io->command_output_user);
+        if (err != ESP_OK) io->command_status = 1;
+        return err;
+    }
+
     if (shell_io_has_display(io)) {
         solar_os_terminal_put_char(io->terminal, ch);
         io->cursor_row = solar_os_terminal_cursor_row(io->terminal);
@@ -692,6 +718,12 @@ esp_err_t solar_os_shell_io_put_utf8_byte(solar_os_shell_io_t *io, uint8_t byte)
 {
     if (io == NULL) {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    if (io->command_output_fn) {
+        esp_err_t err = io->command_output_fn((const char *)&byte, 1, io->command_output_user);
+        if (err != ESP_OK) io->command_status = 1;
+        return err;
     }
 
     if (shell_io_has_display(io)) {
@@ -1097,6 +1129,7 @@ esp_err_t solar_os_shell_io_set_foreground(solar_os_shell_io_t *io,uint8_t color
 {
     static const char *const colors[]={"\x1b[39m","\x1b[94m","\x1b[92m","\x1b[96m","\x1b[93m","\x1b[95m","\x1b[90m","\x1b[97m"};
     if(!io || color>=sizeof(colors)/sizeof(*colors))return ESP_ERR_INVALID_ARG;
+    if (io->command_output_fn) return ESP_OK;
     if(io->foreground==color)return ESP_OK;
     esp_err_t err=ESP_OK;
     /* Monochrome displays and dumb terminals retain the existing attributes.

@@ -258,6 +258,17 @@ the LCD's text buffer. From USB, `lcd send "COMMAND"` queues text and Enter to
 the LCD session, for display diagnostics without a local keyboard. Input goes
 to whichever app is active there. The two consoles share files and services.
 
+Use `lcd font 1`, `lcd font 2`, or `lcd font 3` for 100×30, 50×15, or
+33×10 characters respectively. Resizing clears the LCD console. Text apps use
+the selected geometry; some layouts need the smaller font.
+`lcd color green black` selects default foreground/background colors;
+`lcd colors` lists the 16 accepted color names. Explicit ANSI colors from apps
+remain intact. Foreground and background must differ. `lcd reset` restores
+1× white-on-black text. Changes require the LCD shell to be idle with no
+active or retained apps, and persist across reboot when settings storage is
+available. A save failure is reported and the change lasts only for this boot.
+These controls affect only the LCD; USB/Telnet geometry is independent.
+
 ## System And Diagnostics
 
 | Command | Usage | Description |
@@ -633,6 +644,9 @@ same job again stops the previous instance and starts it with the new arguments.
 | `cd` | `cd [path]` | Change current shell directory. |
 | `ls` | `ls [-a] [-h] [path|pattern]` | List files. Hidden files are shown only with `-a`; sizes are human-readable with `-h`. |
 | `cat` | `cat <path|pattern>` | Print a small text file. |
+| `grep` | `... | grep LITERAL` | Teensy: filter bounded pipe input by literal text. |
+| `head` | `... | head [-n COUNT]` | Teensy: print the first piped lines. |
+| `wc` | `... | wc [-l|-w|-c]` | Teensy: count piped lines, words, or bytes. |
 | `mkdir` | `mkdir <path> [path...]` | Create directories. |
 | `rm` | `rm [-f|-rf] <path|pattern> [path|pattern...]` | Remove files. `-f` allows directories; `-rf` removes directories recursively. |
 | `mv` | `mv <source|pattern> <dest>` | Rename or move a file or matched set. |

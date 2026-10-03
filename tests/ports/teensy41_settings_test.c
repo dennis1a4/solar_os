@@ -10,6 +10,8 @@
 
 static bool mounted=true, fail_sync, fail_replace;
 static unsigned replacements;
+extern unsigned settings_host_allocations;
+extern bool settings_host_fail_alloc;
 bool solar_os_storage_flash_is_mounted(void) { return mounted; }
 esp_err_t solar_os_storage_sync_file(FILE *file) {
     return !fail_sync && fflush(file)==0 && fsync(fileno(file))==0 ? ESP_OK : ESP_FAIL;
@@ -117,5 +119,10 @@ int main(void) {
     assert(nvs_open("test",NVS_READWRITE,&h)==ESP_ERR_INVALID_CRC);
     file=fopen("settings/test.bin","wb"); assert(file); assert(fclose(file)==0);
     assert(nvs_open("test",NVS_READWRITE,&h)==ESP_ERR_INVALID_CRC);
+    assert(settings_host_allocations==0);
+    settings_host_fail_alloc=true;
+    assert(nvs_open("nomemory",NVS_READWRITE,&h)==ESP_ERR_NO_MEM);
+    assert(settings_host_allocations==0);
+    settings_host_fail_alloc=false;
     printf("Settings transaction, bounds, permissions, stale handles, and corruption tests passed (%s)\n",dir);
 }

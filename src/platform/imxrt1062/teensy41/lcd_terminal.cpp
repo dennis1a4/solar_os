@@ -7,8 +7,17 @@ void LcdTerminal::blank(unsigned row,unsigned first,unsigned end) {
         cells[row][col]={' ',fg,bg,flags}; dirty[row][col]=true;
     }
 }
+bool LcdTerminal::configure(unsigned size,unsigned foreground,unsigned background) {
+    if(size<1 || size>3 || foreground>15 || background>15 || foreground==background) return false;
+    bool resized=scale!=size || !cols || !rows;
+    scale=size; cols=max_cols/scale; rows=max_rows/scale;
+    default_fg=foreground; default_bg=background;
+    if(resized) reset();
+    memset(dirty,1,sizeof(dirty));
+    return true;
+}
 void LcdTerminal::reset() {
-    x=y=sx=sy=top=0; bottom=rows-1; fg=7; bg=flags=state=utf8=0;
+    x=y=sx=sy=top=0; bottom=rows-1; fg=bg=default_color; flags=state=utf8=0;
     visible=autowrap=true; wrap=priv=overflow=false; count=0;
     for(unsigned row=0;row<rows;++row) blank(row,0,cols);
 }
@@ -58,7 +67,7 @@ void LcdTerminal::csi(uint8_t ch) {
     case 'm':
         for(unsigned i=0;i<=count;++i) {
             unsigned p=params[i];
-            if(p==0) { fg=7; bg=flags=0; }
+            if(p==0) { fg=bg=default_color; flags=0; }
             else if(p==1) flags|=1;
             else if(p==4) flags|=2;
             else if(p==7) flags|=4;
@@ -69,8 +78,8 @@ void LcdTerminal::csi(uint8_t ch) {
             else if(p>=40 && p<=47) bg=p-40;
             else if(p>=90 && p<=97) fg=p-90+8;
             else if(p>=100 && p<=107) bg=p-100+8;
-            else if(p==39) fg=7;
-            else if(p==49) bg=0;
+            else if(p==39) fg=default_color;
+            else if(p==49) bg=default_color;
         }
         break;
     default: break;

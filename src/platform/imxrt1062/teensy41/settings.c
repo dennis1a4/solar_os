@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include "solar_os_storage.h"
+#include "solar_os_memory.h"
 
 #ifndef SK_SETTINGS_DIR
 #define SK_SETTINGS_DIR "/flash/.solar-settings"
@@ -96,7 +97,7 @@ esp_err_t nvs_open(const char *name, nvs_open_mode_t mode, nvs_handle_t *out) {
         else if (!strcmp(handles[i]->name,name)) return ESP_ERR_INVALID_STATE;
     }
     if (slot==HANDLE_COUNT) return ESP_ERR_NO_MEM;
-    settings_handle_t *h=calloc(1,sizeof(*h));
+    settings_handle_t *h=solar_os_memory_calloc(1,sizeof(*h),SOLAR_OS_MEMORY_EXTERNAL_SYSTEM,"settings.snapshot");
     if (!h) return ESP_ERR_NO_MEM;
     strcpy(h->name,name); h->writable=mode==NVS_READWRITE;
     char path[96]; path_for(h,path,sizeof(path),false);
@@ -112,14 +113,14 @@ esp_err_t nvs_open(const char *name, nvs_open_mode_t mode, nvs_handle_t *out) {
     } else if (errno!=ENOENT) err=ESP_FAIL;
     else if (!h->writable) err=ESP_ERR_NOT_FOUND;
     else memcpy(h->image,"SKNVS002",8);
-    if (err!=ESP_OK) { free(h); return err; }
+    if (err!=ESP_OK) { solar_os_memory_free(h); return err; }
     do { ++next_id; } while (!next_id || lookup(next_id));
     h->id=next_id; handles[slot]=h; *out=h->id;
     return ESP_OK;
 }
 void nvs_close(nvs_handle_t id) {
     for (unsigned i=0;i<HANDLE_COUNT;i++) if (handles[i] && handles[i]->id==id) {
-        free(handles[i]); handles[i]=NULL; return;
+        solar_os_memory_free(handles[i]); handles[i]=NULL; return;
     }
 }
 static esp_err_t entry(nvs_handle_t id,const char *key,bool write,unsigned char **out) {

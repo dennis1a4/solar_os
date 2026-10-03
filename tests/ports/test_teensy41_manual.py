@@ -17,6 +17,12 @@ class ManualTest(unittest.TestCase):
     def test_workstation_topics(self):
         for name in ('man','watch','session','sessions','fg','close','df','top','pwd','date','time','zip','unzip','ping','netscan','ntp'):
             self.assertIn('command.'+name,self.by_id)
+    def test_composition_topics(self):
+        for name in ('grep', 'head', 'wc'):
+            self.assertIn('command.'+name, self.by_id)
+        self.assertIn('8 KiB', self.by_id['command.echo']['body'])
+        self.assertIn('128 KiB', self.by_id['command.mem']['body'])
+
     def test_hardware_topics(self):
         for name in ("gpio", "i2c", "spi", "uart", "expansion"):
             self.assertIn("command."+name,self.by_id)
@@ -43,6 +49,17 @@ class ManualTest(unittest.TestCase):
             self.assertIn(name,self.by_id['command.'+name]['aliases'])
     def test_help_documents_offline_limit(self):
         self.assertIn('not integrated',self.by_id['command.help']['body'])
+    def test_all_allowlisted_apps_have_pages(self):
+        for name in PORT.APP_NAMES:
+            self.assertIn('app.' + name, self.by_id)
+
+    def test_view_matches_teensy_decoders_and_controls(self):
+        text = self.by_id['app.view']['body']
+        for phrase in ('PNG', 'JPEG', 'GIF', 'BMP', 'PNM P1-P6',
+                       'WebP is unavailable', '0 selects actual size',
+                       '1 selects fit', 'LCD shell', 'PSRAM'):
+            self.assertIn(phrase, text)
+
     def test_hexedit_discoverable(self):
         self.assertIn('app.hexedit',self.by_id)
 

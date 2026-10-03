@@ -42,6 +42,7 @@ extern "C" {
 static LcdTerminal *lcd;
 static SemaphoreHandle_t lcd_mutex;
 static unsigned render_position;
+static bool lcd_repaint=true;
 #if SK_PLOT
 static bool graphics_mode;
 static uint32_t graphics_frames,graphics_ms;
@@ -83,6 +84,7 @@ void sk_displays_begin() {
         lcd=static_cast<LcdTerminal *>(solar_os_memory_calloc(1,sizeof(LcdTerminal),
             SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,"lcd-terminal"));
         configASSERT(lcd_mutex && lcd);
+        lcd->configure(1,7,0);
         lcd->reset();
         primary.setFontDefault();
         primary.setFontScale(0);
@@ -114,9 +116,24 @@ void sk_lcd_write(const char *text,size_t length) {
 }
 void sk_lcd_row(unsigned row,char *out) {
     xSemaphoreTake(lcd_mutex,portMAX_DELAY);
-    for(unsigned col=0;col<LcdTerminal::cols;++col) out[col]=lcd->cells[row][col].ch;
-    out[LcdTerminal::cols]=0;
+    for(unsigned col=0;col<lcd->cols;++col) out[col]=row<lcd->rows?lcd->cells[row][col].ch:' ';
+    out[lcd->cols]=0;
     xSemaphoreGive(lcd_mutex);
+}
+void sk_lcd_appearance(unsigned &scale,unsigned &fg,unsigned &bg) {
+    xSemaphoreTake(lcd_mutex,portMAX_DELAY);
+    scale=lcd->scale; fg=lcd->default_fg; bg=lcd->default_bg;
+    xSemaphoreGive(lcd_mutex);
+}
+bool sk_lcd_configure(unsigned scale,unsigned fg,unsigned bg) {
+#if SK_PLOT
+    if(graphics_mode) return false;
+#endif
+    xSemaphoreTake(lcd_mutex,portMAX_DELAY);
+    bool ok=lcd->configure(scale,fg,bg);
+    if(ok) lcd_repaint=true;
+    xSemaphoreGive(lcd_mutex);
+    return ok;
 }
 void sk_lcd_flush() {
 #if SK_PLOT
@@ -126,21 +143,27 @@ void sk_lcd_flush() {
     static const uint16_t colors[]={0x0000,0xa800,0x0540,0xad40,0x0015,0xa815,0x0555,0xad55,
                                    0x52aa,0xf800,0x07e0,0xffe0,0x001f,0xf81f,0x07ff,0xffff};
     xSemaphoreTake(lcd_mutex,portMAX_DELAY);
+    if(lcd_repaint) {
+        primary.setFontDefault(); primary.setFontScale(lcd->scale-1);
+        primary.clearScreen(colors[lcd->default_bg]);
+        memset(lcd->dirty,1,sizeof(lcd->dirty)); lcd_repaint=false;
+    }
     unsigned drawn=0;
-    for(unsigned checked=0;checked<LcdTerminal::rows*LcdTerminal::cols && drawn<128;++checked) {
-        unsigned pos=render_position++%(LcdTerminal::rows*LcdTerminal::cols);
-        unsigned row=pos/LcdTerminal::cols,col=pos%LcdTerminal::cols;
+    for(unsigned checked=0;checked<lcd->rows*lcd->cols && drawn<128;++checked) {
+        unsigned pos=render_position++%(lcd->rows*lcd->cols);
+        unsigned row=pos/lcd->cols,col=pos%lcd->cols;
         if(!lcd->dirty[row][col]) continue;
         lcd->dirty[row][col]=false; ++drawn;
         const auto cell=lcd->cells[row][col];
-        uint16_t fg=colors[cell.fg | ((cell.flags&1)?8:0)], bg=colors[cell.bg];
+        uint16_t fg=colors[(cell.fg==LcdTerminal::default_color?lcd->default_fg:cell.fg) | ((cell.flags&1)?8:0)];
+        uint16_t bg=colors[cell.bg==LcdTerminal::default_color?lcd->default_bg:cell.bg];
         bool inverse=cell.flags&4;
         if(lcd->visible && row==lcd->y && col==lcd->x) inverse=!inverse;
         if(inverse) { auto t=fg; fg=bg; bg=t; }
         primary.setTextColor(fg,bg);
-        primary.setCursor(col*8,row*16);
+        primary.setCursor(col*8*lcd->scale,row*16*lcd->scale);
         primary.write(cell.ch);
-        if(cell.flags&2) primary.drawLine(col*8,row*16+15,col*8+7,row*16+15,fg);
+        if(cell.flags&2) primary.drawLine(col*8*lcd->scale,(row+1)*16*lcd->scale-1,(col+1)*8*lcd->scale-1,(row+1)*16*lcd->scale-1,fg);
     }
     xSemaphoreGive(lcd_mutex);
     sk_spi_unlock(0);
@@ -323,7 +346,11 @@ void sk_audio_tone(bool on) {
 #if SK_PLOT
 extern "C" void sk_lcd_graphics_mode(bool enabled) {
     graphics_mode=enabled;
-    if (!enabled && lcd) memset(lcd->dirty,1,sizeof(lcd->dirty));
+    if (!enabled && lcd) {
+        xSemaphoreTake(lcd_mutex,portMAX_DELAY);
+        lcd_repaint=true;
+        xSemaphoreGive(lcd_mutex);
+    }
 }
 extern "C" bool sk_lcd_pixels(int x,int y,int width,int height,const uint16_t *pixels) {
     if(!sk_spi_lock(0)) return false;

@@ -192,6 +192,7 @@ static size_t shell_for_each_wildcard_match(solar_os_context_t *ctx,
     }
 
     if (!shell_prepare_wildcard_path(ctx, arg, &wildcard)) {
+        term->command_status = 1;
         solar_os_shell_io_printf(term,
                                  "%s: wildcards are only supported in the filename: %s\n",
                                  command,
@@ -204,6 +205,7 @@ static size_t shell_for_each_wildcard_match(solar_os_context_t *ctx,
 
     DIR *dir = opendir(wildcard.dir_path);
     if (dir == NULL) {
+        term->command_status = 1;
         solar_os_shell_io_printf(term,
                                  "%s: cannot open %s: %s\n",
                                  command,
@@ -216,7 +218,7 @@ static size_t shell_for_each_wildcard_match(solar_os_context_t *ctx,
     }
 
     struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
+    while ((errno = 0, entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
@@ -241,7 +243,8 @@ static size_t shell_for_each_wildcard_match(solar_os_context_t *ctx,
         }
     }
 
-    closedir(dir);
+    if (errno) term->command_status = 1;
+    if (closedir(dir) != 0) term->command_status = 1;
     return match_count;
 }
 
@@ -252,6 +255,7 @@ static void shell_report_no_wildcard_matches(solar_os_shell_io_t *term,
                                              bool had_error)
 {
     if (match_count == 0 && !had_error) {
+        term->command_status = 1;
         solar_os_shell_io_printf(term, "%s: no match: %s\n", command, arg);
     }
 }
@@ -259,6 +263,7 @@ static void shell_report_no_wildcard_matches(solar_os_shell_io_t *term,
 void solar_os_shell_cmd_cd(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
+    term->command_status = 0;
     char path[SHELL_PATH_MAX];
 
     if (argc > 2) {
@@ -277,6 +282,7 @@ void solar_os_shell_cmd_cd(solar_os_context_t *ctx, int argc, char **argv)
 
     DIR *dir = opendir(path);
     if (dir == NULL) {
+        term->command_status = 1;
         solar_os_shell_io_printf(term,
                                  "cd: cannot open %s: %s\n",
                                  argc == 2 ? argv[1] : "/",
@@ -285,7 +291,7 @@ void solar_os_shell_cmd_cd(solar_os_context_t *ctx, int argc, char **argv)
     }
     closedir(dir);
 
-    (void)solar_os_shell_set_cwd(ctx, path);
+    if (solar_os_shell_set_cwd(ctx, path) != ESP_OK) term->command_status = 1;
 }
 
 static bool shell_ls_hidden_name(const char *name)
@@ -342,6 +348,7 @@ static void shell_ls_print_entry_with_options(solar_os_shell_io_t *term,
 {
     struct stat st;
     const bool stat_ok = full_path != NULL && stat(full_path, &st) == 0;
+    if (!stat_ok) term->command_status = 1;
     const bool is_dir = stat_ok ? S_ISDIR(st.st_mode) : shell_path_is_dir(full_path);
     char size_text[16];
 
@@ -372,12 +379,13 @@ static void shell_list_directory(solar_os_shell_io_t *term,
 {
     DIR *dir = opendir(path);
     if (dir == NULL) {
+        term->command_status = 1;
         solar_os_shell_io_printf(term, "ls: cannot open %s: %s\n", path, strerror(errno));
         return;
     }
 
     struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
+    while ((errno = 0, entry = readdir(dir)) != NULL) {
         char child_path[SHELL_PATH_MAX];
         if ((options == NULL || !options->show_all) && shell_ls_hidden_name(entry->d_name)) {
             continue;
@@ -388,9 +396,11 @@ static void shell_list_directory(solar_os_shell_io_t *term,
         }
 
         shell_ls_print_entry_with_options(term, child_path, entry->d_name, options);
+        if (term->command_output_fn && term->command_status > 0) break;
     }
 
-    closedir(dir);
+    if (errno) term->command_status = 1;
+    if (closedir(dir) != 0) term->command_status = 1;
 }
 
 static bool shell_ls_match(solar_os_context_t *ctx,
@@ -456,6 +466,7 @@ static bool shell_ls_parse_options(solar_os_shell_io_t *term,
 void solar_os_shell_cmd_ls(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
+    term->command_status = 0;
     shell_ls_options_t options;
     const char *path_arg = NULL;
 
@@ -489,8 +500,19 @@ static bool shell_cat_file(solar_os_shell_io_t *term, const char *path, const ch
 {
     FILE *file = fopen(path, "r");
     if (file == NULL) {
+        term->command_status = 1;
         solar_os_shell_io_printf(term, "cat: cannot open %s: %s\n", display_path, strerror(errno));
         return false;
+    }
+
+    if (term->command_output_fn) {
+        char block[256]; size_t n; bool ok = true;
+        while ((n = fread(block, 1, sizeof(block), file)) != 0) {
+            if (solar_os_shell_io_write_len(term, block, n) != ESP_OK) { ok = false; break; }
+        }
+        if (ferror(file)) { term->command_status = 1; ok = false; }
+        if (fclose(file) != 0) { term->command_status = 1; ok = false; }
+        return ok;
     }
 
     char buffer[96];
@@ -508,6 +530,7 @@ static bool shell_cat_file(solar_os_shell_io_t *term, const char *path, const ch
     }
 
     if (!feof(file)) {
+        term->command_status = 1;
         solar_os_shell_io_printf(term, "\ncat: %s: truncated\n", display_path);
     } else if (wrote_data && last_char != '\n') {
         solar_os_shell_io_newline(term);
@@ -542,6 +565,13 @@ static bool shell_cat_match(solar_os_context_t *ctx,
 void solar_os_shell_cmd_cat(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
+    term->command_status = 0;
+
+    if (argc == 1 && term->command_input) {
+        if (solar_os_shell_io_write_len(term, term->command_input, term->command_input_size) != ESP_OK)
+            term->command_status = 1;
+        return;
+    }
 
     if (argc != 2) {
         if (argc < 2) {
@@ -580,6 +610,7 @@ static bool shell_make_directory(solar_os_shell_io_t *term,
                                  const char *display_path)
 {
     if (solar_os_storage_mkdir(path) != ESP_OK) {
+        term->command_status = 1;
         solar_os_shell_io_printf(term,
                                  "mkdir: cannot create %s: %s\n",
                                  display_path,
@@ -593,6 +624,7 @@ static bool shell_make_directory(solar_os_shell_io_t *term,
 void solar_os_shell_cmd_mkdir(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
+    term->command_status = 0;
 
     if (argc < 2) {
         solar_os_shell_diag_missing(term, "mkdir", "path", "mkdir <path> [path...]");
@@ -601,6 +633,7 @@ void solar_os_shell_cmd_mkdir(solar_os_context_t *ctx, int argc, char **argv)
 
     for (int i = 1; i < argc; i++) {
         if (shell_arg_has_wildcards(argv[i])) {
+            term->command_status = 1;
             solar_os_shell_io_printf(term,
                                      "mkdir: wildcards are not supported: %s\n",
                                      argv[i]);
@@ -670,6 +703,7 @@ static bool shell_remove_file(solar_os_shell_io_t *term,
         return true;
     }
 
+    term->command_status = 1;
     solar_os_shell_io_printf(term, "rm: cannot remove %s: %s\n", display_path, strerror(errno));
     return false;
 }
@@ -682,6 +716,7 @@ static bool shell_remove_empty_directory(solar_os_shell_io_t *term,
         return true;
     }
 
+    term->command_status = 1;
     solar_os_shell_io_printf(term, "rm: cannot remove %s: %s\n", display_path, strerror(errno));
     return false;
 }
@@ -692,6 +727,7 @@ static bool shell_remove_recursive(solar_os_shell_io_t *term,
                                    const shell_rm_options_t *options)
 {
     if (shell_path_is_protected_root(path)) {
+        term->command_status = 1;
         solar_os_shell_io_printf(term, "rm: refusing to remove root: %s\n", display_path);
         return false;
     }
@@ -703,7 +739,7 @@ static bool shell_remove_recursive(solar_os_shell_io_t *term,
 
     bool ok = true;
     struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
+    while ((errno = 0, entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
@@ -712,6 +748,7 @@ static bool shell_remove_recursive(solar_os_shell_io_t *term,
         char child_display[SHELL_PATH_MAX];
         if (!join_path_checked(child_path, sizeof(child_path), path, entry->d_name) ||
             !join_path_checked(child_display, sizeof(child_display), display_path, entry->d_name)) {
+            term->command_status = 1;
             solar_os_shell_io_printf(term, "rm: path too long below %s\n", display_path);
             ok = false;
             continue;
@@ -726,7 +763,8 @@ static bool shell_remove_recursive(solar_os_shell_io_t *term,
         }
     }
 
-    closedir(dir);
+    if (errno) term->command_status = 1;
+    if (closedir(dir) != 0) term->command_status = 1;
     if (!shell_remove_empty_directory(term, path, display_path)) {
         ok = false;
     }
@@ -746,6 +784,7 @@ static bool shell_remove_path(solar_os_shell_io_t *term,
             return shell_remove_empty_directory(term, path, display_path);
         }
 
+        term->command_status = 1;
         solar_os_shell_io_printf(term,
                                  "rm: %s is a directory; use rm -f for empty dirs or rm -rf recursively\n",
                                  display_path);
@@ -793,6 +832,7 @@ static bool shell_rm_parse_options(solar_os_shell_io_t *term,
             } else if (*p == 'r' || *p == 'R') {
                 options->recursive = true;
             } else {
+                term->command_status = 1;
                 solar_os_shell_io_printf(term, "rm: unsupported option: -%c\n", *p);
                 return false;
             }
@@ -812,6 +852,7 @@ static bool shell_rm_parse_options(solar_os_shell_io_t *term,
 void solar_os_shell_cmd_rm(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
+    term->command_status = 0;
     shell_rm_options_t options;
     int first_path = 1;
 
@@ -829,6 +870,7 @@ void solar_os_shell_cmd_rm(solar_os_context_t *ctx, int argc, char **argv)
             };
             const size_t match_count =
                 shell_for_each_wildcard_match(ctx, "rm", argv[i], shell_rm_match, &action, &had_error);
+            if (had_error || action.had_error) term->command_status = 1;
             if (!options.force) {
                 shell_report_no_wildcard_matches(term,
                                                  "rm",
@@ -877,6 +919,7 @@ static bool shell_copy_or_move_path(solar_os_shell_io_t *term,
     const esp_err_t err = move ? solar_os_storage_rename(source_path, target_path) :
                                  solar_os_storage_copy_file(source_path, target_path);
     if (err != ESP_OK) {
+        term->command_status = 1;
         solar_os_shell_io_printf(term,
                                  "%s: cannot %s %s to %s: %s\n",
                                  command,
@@ -916,6 +959,7 @@ static bool shell_copy_move_match(solar_os_context_t *ctx,
 static void shell_cmd_copy_move(solar_os_context_t *ctx, int argc, char **argv, bool move)
 {
     solar_os_shell_io_t *term = terminal(ctx);
+    term->command_status = 0;
     const char *command = move ? "mv" : "cp";
 
     if (argc != 3) {
@@ -931,6 +975,7 @@ static void shell_cmd_copy_move(solar_os_context_t *ctx, int argc, char **argv, 
         return;
     }
     if (shell_arg_has_wildcards(argv[2])) {
+        term->command_status = 1;
         solar_os_shell_io_printf(term,
                                  "%s: destination wildcards are not supported\n",
                                  command);
@@ -952,6 +997,7 @@ static void shell_cmd_copy_move(solar_os_context_t *ctx, int argc, char **argv, 
             return;
         }
         if (match_count > 1 && !dest_is_dir) {
+            term->command_status = 1;
             solar_os_shell_io_printf(term,
                                      "%s: destination must be a directory for multiple sources: %s\n",
                                      command,

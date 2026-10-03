@@ -56,6 +56,9 @@ void solar_os_shell_cmd_apps(solar_os_context_t *ctx, int argc, char **argv) {
     }
 }
 void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv) {
+    solar_os_shell_io_t *io=solar_os_context_shell_io(ctx);
+    io->command_status=argc==1?0:2;
+    if(argc!=1){solar_os_shell_io_printf(io,"usage: %s\n",argv[0]);return;}
     (void)argc; (void)argv;
     solar_os_memory_status_t status;
     solar_os_memory_get_status(&status);
@@ -63,8 +66,12 @@ void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv) {
         "Internal heap: %u free / %u bytes; PSRAM: %u free / %u bytes\n",
         (unsigned)status.internal.free, (unsigned)status.internal.total,
         (unsigned)status.external.free, (unsigned)status.external.total);
+    solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), "PSRAM reserve: 128 KiB for system work; pipe buffers: 64 KiB total limit");
 }
 void solar_os_shell_cmd_uptime(solar_os_context_t *ctx, int argc, char **argv) {
+    solar_os_shell_io_t *io=solar_os_context_shell_io(ctx);
+    io->command_status=argc==1?0:2;
+    if(argc!=1){solar_os_shell_io_printf(io,"usage: %s\n",argv[0]);return;}
     (void)argc; (void)argv;
     solar_os_shell_io_printf(solar_os_context_shell_io(ctx), "Uptime=%lu ms stack-free=%lu words\n",
         (unsigned long)pdTICKS_TO_MS(xTaskGetTickCount()),
@@ -79,6 +86,7 @@ void solar_os_shell_cmd_clear(solar_os_context_t *ctx, int argc, char **argv) {
 #endif
 void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) {
     solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
+    io->command_status=1;
 #if SK_CLOCK
     if ((argc==2 || argc==3) && !strcmp(argv[1],"timezone")) {
         if (argc==3) {
@@ -90,12 +98,14 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) 
         }
         char name[SOLAR_OS_TIMEZONE_NAME_MAX], posix[SOLAR_OS_TIMEZONE_POSIX_MAX];
         solar_os_time_get_timezone(name,sizeof(name),posix,sizeof(posix));
+        io->command_status=0;
         solar_os_shell_io_printf(io,"timezone %s (%s); RTC stays UTC\n",name,posix);
         return;
     }
 #endif
 #if SK_SETTINGS
     if (argc == 1) {
+        io->command_status=0;
         char path[SOLAR_OS_STORAGE_PATH_MAX];
         solar_os_shell_startup_path(path,sizeof(path));
         solar_os_shell_io_printf(io,"size %u %u; startup %s (%s)\n",
@@ -107,6 +117,7 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) 
         solar_os_shell_startup_source_t source;
         esp_err_t err=solar_os_shell_parse_startup_source(argv[2],&source) ?
             solar_os_shell_set_startup_source(source) : ESP_ERR_INVALID_ARG;
+        io->command_status=err==ESP_OK?0:1;
         solar_os_shell_io_printf(io,"startup: %s\n",err==ESP_OK ? "saved" : esp_err_to_name(err));
         return;
     }
@@ -115,7 +126,7 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) 
 #if SK_LCD_CONSOLE
         extern bool sk_console_is_local(void);
         if (sk_console_is_local()) {
-            solar_os_shell_io_writeln(io,"LCD geometry is fixed at 100x30.");
+            solar_os_shell_io_writeln(io,"Use lcd font 1|2|3 to change LCD text size.");
             return;
         }
 #endif
@@ -143,6 +154,7 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) 
                 return;
             }
 #endif
+            io->command_status=0;
             solar_os_shell_io_set_dimensions(io, cols, rows);
             solar_os_shell_io_clear(io);
             return;
@@ -159,12 +171,15 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) 
 #if SK_SETTINGS
 void solar_os_shell_cmd_identity(solar_os_context_t *ctx,int argc,char **argv) {
     solar_os_shell_io_t *io=solar_os_context_shell_io(ctx);
+    io->command_status=1;
     if (argc==1 || (argc==2 && !strcmp(argv[1],"status"))) {
+        io->command_status=0;
         char identity[80]; solar_os_identity_format(identity,sizeof(identity));
         solar_os_shell_io_writeln(io,identity); return;
     }
     if (argc==3 && (!strcmp(argv[1],"user") || !strcmp(argv[1],"hostname"))) {
         esp_err_t err=!strcmp(argv[1],"user") ? solar_os_identity_set_user(argv[2]) : solar_os_identity_set_hostname(argv[2]);
+        io->command_status=err==ESP_OK?0:1;
         solar_os_shell_io_printf(io,"identity: %s\n",err==ESP_OK ? "saved" : esp_err_to_name(err));
         return;
     }

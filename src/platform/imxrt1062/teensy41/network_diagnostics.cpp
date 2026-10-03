@@ -74,10 +74,10 @@ extern "C" void solar_os_shell_cmd_netscan(solar_os_context_t *ctx,int argc,char
     solar_os_shell_io_printf(io,"netscan: %lu open, %lu probes%s\n",(unsigned long)open,(unsigned long)probes,c.stopped?", stopped":"");
 }
 extern "C" void solar_os_shell_cmd_ntp(solar_os_context_t *ctx,int argc,char **argv) {
-    auto *io=solar_os_context_shell_io(ctx);bool query=argc>1 && !strcmp(argv[1],"-q");int index=query?2:1;uint32_t port=123;
+    auto *io=solar_os_context_shell_io(ctx);io->command_status=1;bool query=argc>1 && !strcmp(argv[1],"-q");int index=query?2:1;uint32_t port=123;
     if(argc>index+2 || (argc==index+2 && !skdiag::number(argv[index+1],1,65535,port))){solar_os_shell_io_writeln(io,"usage: ntp [-q] [SERVER [PORT]] (-q queries without setting RTC)");return;}
     const char *host=argc>index?argv[index]:SOLAR_OS_NTP_DEFAULT_SERVER;
-    Cancel c;uint8_t ip[4];if(!resolve(host,ip,c,io))return;char target[20];address(uint32_t(ip[0])<<24|uint32_t(ip[1])<<16|uint32_t(ip[2])<<8|ip[3],target,sizeof(target));
+    Cancel c;uint8_t ip[4];if(!resolve(host,ip,c,io)){io->command_cancelled=c.stopped;return;}char target[20];address(uint32_t(ip[0])<<24|uint32_t(ip[1])<<16|uint32_t(ip[2])<<8|ip[3],target,sizeof(target));
     solar_os_net_session_t *session=nullptr;uint32_t handle=0;
     esp_err_t err=solar_os_net_session_create("ntp",cancel,&c,&session);
     uint8_t packet[48]={};packet[0]=0x23;
@@ -106,7 +106,9 @@ extern "C" void solar_os_shell_cmd_ntp(solar_os_context_t *ctx,int argc,char **a
         ++rejected;
     }
     solar_os_net_session_destroy(session);
+    io->command_cancelled=c.stopped;
     if(!valid){solar_os_shell_io_printf(io,"ntp: %s; RTC unchanged (%u rejected replies, %s)\n",c.stopped?"stopped":denied?"server denied request":err==ESP_OK?"timed out":"network error",rejected,esp_err_to_name(err));return;}
+    io->command_status=0;
     if(!query)sk_clock_rtc_set(uint32_t(epoch/1000));
     solar_os_shell_io_printf(io,"ntp: %s UTC epoch=%lu from %s:%lu (RTT %lu ms, %u rejected)\n",query?"query":"RTC synchronized",(unsigned long)(epoch/1000),target,(unsigned long)port,(unsigned long)(millis()-start),rejected);
     if(!query){solar_os_datetime_t local{};solar_os_time_get_datetime(&local);solar_os_shell_io_printf(io,"local: %04u-%02u-%02u %02u:%02u:%02u\n",local.year,local.month,local.day,local.hour,local.minute,local.second);}

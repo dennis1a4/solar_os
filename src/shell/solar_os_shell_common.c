@@ -119,6 +119,7 @@ void solar_os_shell_diag_problem(solar_os_shell_io_t *io,
                                  const char *usage,
                                  const char *hint)
 {
+    if (io) io->command_status = 1;
     if (io != NULL && io->diagnostic_source != NULL) {
         solar_os_shell_io_printf(io, "%s:%u: ", io->diagnostic_source,
                                  (unsigned)io->diagnostic_line);

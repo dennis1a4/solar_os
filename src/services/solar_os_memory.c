@@ -38,6 +38,8 @@ const char *solar_os_memory_class_name(solar_os_memory_class_t memory_class)
         return "external-preferred";
     case SOLAR_OS_MEMORY_TRANSIENT:
         return "transient";
+    case SOLAR_OS_MEMORY_EXTERNAL_SYSTEM:
+        return "external-system";
     case SOLAR_OS_MEMORY_CLASS_COUNT:
     default:
         return "invalid";
@@ -133,6 +135,7 @@ static void *memory_allocate(size_t count,
         ptr = zero ? heap_caps_calloc(count, size, internal_caps | MALLOC_CAP_DMA) :
                      heap_caps_malloc(requested, internal_caps | MALLOC_CAP_DMA);
         break;
+    case SOLAR_OS_MEMORY_EXTERNAL_SYSTEM:
     case SOLAR_OS_MEMORY_EXTERNAL_REQUIRED:
         ptr = zero ? heap_caps_calloc(count, size, external_caps) :
                      heap_caps_malloc(requested, external_caps);
@@ -229,6 +232,7 @@ void *solar_os_memory_realloc(void *ptr,
     case SOLAR_OS_MEMORY_DMA:
         next = heap_caps_realloc(ptr, size, internal_caps | MALLOC_CAP_DMA);
         break;
+    case SOLAR_OS_MEMORY_EXTERNAL_SYSTEM:
     case SOLAR_OS_MEMORY_EXTERNAL_REQUIRED:
         next = heap_caps_realloc(ptr, size, external_caps);
         break;

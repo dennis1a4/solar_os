@@ -19,8 +19,8 @@ view /sd/photo.jpg
 view -actual /sd/photo.jpg
 ```
 
-View fits the image to the screen by default. `1` selects actual size, arrows
-pan, `0` resets the pan, and `F` returns to fit. Escape or Ctrl-] returns to the
+View fits the image to the screen by default. `0` selects actual size, arrows
+pan, `1` selects fit, and `F` toggles fit/actual. Escape or Ctrl-] returns to the
 shell/parent app. The existing Files image association opens View with Enter.
 
 PNG, JPEG, GIF and the upstream built-in BMP/PNM paths use the shared decoders.
@@ -31,6 +31,9 @@ and theme entries, converted to RGB565 for the panel. This is not a full
 compositing behavior. Very large images can exceed the 8 MiB PSRAM budget;
 View reports an allocation/size error. Upstream's image limit is 2 megapixels,
 not a promise that every image under that limit fits alongside all other apps.
+
+See the [quick reference and help guide](teensy41-quick-reference.md) for formats,
+manual commands and the proposed consistent help interface.
 
 ## Drawing and graphical apps
 

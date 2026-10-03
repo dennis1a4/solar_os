@@ -1,8 +1,12 @@
 """Select accurate embedded documentation for the Teensy workstation shell."""
 APP_NAMES = set('io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders mqttx obd clock pdpower scope help curl'.split())
-COMMAND_NAMES = set('ramfs gpio i2c spi uart expansion help man commands echo wait watch apps mem uptime clear setterm identity network audio cd ls cat sh mkdir rm mv cp exit reboot version board status top port df pwd session sessions fg bg tail close ping netscan ntp jobs job schedule zip unzip rtc date time flash sd usb lcd telnetd'.split())
+COMMAND_NAMES = set('grep head wc ramfs gpio i2c spi uart expansion help man commands echo wait watch apps mem uptime clear setterm identity network audio cd ls cat sh mkdir rm mv cp exit reboot version board status top port df pwd session sessions fg bg tail close ping netscan ntp jobs job schedule zip unzip rtc date time flash sd usb lcd telnetd'.split())
 # The reduced service adapters intentionally expose narrower contracts than ESP.
 OVERRIDES = {
+    'echo': ('Print text; also see shell composition examples.', 'echo [TEXT...]\nExamples: date; time\nntp && time\ncat /flash/log.txt | grep error | head -n 5\nComposition: 191 bytes, eight commands maximum. Operators inside quotes remain literal.\nPipes use PSRAM: 8 KiB per intermediate result, 16 KiB per active pipeline, 64 KiB global buffer limit. Overflow is an error.\nOnly synchronous builtins can be chained; interactive apps, watch, wait, sh and lifecycle commands must run separately. && requires an audited command exit status. Background script jobs still require one command per line.'),
+    'grep': ('Filter bounded pipe input by literal text.', '... | grep LITERAL\nCase sensitive substring matching; no regular expressions. Exit status 1 means no matching lines. Requires pipe input.'),
+    'head': ('Show the first lines of pipe input.', '... | head [-n COUNT]\nDefault: 10 lines. COUNT: 0..8192. Requires pipe input.'),
+    'wc': ('Count piped lines, words and bytes.', '... | wc [-l|-w|-c]\nWithout an option prints newline, whitespace-separated word and byte counts. Requires pipe input.'),
     'ramfs': ('Create volatile PSRAM filesystems.', 'ramfs [status]\nramfs mount /NAME SIZE\nramfs unmount /NAME\nUp to four top-level mounts; names use letters, digits, dash or underscore. /sd, /flash, /usb and / are reserved. SIZE: 1024..4194304 bytes, optional k/m suffix. Keeps 512 KiB PSRAM free for apps. No automatic mount or persistence; reboot/unmount loses all files. Open files/directories block unmount. Close directory iterators before removing or renaming entries. Files, shell and Python use ordinary paths; df includes RAMFS. Use explicit /sd paths; unknown mount paths never fall through to SD.'),
     'io': ('Inspect Teensy pins, buses and claims.', 'io [pins|claims|buses|release]\nrelease restores this console’s GPIO inputs and closes its raw UART/expansion leases. Built-in device reservations and COM app leases cannot be released here. Fixed board routing; no pin remapping or saved runtime claims.'),
     'gpio': ('Claim and control a free header pin.', 'gpio [list|PIN]\ngpio mode PIN in|pullup|pulldown|out [0|1]\ngpio read PIN\ngpio write PIN 0|1\ngpio release PIN\nPins 0..41 only. Existing board/bus reservations cannot be overridden. Claims belong to the calling console; release/disconnect restores input mode.'),
@@ -11,7 +15,7 @@ OVERRIDES = {
     'uart': ('Open a fixed expansion UART.', 'uart [list]\nuart open uart7|uart8|uart3 [BAUD]\nuart close BUS\nuart read BUS [COUNT]\nuart write BUS TEXT\n300..1000000 baud, 8N1; default 115200. Up to 128 bytes per read/write, nonblocking. Pin conflicts reject the whole claim. COM uses the same UART leases; close a raw UART before com. UART3 conflicts with the active display WAIT pin.'),
     'expansion': ('Inspect and lease expansion chip selects.', 'expansion [list]\nexpansion claim|release slot0|slot1|slot2\nA lease owns its SPI chip-select pin. Shared SPI signals remain bus-owned. UART leases are separate. Current display wiring reserves slot0/slot2; slot1 is available. No automatic driver discovery or hotplug binding.'),
     'help': ('Browse the embedded manual.', 'help [TOPIC|status]\nUse arrows and Enter to browse; Q exits. Signed manual downloads are not integrated.\nUse commands for the command list.'),
-    'mem': ('Show internal heap and PSRAM.', 'mem\nPrints free and total bytes. Allocation-policy diagnostics are not integrated.'),
+    'mem': ('Show internal heap and PSRAM.', 'mem\nPrints free and total bytes and allocation limits. Ordinary PSRAM allocations leave a 128 KiB system reserve. Pipe buffers have a 64 KiB global limit and are freed when the chain finishes. No automatic migration or swapping.'),
     'uptime': ('Show uptime and calling task stack headroom.', 'uptime\nUptime is in milliseconds; stack-free is in words.'),
     'setterm': ('Configure persistent terminal preferences.', 'setterm\nsetterm size COLS ROWS\nsetterm startup auto|flash|sd\nsetterm timezone UTC|Manitoba|POSIX-TZ\nLCD size is fixed. Telnet geometry comes from the client. Manitoba is fixed UTC-5.'),
     'network': ('Inspect or start Ethernet.', 'network up\nnetwork down\nnetwork status\nnetwork routes\nEthernet starts explicitly. Wi-Fi and the upstream network settings TUI are not integrated.'),
@@ -62,6 +66,20 @@ def select_pages(pages, render_text):
             page['markdown'] = '# COM\n\n```text\n' + usage + '\n```\n'
             page['body'] = render_text(page['markdown'])
             page['contract'] = usage
+        if kind == 'app' and name == 'view':
+            usage = ('view [-fit|-actual] <image>\n'
+                     'Run from the LCD shell; text-only consoles cannot acquire the display.\n'
+                     'Formats: PNG, JPEG, GIF (including animation), uncompressed BMP, and PBM/PGM/PPM (PNM P1-P6).\n'
+                     'BMP: 1/4/8/24/32 bits per pixel; compressed BMP and 16-bit BMP are unsupported.\n'
+                     'WebP is unavailable on Teensy. SVG, TIFF and PDF are unsupported.\n'
+                     'Default: fit to screen. F toggles fit/actual; 0 selects actual size; 1 selects fit; arrows pan. Esc or Ctrl+] exits.\n'
+                     'PNG/JPEG have device acceptance coverage; GIF/BMP/PNM decoder paths are integrated but not equally hardware-validated.\n'
+                     'Decoded images are bounded by pixel and available PSRAM limits; fitting to the screen does not guarantee a large file will load.\n'
+                     'Examples: view /sd/photo.png; view -actual /sd/photo.jpg')
+            page['summary'] = 'View raster images on the Teensy LCD.'
+            page['markdown'] = '# View on Teensy\n\n```text\n' + usage + '\n```\n'
+            page['body'] = render_text(page['markdown'])
+            page['contract'] = usage
         if kind == 'app' and name == 'python':
             usage = ('python [-c CODE | /path/script.py [args...]]\nOne MicroPython VM, 512 KiB PSRAM heap. Ctrl+C interrupts; Ctrl+D exits the REPL.\nStandalone text sessions support Ctrl+Z, bg, jobs, fg ID, and job stop ID. See man bg.\ninput() preserves partial lines across detaching. Detached input waits for fg and cannot consume shell keys.\nDetached workers cannot acquire graphics. Existing SolarOS network/gfx bindings remain available; Lua, CAN/DAQ and typed stream bindings are not added by the worker.')
             page['summary'] = 'MicroPython REPL, scripts and detachable text processes.'
@@ -70,7 +88,7 @@ def select_pages(pages, render_text):
             page['contract'] = usage
         if kind == 'command':
             # Upstream conditions describe ESP packages, not the Teensy allowlist.
-            page['condition'] = {'ramfs':'SK_RAMFS', 'io':'SK_HW_RESOURCES', 'gpio':'SK_HW_RESOURCES', 'i2c':'SK_HW_RESOURCES', 'spi':'SK_HW_RESOURCES', 'uart':'SK_HW_RESOURCES', 'expansion':'SK_HW_RESOURCES', 'date':'SK_CLOCK', 'time':'SK_CLOCK', 'rtc':'SK_PLAYGROUND',
+            page['condition'] = {'grep':'SK_SHELL_COMPOSE', 'head':'SK_SHELL_COMPOSE', 'wc':'SK_SHELL_COMPOSE', 'ramfs':'SK_RAMFS', 'io':'SK_HW_RESOURCES', 'gpio':'SK_HW_RESOURCES', 'i2c':'SK_HW_RESOURCES', 'spi':'SK_HW_RESOURCES', 'uart':'SK_HW_RESOURCES', 'expansion':'SK_HW_RESOURCES', 'date':'SK_CLOCK', 'time':'SK_CLOCK', 'rtc':'SK_PLAYGROUND',
                 'ping':'SK_NET_DIAGNOSTICS', 'netscan':'SK_NET_DIAGNOSTICS', 'ntp':'SK_NET_DIAGNOSTICS', 'tail':'SK_BACKGROUND_JOBS', 'bg':'SK_BACKGROUND_JOBS', 'jobs':'SK_BACKGROUND_JOBS', 'job':'SK_BACKGROUND_JOBS', 'schedule':'SK_BACKGROUND_JOBS', 'fg':'SK_LCD_CONSOLE', 'close':'SK_LCD_CONSOLE', 'session':'SK_LCD_CONSOLE', 'sessions':'SK_LCD_CONSOLE', 'lcd':'SK_LCD_CONSOLE',
                 'telnetd':'SK_TELNETD', 'usb':'SK_USB_STORAGE', 'sd':'SK_SD_RECOVERY',
                 'flash':'SK_QSPI_FLASH', 'audio':'SK_AUDIO_PLAYER', 'network':'SK_ETHERNET',

@@ -17,7 +17,12 @@ extern uint8_t _extram_start[], _extram_end[];
 static StaticSemaphore_t mutex_storage;
 static SemaphoreHandle_t mutex;
 static solar_os_memory_status_t statistics;
-struct alignas(max_align_t) Header { size_t size; };
+struct alignas(max_align_t) Header { size_t size; size_t external_charge; };
+static size_t external_charged;
+// Conservative charge includes pinned smalloc's two metadata headers and
+// rounding. Keep admission O(1): scanning all PSRAM on every allocation stalls
+// consoles and audio. All external allocations in this port use this wrapper.
+static constexpr size_t external_overhead = sizeof(Header) + 16*sizeof(size_t);
 
 void sk_memory_begin() {
     // Arduino EXTMEM is NOLOAD; shared SolarOS EXT_RAM_BSS_ATTR means zeroed
@@ -45,24 +50,31 @@ extern "C" bool solar_os_memory_is_external(const void *ptr) {
 extern "C" void *solar_os_memory_alloc(size_t size, solar_os_memory_class_t kind,
                                        const char *tag) {
     if (!mutex || unsigned(kind) >= SOLAR_OS_MEMORY_CLASS_COUNT ||
-        !size || size > SIZE_MAX - sizeof(Header)) return nullptr;
+        !size || size > SIZE_MAX - external_overhead) return nullptr;
     xSemaphoreTake(mutex, portMAX_DELAY);
     auto &stats = statistics.classes[kind];
     ++stats.requests;
     stats.requested_bytes += size;
     Header *header = nullptr;
     const bool external = kind == SOLAR_OS_MEMORY_EXTERNAL_REQUIRED ||
-        kind == SOLAR_OS_MEMORY_EXTERNAL_PREFERRED || kind == SOLAR_OS_MEMORY_TRANSIENT;
+        kind == SOLAR_OS_MEMORY_EXTERNAL_PREFERRED || kind == SOLAR_OS_MEMORY_TRANSIENT || kind == SOLAR_OS_MEMORY_EXTERNAL_SYSTEM;
     if (external && external_psram_size) {
-        header = static_cast<Header *>(sm_malloc_pool(&extmem_smalloc_pool, size + sizeof(Header)));
+        const size_t capacity=extmem_smalloc_pool.pool_size;
+        const size_t available=external_charged<capacity ? capacity-external_charged : 0;
+        const size_t reserve=kind==SOLAR_OS_MEMORY_EXTERNAL_SYSTEM ? 0 : 128U*1024U;
+        if (available>=reserve && size+external_overhead<=available-reserve) {
+            header=static_cast<Header *>(sm_malloc_pool(&extmem_smalloc_pool,size+sizeof(Header)));
+            if(header){header->external_charge=size+external_overhead;external_charged+=header->external_charge;}
+        }
     }
     const bool may_fallback = !external || size <= statistics.internal_fallback_max;
     // A generic malloc buffer is not a DMA allocation on cache-enabled M7.
-    if (!header && kind != SOLAR_OS_MEMORY_EXTERNAL_REQUIRED &&
+    if (!header && kind != SOLAR_OS_MEMORY_EXTERNAL_REQUIRED && kind != SOLAR_OS_MEMORY_EXTERNAL_SYSTEM &&
         kind != SOLAR_OS_MEMORY_DMA && may_fallback &&
         (kind == SOLAR_OS_MEMORY_INTERNAL_CRITICAL ||
          internal_free() > size + sizeof(Header) + statistics.internal_reserve)) {
         header = static_cast<Header *>(malloc(size + sizeof(Header)));
+        if(header)header->external_charge=0;
         if (header && external) ++stats.fallbacks;
     }
     if (header) {
@@ -82,7 +94,7 @@ extern "C" void solar_os_memory_free(void *ptr) {
     if (!ptr) return;
     auto *header = static_cast<Header *>(ptr) - 1;
     xSemaphoreTake(mutex, portMAX_DELAY);
-    if (solar_os_memory_is_external(header)) sm_free_pool(&extmem_smalloc_pool, header);
+    if (solar_os_memory_is_external(header)) {external_charged-=header->external_charge;sm_free_pool(&extmem_smalloc_pool, header);}
     else free(header);
     xSemaphoreGive(mutex);
 }
@@ -122,7 +134,7 @@ extern "C" void solar_os_memory_get_status(solar_os_memory_status_t *status) {
 }
 extern "C" const char *solar_os_memory_class_name(solar_os_memory_class_t kind) {
     static const char *names[] = {"internal-critical", "internal-preferred", "dma",
-        "external-required", "external-preferred", "transient"};
+        "external-required", "external-preferred", "transient", "external-system"};
     return unsigned(kind) < SOLAR_OS_MEMORY_CLASS_COUNT ? names[kind] : "invalid";
 }
 void sk_memory_print() {
@@ -131,4 +143,5 @@ void sk_memory_print() {
     sk_console_printf("Internal heap: %u free / %u bytes; PSRAM: %u free / %u bytes\r\n",
         unsigned(status.internal.free), unsigned(status.internal.total),
         unsigned(status.external.free), unsigned(status.external.total));
+    sk_console_printf("PSRAM ordinary-allocation reserve: 128 KiB; shell pipe budget: 64 KiB\r\n");
 }

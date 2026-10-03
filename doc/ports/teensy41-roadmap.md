@@ -27,6 +27,12 @@ features remain backlog; they do not precede RAMFS in this approved sequence.
 
 ## Current position
 
+**2026-10-01 revised PCB pinout:** recorded separately from the unchanged bench
+profile. RGB0/AmpEn1/DMM40 are the new PCB targets. Flash-drive `Pins_v3.ods`
+is verified; header 2 is display-only, pin 9 is backlight PWM, and pin 33's extra
+Motor mark is stale. Resolve display-specific wiring before a PCB profile.
+See [pinout and firmware implications](superkeyboard-pcb-pinout.md).
+
 **2026-10-01 Python highlighting:** shared lexer gains built-ins, definitions
 and constants, with TUI colors and incremental editor caches. Host/device
 acceptance passes; see [syntax notes](teensy41-syntax.md).

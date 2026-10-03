@@ -28,6 +28,14 @@ typedef enum {
 } solar_os_shell_charset_t;
 
 struct solar_os_shell_io {
+    /* Command composition: explicit status and a temporary bounded output sink.
+     * -1 means this legacy command has no audited exit status. */
+    int command_status;
+    solar_os_context_output_fn command_output_fn;
+    void *command_output_user;
+    const char *command_input;
+    size_t command_input_size;
+    bool command_cancelled;
     solar_os_shell_io_kind_t kind;
     solar_os_shell_terminal_profile_t terminal_profile;
     solar_os_terminal_t *terminal;

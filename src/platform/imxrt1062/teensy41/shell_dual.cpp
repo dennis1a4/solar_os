@@ -93,6 +93,8 @@ extern bool sk_lcd_ready();
 extern void sk_lcd_write(const char *,size_t);
 extern void sk_lcd_flush();
 extern void sk_lcd_row(unsigned,char *);
+extern void sk_lcd_appearance(unsigned &,unsigned &,unsigned &);
+extern bool sk_lcd_configure(unsigned,unsigned,unsigned);
 extern void sk_usb_inject(const char *);
 extern bool sk_usb_keyboard_connected();
 extern void sk_usb_status(char *,size_t);
@@ -154,7 +156,8 @@ static int read_key() {
     return Serial.available()?Serial.read():-1;
 }
 extern "C" bool sk_console_poll_cancel(bool escape) {
-    if(!connected()) return true;
+    auto *command_io=solar_os_context_shell_io(&active().context);
+    if(!connected()) {if(command_io)command_io->command_cancelled=true;return true;}
     bool stop=false;
     for(int ch;(ch=read_key())>=0;) {
         if(ch==3 || ch==29 || (escape && ch==27))stop=true;
@@ -162,6 +165,7 @@ extern "C" bool sk_console_poll_cancel(bool escape) {
         else if(foreground && !strcmp(foreground->name,"python")) { extern void sk_python_gfx_key(int);sk_python_gfx_key(ch); }
 #endif
     }
+    if(stop && command_io)command_io->command_cancelled=true;
     console_yield();
     return stop;
 }
@@ -303,7 +307,20 @@ static bool initialize_console() {
     auto *io=solar_os_shell_session_io(session);
     solar_os_shell_io_init_port(io,&active().port,active().local?100:80,active().local?30:24);
     solar_os_shell_io_set_terminal_profile(io,SOLAR_OS_SHELL_TERMINAL_PROFILE_VT100);
-    if(active().local) solar_os_shell_io_set_charset(io,SOLAR_OS_SHELL_CHARSET_ASCII);
+    if(active().local) {
+        solar_os_shell_io_set_charset(io,SOLAR_OS_SHELL_CHARSET_ASCII);
+#if SK_SETTINGS
+        nvs_handle_t h;
+        if(nvs_open("lcd_terminal",NVS_READONLY,&h)==ESP_OK) {
+            uint8_t size=1,fg=7,bg=0;
+            if(nvs_get_u8(h,"size",&size)==ESP_OK && nvs_get_u8(h,"fg",&fg)==ESP_OK &&
+               nvs_get_u8(h,"bg",&bg)==ESP_OK) sk_lcd_configure(size,fg,bg);
+            nvs_close(h);
+        }
+#endif
+        unsigned size,fg,bg; sk_lcd_appearance(size,fg,bg);
+        solar_os_shell_io_set_dimensions(io,100/size,30/size);
+    }
 #if SK_SETTINGS
     if(!active().local
 #if SK_TELNETD
@@ -402,12 +419,56 @@ static void run_console(void *) {
         console_yield();
     }
 }
+static const char *const lcd_colors[]={"black","red","green","yellow","blue","magenta","cyan","white",
+    "gray","bright-red","bright-green","bright-yellow","bright-blue","bright-magenta","bright-cyan","bright-white"};
+static int lcd_color(const char *name) {
+    for(unsigned i=0;i<16;++i) if(!strcmp(name,lcd_colors[i])) return i;
+    return -1;
+}
 extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);
-    if(argc==2 && !strcmp(argv[1],"dump")) {
+    unsigned size,fg,bg; sk_lcd_appearance(size,fg,bg);
+    if(argc>=2 && (!strcmp(argv[1],"font") || !strcmp(argv[1],"color") || !strcmp(argv[1],"reset"))) {
+        io->command_status=1;
+        unsigned next_size=size,next_fg=fg,next_bg=bg;
+        if(argc==3 && !strcmp(argv[1],"font") && strlen(argv[2])==1 && argv[2][0]>='1' && argv[2][0]<='3') next_size=argv[2][0]-'0';
+        else if(argc==4 && !strcmp(argv[1],"color") && lcd_color(argv[2])>=0 && lcd_color(argv[3])>=0) {
+            next_fg=lcd_color(argv[2]); next_bg=lcd_color(argv[3]);
+        } else if(argc==2 && !strcmp(argv[1],"reset")) { next_size=1; next_fg=7; next_bg=0; }
+        else { solar_os_shell_io_writeln(io,"usage: lcd font 1|2|3; lcd color FG BG; lcd colors; lcd reset"); return; }
+        if(next_fg==next_bg) { solar_os_shell_io_writeln(io,"Foreground and background must differ."); return; }
+        auto &local=consoles[1];
+        bool busy=!local.shell || local.app || local.frame;
+        for(auto *frame:local.retained) if(frame) busy=true;
+        if(!active().local && local.shell && !solar_os_shell_session_is_idle(local.shell)) busy=true;
+        if(busy) { solar_os_shell_io_writeln(io,"LCD is busy. Exit its app or finish its command first."); return; }
+        if(!sk_lcd_configure(next_size,next_fg,next_bg)) { solar_os_shell_io_writeln(io,"LCD graphics is active."); return; }
+#if SK_SETTINGS
+        nvs_handle_t h;
+        esp_err_t saved=nvs_open("lcd_terminal",NVS_READWRITE,&h);
+        if(saved==ESP_OK) {
+            saved=nvs_set_u8(h,"size",next_size);
+            if(saved==ESP_OK) saved=nvs_set_u8(h,"fg",next_fg);
+            if(saved==ESP_OK) saved=nvs_set_u8(h,"bg",next_bg);
+            if(saved==ESP_OK) saved=nvs_commit(h);
+            nvs_close(h);
+        }
+        if(saved!=ESP_OK) solar_os_shell_io_writeln(io,"Applied for this boot; saving LCD settings failed.");
+#endif
+        auto *local_io=solar_os_shell_session_io(local.shell);
+        solar_os_shell_io_set_dimensions(local_io,100/next_size,30/next_size);
+        if(next_size!=size) {
+            solar_os_shell_io_clear(local_io);
+            if(!active().local) solar_os_shell_session_prompt(&local.context,local.shell);
+        }
+        solar_os_shell_io_printf(io,"LCD font %ux (%ux%u), color %s on %s\n",next_size,100/next_size,30/next_size,lcd_colors[next_fg],lcd_colors[next_bg]);
+        io->command_status=0;
+    } else if(argc==2 && !strcmp(argv[1],"colors")) {
+        for(auto *name:lcd_colors) solar_os_shell_io_writeln(io,name);
+    } else if(argc==2 && !strcmp(argv[1],"dump")) {
         if(active().local) { solar_os_shell_io_writeln(io,"Use lcd dump from USB."); return; }
         char row[101];
-        for(unsigned r=0;r<30;++r) { sk_lcd_row(r,row); solar_os_shell_io_writeln(io,row); }
+        for(unsigned r=0;r<30/size;++r) { sk_lcd_row(r,row); solar_os_shell_io_writeln(io,row); }
     } else if(argc==3 && !strcmp(argv[1],"send") && !active().local) {
         if(strlen(argv[2])>200) { solar_os_shell_io_writeln(io,"Command too long."); return; }
         sk_usb_inject(argv[2]); sk_usb_inject("\r");
@@ -429,8 +490,8 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
         else { solar_os_shell_io_writeln(io,"usage: lcd key exit|ctrlc|ctrlz|esc|up|down|left|right|home|end|tab|space|enter"); return; }
         solar_os_shell_io_writeln(io,"Queued for LCD session.");
     } else {
-        solar_os_shell_io_printf(io,"LCD 100x30; local consoles: usb and lcd; current=%s; keyboard=%s\n",
-            owner,sk_usb_keyboard_connected()?"connected":"absent");
+        solar_os_shell_io_printf(io,"LCD %ux%u, font %ux, color %s on %s; local consoles: usb and lcd; current=%s; keyboard=%s\n",
+            100/size,30/size,size,lcd_colors[fg],lcd_colors[bg],owner,sk_usb_keyboard_connected()?"connected":"absent");
         char status[160]; sk_usb_status(status,sizeof(status)); solar_os_shell_io_writeln(io,status);
 #if SK_PLOT
         extern void sk_gfx_status(char *,size_t); sk_gfx_status(status,sizeof(status)); solar_os_shell_io_writeln(io,status);
