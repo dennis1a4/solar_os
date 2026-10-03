@@ -138,7 +138,7 @@ local devices = solaros.buses.onewire_scan("onewire0")
 local reply = solaros.buses.onewire_xfer("onewire0", 9, "\xcc\x44")
 ```
 
-`solaros.expansion.drivers()` lists compiled drivers with their categories.
+`solaros.expansion.drivers()` lists registered drivers with their categories.
 `devices()` lists active devices with `name`, `driver`, `origin` (`board` or
 `runtime`), `ready`,
 `autostart`, `detachable`, and normalized `bindings`. Each binding contains
@@ -151,6 +151,10 @@ and `detach(name)` mirror the shell lifecycle. Binding tables accept `spi`,
 existing PS/2 bus; `x` and `y` name scalar streams; `keys` maps logical key
 names to GPIO numbers. `cs` requires `spi`; `addr` and `alt_addr` require
 `i2c`; unknown fields are rejected.
+
+Camera DVP attachments also accept GPIO-number bindings `d0`..`d7`, `siod`,
+`sioc`, `vsync`, `href`, `pclk`, `xclk`, and optional `pwdn`/`reset`. The camera
+driver validates required pins and claims; board-owned cameras cannot be detached.
 
 ```lua
 solaros.expansion.attach("pcd8544", "lcd0", {

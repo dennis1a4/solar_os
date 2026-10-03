@@ -4,7 +4,7 @@ title = "Application reference"
 section = "app"
 summary = "Usage, controls, and examples for every foreground application"
 aliases = ["applications"]
-keywords = "apps applications foreground controls usage examples launcher graphical grid icons reader writer sketch paint pointer png markdown less files edit hexedit binary agent calculator calc graph webradio radio mp3 function generator funcgen waveform sweep"
+keywords = "apps applications foreground controls usage examples launcher graphical grid icons reader writer sketch paint pointer png markdown less ltop cpu tasks monitor files edit hexedit binary agent calculator calc graph webradio radio mp3 function generator funcgen waveform sweep"
 packages_any = []
 +++
 # SolarOS Embedded Apps
@@ -42,6 +42,12 @@ Exit behavior:
   Either Alt key is accepted, including AltGr on compact keyboards.
   Switching back restores the retained terminal or graphics frame, including
   Python and Lua application screens.
+- `Alt+Ctrl+Right/Left` moves local keyboard and board-control focus across a
+  horizontal display split; `Alt+Ctrl+Down/Up` does the same across a vertical
+  split. These shortcuts do not change either display's running session and
+  remain global while a foreground application is active. Plain `Ctrl+Arrow`
+  chords remain available to the shell or foreground application. AltGr can
+  be used instead of Alt.
 - `Alt+Enter` toggles full-screen mode in applications that use the shared TUI.
   Either Alt key is accepted, including AltGr; on the CL-32 keyboard, use
   `File+OK`. Full-screen mode hides the system status bar and persistent TUI
@@ -49,6 +55,130 @@ Exit behavior:
   mode automatically when ten or fewer terminal rows are available. Input rows
   remain visible, and status or error feedback can temporarily cover the last
   content row.
+
+## rtsp
+
+Play a trusted-LAN RTSP stream using UDP RTP/JPEG video and RTP/L16 audio.
+
+```text
+rtsp rtsp://192.168.1.238/media
+rtsp 192.168.1.238/media
+rtsp 192.168.1.192:8554/youtube
+rtsp --audio-only rtsp://192.168.1.113/media
+rtsp --stats rtsp://192.168.1.192:8554/youtube
+rtsp --audio-only --stats rtsp://192.168.1.192:8554/youtube
+```
+
+The `rtsp://` prefix is optional. The RTSP control connection uses TCP port 554
+unless a port is supplied; RTP media uses negotiated UDP ports. Addresses without
+a path are accepted; include the publisher's path when required.
+
+Graphical sessions show aspect-fit JPEG video when a video track is selected.
+Audio-only sessions use the common audio GUI oscilloscope, fed by playback PCM,
+filling the available area between the header and player controls.
+Port shells select audio only and print playback status. `--audio-only` skips
+video negotiation and video buffers even when the publisher offers both tracks.
+Audio uses the selected default output and global volume; Up/Down adjust volume
+(`+`/`-` remain aliases). The graphical player uses the common header, volume
+bar, and Stop/Play button. Enter, Space, or a tap on the button stops playback
+without closing the app; Play reconnects to the same URL. Stopping releases the
+network, decoder, audio output, and media buffers once their workers finish.
+RTSP URLs are single sources, so there are no Previous/Next buttons.
+`F` toggles fullscreen, hiding the header and controls while retaining aspect-fit
+video or expanding the audio-only oscilloscope to the whole screen. `D` toggles
+the separate frame diagnostic overlay: received, displayed, network/app drops,
+and displayed frames per second. `Q`, Escape, or the normal application-exit key
+closes playback.
+Color TFTs with native RGB565 frame support bypass palette quantization: compact
+decoded frames remain in PSRAM and the driver scales them into its bounded DMA
+bands. The header/controls update separately; `D` reserves a diagnostic strip
+above the video on this path. Other targets retain the common raster blitter.
+Suspending retains audio playback; video decoding pauses until resume.
+
+Transient network failures, a stopped publisher, and temporarily missing paths
+retry up to six times with cancellable 0.5, 1, 2, 4, 4, 4 second backoffs.
+A session lasting at least ten seconds resets that consecutive-failure budget.
+Unsupported codecs, authentication, malformed responses, and local allocation
+or audio-output failures stop immediately. Retry renegotiates tracks, flushes
+old audio/timestamps and discards decoded frames from the previous connection.
+Exit remains available while reconnecting. Python/Lua sessions retain their
+single-session behavior and report failures to the script.
+
+`--stats` writes bounded, approximately once-per-second `rtsp.stats` entries
+to the OS log (`log show`). These report received/decoded/presented frame counts,
+queue depth, drops, decode/scale/draw times (including separate blit and present
+timings), frame age and presentation gaps,
+plus audio conversion format, native block size, queue depth, concealment,
+write time, submission gaps, and concealed source sample frames (silence).
+They also report declared worker stacks versus minimum free bytes, connection
+epoch and retries. Network/decode stacks use PSRAM on supported builds; the
+8192-byte audio-output stack stays internal. DMA buffers stay internal too.
+Maxima are for the current playback session;
+submission gaps and jitter-wait polls are not hardware underrun counters.
+Diagnostic timing/logging is disabled without this flag; the lightweight `D`
+overlay works independently. `--stats` initially enables that overlay too.
+Failures report the operation and cause, such as connection refused, RTSP 404
+(missing stream/path), authentication required, rejected UDP transport, server
+connection closure, or a media timeout. They do not collapse these into `ESP_FAIL`.
+
+The reusable RTSP client service owns negotiation, sockets, frame leases, audio
+conversion, and bounded jitter buffering. Its compressed JPEG assembler is a
+single 512 KiB PSRAM allocation, created only when video is selected. The decoder
+leases it briefly; video packets are dropped while it is leased. Two decoded,
+display-sized frames are buffered in PSRAM, with frame-driven video presentation.
+Monochrome displays decode and buffer grayscale rather than RGB; color displays
+retain RGB565 on direct-color displays or RGB888 otherwise.
+On ESP32-S3, supported baseline JPEG images use the shared SIMD decoder on both
+mono and color displays. Unsupported layouts fall back to the ROM or software
+decoder. Private SIMD workspace is allocated during each decode and prefers
+internal SRAM; decoded strips and image buffers prefer PSRAM. Decoding uses the
+ROM fallback when internal free memory cannot cover the 32 KiB OS reserve plus
+a 16 KiB workspace allowance. SIMD routines also occupy resident instruction
+RAM, separate from the temporary workspace.
+Incomplete, superseded, or more than 150 ms late frames are discarded. L16 audio supports
+8–48 kHz mono/stereo with a 32-packet, 80 ms reorder buffer, bounded gap silence,
+and stale-packet dropping. RTCP sender reports align video to the audio playback
+clock when both tracks have timing reports; before that, video uses an 80 ms
+arrival-based delay. The receiver accepts L16 payloads up to 1460 bytes,
+including standard-MTU packets from external RTSP relays.
+Converted PCM is coalesced into complete native output blocks rather than
+writing uneven RTP fragments directly to the audio device. A stalled audio
+source is rebuffered when it resumes. A timestamp more than one second ahead
+also rebases the jitter clock, discarding queued PCM and the converter's partial
+block instead of allowing a full, silent queue. Diagnostics report rebuffering.
+Runtime allocations are released on exit; the app reserves no idle bulk SRAM.
+
+Worker stacks and DMA buffers:
+
+| Resource | Reserved bytes | Placement |
+| --- | ---: | --- |
+| RTSP network worker | 8192 | PSRAM when supported |
+| JPEG decoder, video only | 24576 | PSRAM when supported |
+| RTSP audio-output worker, when audio is selected | 8192 | Internal SRAM |
+| `rtspd` control worker | 8192 | Internal SRAM |
+| Each enabled `rtspd` source reader | 4096 | Internal SRAM |
+| Freenove ST7796 line buffers, already present at idle | 5120 | Internal DMA |
+| Freenove ES8311 duplex PCM DMA payload, while initialized | 4096 | Internal DMA |
+
+The Freenove display uses two 320-pixel, four-line RGB565 buffers. Its audio
+driver uses four 128-frame stereo S16 buffers per direction, including input
+when opening the duplex output. DMA descriptors, codec/I2S state, socket state
+and task control blocks are additional, so heap deltas are not just stack plus
+payload sizes. Internal and DMA heap views overlap; do not add them together.
+Task admission preserves a 32 KiB internal reserve. `mem` reports free memory
+and the largest contiguous blocks; `top` reports minimum free task-stack space.
+`mem policy` request totals are cumulative, not active allocation sizes.
+External-preferred buffers can consume internal memory on non-PSRAM targets.
+Opening microphone capture while playback is active is not supported, including
+on the Freenove duplex codec.
+
+V1 supports unauthenticated IPv4 RTSP 1.0, one JPEG and one L16 track, and unicast
+UDP. JPEG uses the publisher's explicit 8-bit quantization tables (Q=255), types
+0/1 with optional restart markers. TCP interleaving, multicast, authentication,
+encrypted RTSP, compressed audio, and redirects are not supported. Five seconds
+without media triggers the bounded reconnect policy; permanent failures or
+retry exhaustion return a diagnostic to the shell. The publisher must have a
+free receiver slot; `rtspd` is single-client.
 
 ## agent
 
@@ -68,6 +198,8 @@ agent config reasoning medium
 agent config tools confirm
 agent config max-tools 16
 agent
+job start speechd /voices/en-US
+agent --tts
 agent list
 agent resume SLOT
 agent ask How much memory is free on this device?
@@ -85,6 +217,13 @@ continuation ID; Chat Completions uses bounded local history. Slots are `1` to
 performs one unsaved request but likewise waits for `Esc` or the app-exit key
 after completion, so display-shell output is not immediately replaced by the
 shell screen.
+
+`agent --tts`, `agent --tts new`, `agent --tts resume SLOT`, and
+`agent --tts ask PROMPT` keep the written answer and also queue the successful
+final model response through the running local PicoTTS `speechd`. Start
+`speechd` with a voice directory first. Status and retry messages, tool calls,
+tool results, confirmations, and intermediate text before a tool call are not
+spoken.
 
 Use `agent config key clear` for an endpoint that does not require bearer
 authentication. `agent status` shows configuration, request counters, HTTP
@@ -284,20 +423,34 @@ interface on a port shell. `--tui` forces the text interface even when the
 launching shell has graphics.
 
 On a graphical session, `Tab` switches between Play and Playlist. The Play tab
-uses the top two-thirds for a cassette visualizer by default; `V` cycles through
-Cassette, Oscilloscope, and Spectrum. The cassette reels turn only while audio
-plays and show track progress when duration is known. `Left`/`Right` plays the
+uses the space above the shared bottom controls for a cassette visualizer by
+default; `V` cycles through Cassette, Oscilloscope, and Spectrum. The cassette
+reels turn only while audio plays and show track progress when duration is
+known. `Left`/`Right` plays the
 previous or next track in the playlist ring, `Enter` plays or stops, Space
-pauses or resumes, and `Up`/`Down` adjusts volume. On the Playlist tab,
+pauses or resumes, and `Up`/`Down` adjusts volume. `<`/`>` seeks backward/forward
+by ten seconds without changing tracks; rewind/forward buttons provide the
+same actions. Seeking preserves pause state and discards queued audio.
+The controls show the track name, playback status and time above the volume bar.
+The middle button stops or starts playback and indicates pause while paused.
+On the Playlist tab,
 `Up`/`Down` selects, `Enter` starts the track and returns to Play, `A` opens the
 WAV/MP3 file browser, and `Delete` removes the selected playlist entry.
 
 The text interface is one playlist screen: `Up`/`Down` selects, `Enter` plays
-or stops, Space pauses or resumes, `A` opens the filtered file browser,
+or stops, Space pauses or resumes, `<`/`>` seeks backward/forward ten seconds,
+`A` opens the filtered file browser,
 `Delete` removes an entry, and `Esc` exits. Its bottom status line shows the
 playing, paused, or stopped state with elapsed and total time. Playback follows
 the resumable app while another foreground session is selected and stops when
 Player closes. End of file advances to the next playlist entry.
+
+WAV seeking is sample-aligned. MP3 seeking scans frame headers to locate the
+target, including in variable-bitrate files, then decodes a short warm-up for
+the bit reservoir and synthesis filter. A bounded transient index uses PSRAM
+when available. Player shows `SEEKING` until audio resumes. File scanning can
+still take time on slow storage; stopping playback cancels the seek. If the
+index cannot be allocated, playback uses slower sequential seeking instead.
 
 WAV playback converts the file's mono/stereo channel count and sample rate to
 the selected output stream. A mono recording therefore plays through a fixed
@@ -364,6 +517,11 @@ radio conversations. Enter selects a conversation and opens its bounded shared
 history on the Chat tab, which also contains the message/command input. The app
 opens and remains useful offline; network or radio transport jobs connect
 independently.
+
+MeshCore channel labels distinguish `[radio]` and `[companion]`. Entries marked
+`(history)` retain readable messages but cannot accept sends. After submitting
+a message, the footer follows its delivery state through `queued`, `sending`,
+`sent`, `delivered`, or `failed`.
 
 Usage:
 
@@ -558,15 +716,19 @@ pages. The initial implementation does not support playlists, HLS, or AAC.
 Controls:
 
 - `Tab` switches between the Player and Channels tabs in the GUI.
-- The Player tab gives the top two-thirds of the screen to a live PCM
+- The Player tab gives the space above the shared bottom controls to a live PCM
   oscilloscope or spectrum analyzer. `V` switches visualizers. The spectrum
   analyzer uses the shared DSP service, including PIE SIMD window and FFT paths
   on eligible ESP32-S3 boards.
 - On the Player tab, `Left` and `Right` play the previous or next catalog
-  channel. The catalog wraps as a ring. Space or `Enter` stops or resumes
-  playback, and `Up`/`Down` changes global volume in five-percent steps.
-- The bottom third of the Player tab shows the channel, playback state, volume
-  bar, and previous, stop/play, and next controls.
+  channel. The catalog wraps as a ring. `Enter` stops playback or reconnects
+  the channel; Space pauses/resumes, and `Up`/`Down` changes global volume in
+  five-percent steps.
+- The bottom controls show the channel name, playback state and elapsed output
+  time above the volume bar, followed by Previous, Stop/Play, and Next buttons.
+  The buttons support clicking or tapping; the middle icon indicates pause
+  while paused. Live-channel pause uses bounded audio buffers; a server may
+  disconnect during a long pause, requiring reconnection.
 - On the Channels tab, `Up`/`Down` selects a channel, `A` adds one, `E` edits
   one, and `Delete` removes one. `Enter` starts the selected channel and returns
   to the Player tab. Add and edit dialogs accept a name followed by a literal
@@ -762,7 +924,8 @@ files --launcher /apps
 
 File associations come from the installed app registry. Only apps compiled in
 the active firmware can be selected. Associations include images to `view`,
-WAV/MP3 to `player`, CSV to `sheet`, Python and Lua scripts to their runtimes,
+WAV/MP3 to `player`, MPEG-1 `.mpg`/`.mpeg` files to `vplay`, CSV to `sheet`,
+Python and Lua scripts to their runtimes,
 documents to `reader` (or `writer` when Reader is unavailable), and `.gb` ROMs
 to `gameboy`. Unknown files fall back to `less` or `edit`. A `.sh` file runs
 through the built-in SolarOS shell. In launcher mode, documents associated with
@@ -775,7 +938,7 @@ Controls:
 - `Enter` opens directories or launches known files.
 - Returning to a parent directory restores the cursor to the directory that
   was just exited.
-- `F3`/`V`, `F4`/`E`, `F5`/`C`, `F6`/`M`, `F7`/`K`, `F8`/`D`, and `F9`/`Z`
+- `F3`/`V`, `F4`/`E`, `F5`/`C`, `F6`/`M`, `F7`/`k`/`K`, `F8`/`D`, and `F9`/`Z`
   view, edit, copy, move, create a directory, delete, and create a zip archive.
   The function keys remain the primary map; the help bar shows the letter
   mnemonics within the action names.
@@ -798,28 +961,38 @@ connections.
 Usage:
 
 ```text
+ftp
 ftp HOST [PORT] [--user USER --password PASSWORD] [--remote PATH] [--local PATH]
 ```
 
 Anonymous login is the default (`anonymous` with `solaros@` as its password).
 Specify both `--user` and `--password` for an authenticated server. Passwords
 are plaintext on the network and remain in shell history when entered on the
-command line. Use FTP only on a trusted network.
+command line. Use FTP only on a trusted network. Starting without arguments
+opens the disconnected file manager; `F2`/`n` opens the connection form. The
+command-line form remains available as a direct connection shortcut. If login
+is rejected, FTP reopens the form on the password field with the entered host,
+port, user, remote path, and masked password preserved. Connection failures are
+reported as refused, timed out, host unreachable, or network unreachable when
+the socket supplies that distinction, and as server unavailable otherwise.
 
 Controls:
 
 - Arrows navigate the active pane. `Tab`, Left, and Right switch panes.
+- `F2`/`n` opens the connection form. `Tab` or Up/Down selects a field, Enter
+  connects, and Esc cancels the form.
 - `Enter` opens a directory. `r` refreshes the remote and local listings.
-- `F3` views a local file. For a remote file, FTP downloads a temporary hidden
+- `F3`/`V` views a local file. For a remote file, FTP downloads a temporary hidden
   copy into the current local folder, opens its registered viewer, and removes
   the copy when control returns to FTP.
-- `F5` copies the current file or directory to the other pane. Directory
+- `F5`/`C` copies the current file or directory to the other pane. Directory
   transfers are recursive. Copy and move show the same preparing/transfer
   progress popup used by Files.
-- `F6` moves the current file or directory to the other pane by completing the
+- `F6`/`M` moves the current file or directory to the other pane by completing the
   copy before deleting the source.
-- `F7` creates a directory in the active pane.
-- `F8` recursively deletes the current item after confirmation.
+- `F7`/`k`/`K` creates a directory in the active pane.
+- `F8`/`D` recursively deletes the current item after confirmation. The help
+  bar emphasizes the same operation mnemonics used by Files and SFTP.
 - `q`, `F10`, or the app-exit key closes the connection and exits.
 - After an operation refreshes the current directories, both panes retain their
   cursor and scroll positions. Opening another directory starts at its top.
@@ -829,6 +1002,38 @@ One operation runs at a time in its foreground worker. Existing destination
 files are replaced. A failed download removes its staging file and preserves an
 existing destination; a move does not delete its source unless the complete
 copy succeeds.
+
+## sftp
+
+Two-pane SFTP file manager with the same panes, file operations, progress, and
+key bindings as `ftp`. The left pane is local mounted storage and the right
+pane is a remote SSH server's SFTP subsystem. It uses the shared SSH transport,
+known-host policy, host aliases, and password or public-key authentication.
+
+Usage:
+
+```text
+sftp
+sftp [user@]HOST[:PATH] [PORT] [--user USER] [--password PASSWORD] [--remote PATH] [--local PATH]
+```
+
+Starting without arguments opens the disconnected file manager. Press `F2`/`n`
+to enter the host, port, user, optional password, and initial remote path. Leave
+the password empty to use the configured SSH key. When `user@` and `--user` are
+omitted from the command-line shortcut, SFTP uses the SolarOS identity user. A
+remote path can be appended to the host, for example
+`sftp nils@remote:/directory`; this form connects immediately and opens that
+directory. `--remote PATH` overrides an appended path. A command-line password
+remains in shell history; the connection form masks it. The active form field
+keeps a visible text cursor. If passwordless key authentication fails, SFTP
+reopens the form on the password field instead of showing a low-level error.
+
+Controls are identical to FTP: `F2`/`n` opens connection setup; `F3`/`V` views,
+`F5`/`C` copies, `F6`/`M` moves, `F7`/`k`/`K` creates a directory, and `F8`/`D`
+deletes after confirmation. Transfers are recursive, use the same progress
+popup, retain both pane positions after refresh, and stage downloaded and
+uploaded files before replacement. `q`, `F10`, or the app-exit key closes the
+SSH connection and exits.
 
 ## flash
 
@@ -883,12 +1088,14 @@ contacts link TARGET_CONTACT_ID SOURCE_CONTACT_ID
 
 Contact and endpoint identifiers autocomplete from live service snapshots.
 Linking moves the source endpoints to the target contact and removes the source
-record. When the 64-contact store is full, SolarOS may evict the oldest
+record. When the 512-contact store is full, radio discovery may evict the oldest
 unpinned contact whose endpoints are all still discovered; trusted and blocked
 records are never automatically evicted.
+BLE companion imports preserve existing records and report overflow instead
+of evicting contacts. The shared store supports up to 576 endpoints.
 
 The versioned store is CRC checked, uses two alternating headers and data
-copies, remains below 24 KiB, and normally lives at
+copies, remains below 192 KiB, and normally lives at
 `/.contacts/contacts.bin`. If storage is unavailable, Contacts remains usable
 in volatile mode and `contacts status` reports the storage error.
 
@@ -1079,6 +1286,41 @@ Controls:
 - `Ctrl+F` or `/` opens Find. `F3` or `n` jumps to the next
   case-insensitive match; `N` jumps to the previous match. Search wraps.
 - `q`, `Esc`, or app-exit key exits.
+
+## ltop
+
+Live text task monitor for display and port terminals. Unlike the `top`
+command's cumulative snapshot, `ltop` samples the FreeRTOS runtime counters
+once per second and reports the interval deltas. One progress bar shows the
+busy share of each CPU core, derived from that core's idle-task delta. Each
+task percentage is its share of one core, so the task total can approach 200%
+on a dual-core target. The title shows the current aggregate CPU load instead
+of the fixed maximum capacity.
+
+The IRAM and ERAM progress bars show the currently used share of the internal
+and external heaps. ERAM is shown as unavailable on boards without external
+RAM.
+
+The task table is sorted by current CPU load and shows task state, priority,
+interval CPU percentage, and peak stack consumption since the task started.
+Peak stack consumption is the allocated stack size minus the minimum remaining
+stack reported by FreeRTOS. Idle tasks are omitted from the table because their
+counters drive the per-core progress bars. Columns expand across wide terminals
+and the priority column is hidden on narrow terminals.
+
+Usage:
+
+```text
+ltop
+```
+
+Controls:
+
+- `Up`/`Down` or `j`/`k` scroll one row.
+- `Page Up`/`Page Down`, `Home`/`End`, or `g`/`G` move through the
+  task list.
+- `r` resets the sampling baseline.
+- `q`, `Esc`, or the app-exit key exits.
 
 ## logic
 
@@ -1449,6 +1691,34 @@ Controls:
 
 - App-exit key cancels an active transfer.
 
+## sftpsync
+
+Incremental file and directory synchronization over SSH. The SolarOS client
+uses the server's SFTP subsystem, so it works with a normal SSH server without
+requiring a matching remote program. It skips regular files whose size and
+modification time already match. It does not delete destination-only files.
+
+Usage:
+
+```text
+sftpsync [-r|-a] [-n] [-P port] local [user@]host:remote
+sftpsync [-r|-a] [-n] [-P port] [user@]host:remote local
+```
+
+`-r`, `-a`, or `--recursive` enables directory traversal. `-n` or `--dry-run`
+prints the changes without writing them. `-P` selects a non-default SSH port.
+Password and key authentication, known hosts, and aliases in `/.ssh/hosts` are
+shared with `ssh` and `scp`. A local or remote directory operand names the
+directory to synchronize; its contents are updated below that path. Traversal
+is limited to eight nested directory levels. Symbolic links and other special
+file types are skipped. Active transfers show an updating progress bar for each
+changed file, followed by the aggregate file and byte counts.
+
+Controls:
+
+- `Ctrl+C` or the app-exit key cancels the password prompt or an active
+  synchronization.
+
 ## sheet
 
 CSV viewer for small data tables. It is intended as a companion to `daq` logs
@@ -1655,6 +1925,57 @@ Controls:
 - `1` selects fit-to-screen.
 - `Esc` or app-exit key exits.
 
+## vplay
+
+Graphical MPEG-1 media player with optional MP2 audio.
+The bottom controls show playback status and elapsed time above the volume bar;
+full screen hides the controls and time. The middle Stop/Play icon indicates
+pause while paused.
+
+Usage:
+
+```text
+vplay [-fit|-actual] <file.mpg>
+```
+
+Supports MPEG-1 program streams (`.mpg` and `.mpeg`) containing
+one MPEG-1 video track and optionally one MPEG-1 Layer II (MP2) audio track.
+MPEG-2, MPEG-4/H.264, AVI, transport streams, and MP3/AAC audio are not supported.
+The source limit is 640x480; lower resolutions and frame rates are recommended
+for smooth playback. Decoding reads the file incrementally into bounded PSRAM
+buffers. Color screens use native RGB565 output and ESP32-S3 SIMD color
+conversion; monochrome screens use the luma plane. Playback speed depends on
+source complexity, display transfer speed, and output size.
+
+Controls:
+
+- `Space` pauses/resumes.
+- `Up`/`Down` changes global volume.
+- `Enter` stops playback or restarts the selected file.
+- `<`/`>` seeks backward/forward ten seconds, preserving pause state.
+- `Left`/`Right` selects the previous/next MPEG file in the same folder, in
+  filename order. At either end, the selection stays unchanged.
+- The shared Previous, Rewind, Stop/Play, Forward, and Next buttons provide
+  the same actions when clicked or tapped.
+- `f` toggles full screen, hiding the header, volume strip, and transport buttons.
+- `0` selects actual size and `1` selects fit.
+  Actual-size video larger than the viewport is cropped centrally.
+- `d` toggles frame/timing log diagnostics.
+- `Esc` or app-exit key exits.
+
+Playback pauses while its session is suspended and returns to the shell at the
+end of the file. Audio uses the selected SolarOS output and acts as the playback
+clock when present; a file with audio requires an available playback output.
+Video dimensions and frame rate must remain constant, and the initial audio/video
+timestamp difference must be no more than ten seconds.
+
+Seeking discards queued audio and jumps to an earlier timestamped intra frame,
+then decodes the reference pictures and MP2 warm-up needed at the target.
+Files without usable seek timestamps fall back to sequential decoding, which
+can take longer. Buffers remain bounded, and `SEEKING` indicates preparation;
+stopping or closing playback cancels the work. Positions beyond the end are
+clamped to the last video frame.
+
 ## sketch
 
 Pointer-driven graphical paint application. Its layout follows classic desktop
@@ -1706,14 +2027,23 @@ Controls:
 Simple graphical web browser for lightweight HTML pages. It shares document and
 image rendering infrastructure with `reader` where possible. Embedded and
 direct PNG, JPEG, GIF, and WebP images retain color on indexed-color displays;
-one-bit displays keep the grayscale decode and dither path.
+one-bit displays keep the grayscale decode and dither path. Direct MJPEG URLs
+are shown as live video using the same JPEG renderer.
 
 Usage:
 
 ```text
 web http://host/
 web https://host/path
+web http://camera-host/camera.mjpeg
 ```
+
+MJPEG playback uses a bounded 512 KiB assembly buffer and a single pending
+decoded frame. If decoding or display presentation falls behind the source,
+`web` drops the stale pending frame and keeps the newest one instead of growing
+latency or memory use. Reload, Back, Forward, and app exit cancel the active
+HTTP stream. The stream inherits the security properties of its URL; plain
+HTTP provides no encryption or peer authentication.
 
 Controls:
 

@@ -2,7 +2,7 @@
 
 **Testing:** [Master outstanding test checklist](teensy41-test-checklist.md).
 
-Last updated: 2026-10-01.
+Last updated: 2026-10-03.
 
 This is the working plan and idea backlog for porting SolarOS from ESP32 to
 Teensy 4.1, then bringing up the SuperKeyboard hardware. Keep technical details
@@ -26,6 +26,12 @@ The fifth stage is item 7 from the command-gap review. Monitoring and transfer
 features remain backlog; they do not precede RAMFS in this approved sequence.
 
 ## Current position
+
+**2026-10-03 upstream 4.15.18:** memory improvements, interactive `ltop`,
+WebRadio, SSH key commands, MIDI recording/playback and STUSB4500 software are
+integrated. Existing bus tools are retained. Physical audio/MIDI/PD verification
+is pending; see the [handoff](teensy41-handoff.md) and master checklist.
+MIDI viewer/editor and standard MIDI file import/export remain future work.
 
 **2026-10-01 revised PCB pinout:** recorded separately from the unchanged bench
 profile. RGB0/AmpEn1/DMM40 are the new PCB targets. Flash-drive `Pins_v3.ods`

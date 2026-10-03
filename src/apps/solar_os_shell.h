@@ -42,6 +42,7 @@ esp_err_t solar_os_shell_session_submit_command(solar_os_context_t *ctx,
 esp_err_t solar_os_shell_execute_command(solar_os_context_t *ctx,
                                          const char *command);
 void solar_os_shell_session_prompt(solar_os_context_t *ctx, solar_os_shell_session_t *session);
+void solar_os_shell_session_hold_prompt(solar_os_context_t *ctx);
 void solar_os_shell_session_prepare_foreground_launch(solar_os_context_t *ctx,
                                                       bool clear_on_resume);
 esp_err_t solar_os_shell_session_start_log_follow(solar_os_context_t *ctx,
@@ -63,4 +64,6 @@ bool solar_os_shell_run_script(solar_os_context_t *ctx,
                                bool report_open_error);
 /* Run a script without a terminal. Foreground application launches are rejected. */
 esp_err_t solar_os_shell_run_background_script(const char *path);
+/* Run one command without a terminal. Foreground application launches are rejected. */
+esp_err_t solar_os_shell_run_background_command(const char *command);
 esp_err_t solar_os_shell_set_cwd(solar_os_context_t *ctx, const char *path);

@@ -214,7 +214,7 @@ static esp_err_t terminal_read(void *,uint8_t *data,size_t length,uint32_t timeo
     } while(true);
 }
 static bool audio_app(const solar_os_app_t *app) {
-    return app && (!strcmp(app->name,"synth") || !strcmp(app->name,"aplay") || !strcmp(app->name,"arecord"));
+    return app && (!strcmp(app->name,"webradio") || !strcmp(app->name,"synth") || !strcmp(app->name,"aplay") || !strcmp(app->name,"arecord"));
 }
 static bool console_has_audio(const Console &c);
 static bool sk_app_allowed(const solar_os_app_t *app) {

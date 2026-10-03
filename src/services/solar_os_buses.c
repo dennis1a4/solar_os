@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "esp_attr.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -48,8 +49,9 @@ typedef struct {
 #endif
 } solar_os_bus_ref_t;
 
-static solar_os_bus_info_t buses[SOLAR_OS_BUS_MAX];
-static solar_os_bus_lease_t leases[SOLAR_OS_BUS_LEASE_MAX];
+/* Registry metadata is task-only, not device-facing DMA/provider storage. */
+static EXT_RAM_BSS_ATTR solar_os_bus_info_t buses[SOLAR_OS_BUS_MAX];
+static EXT_RAM_BSS_ATTR solar_os_bus_lease_t leases[SOLAR_OS_BUS_LEASE_MAX];
 static bool buses_initialized_here[SOLAR_OS_BUS_MAX];
 static SemaphoreHandle_t bus_mutexes[SOLAR_OS_BUS_MAX];
 static StaticSemaphore_t bus_mutex_buffers[SOLAR_OS_BUS_MAX];
@@ -691,7 +693,11 @@ static esp_err_t register_board_bus_locked(const solar_os_bus_definition_t *defi
         return ESP_OK;
     }
     if (!protocol_service_available(definition->protocol)) {
-        return ESP_ERR_NOT_SUPPORTED;
+        /* A board manifest may describe optional buses that a lean flavor does
+         * not expose. Fixed devices select their required protocol service via
+         * package dependencies, so an unavailable protocol here means this bus
+         * is unused and must not roll back unrelated board buses. */
+        return ESP_OK;
     }
     if (definition->origin != SOLAR_OS_BUS_ORIGIN_BOARD) {
         return ESP_ERR_INVALID_ARG;

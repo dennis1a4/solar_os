@@ -14,6 +14,7 @@ extern "C" {
 #endif
 #include <qnethernet/QNDNSClient.h>
 #if SK_SSH || SK_NET_DIAGNOSTICS
+extern "C" void qnethernet_hal_init_entropy();
 extern "C" size_t qnethernet_hal_entropy_available();
 extern "C" size_t qnethernet_hal_fill_entropy(void *,size_t);
 #endif
@@ -184,8 +185,10 @@ extern "C" void sk_net_transport_poll(int ready) {
 #endif
 #if SK_SSH || SK_NET_DIAGNOSTICS
     case SK_NET_ENTROPY: {
-        // Ethernet and SSH share one TRNG owner. Never reinitialize it from
-        // the SSH task, or race the Ethernet stack's entropy pool.
+        // Keys can be generated before network up (or after network down).
+        // The HAL initializes only a stopped TRNG. Keep this in the Ethernet
+        // owner task and initialize before reading clock-gated registers.
+        qnethernet_hal_init_entropy();
         if (TRNG_MCTL & TRNG_MCTL_ERR) { r.error=EIO; break; }
         size_t n=qnethernet_hal_entropy_available();
         if (q.length<0 || q.length>SK_NET_CHUNK) { r.error=EINVAL; break; }

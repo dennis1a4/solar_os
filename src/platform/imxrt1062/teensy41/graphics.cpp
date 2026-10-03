@@ -13,6 +13,7 @@ void sk_console_delay_ms(uint32_t);
 void __real_solar_os_gfx_prepare_surface(solar_os_gfx_t *);
 void __real_solar_os_gfx_release_surface(solar_os_gfx_t *);
 }
+extern "C" esp_err_t solar_os_display_set_high_refresh_override(const char *,bool,uint16_t){return ESP_ERR_NOT_SUPPORTED;}
 static u8g2_t canvas;
 static solar_os_gfx_t gfx;
 static u8x8_display_info_t info;

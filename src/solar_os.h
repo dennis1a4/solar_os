@@ -32,6 +32,8 @@ typedef esp_err_t (*solar_os_context_output_fn)(const char *text,
 #define SOLAR_OS_APP_FLAG_POINTER_EVENTS (1U << 3)
 /* Receive normalized analog axis events. */
 #define SOLAR_OS_APP_FLAG_AXIS_EVENTS (1U << 4)
+/* Receive recognized touchless and touch gesture events. */
+#define SOLAR_OS_APP_FLAG_GESTURE_EVENTS (1U << 5)
 
 /*
  * Foreground-app mutable state is cold by default: the shared app lifecycle
@@ -84,6 +86,7 @@ typedef struct {
     bool exit_result_pending;
     int exit_code;
     bool sleep_requested;
+    bool deep_sleep_requested;
     bool suspend_requested;
     solar_os_session_request_type_t session_request;
     uint8_t session_request_id;
@@ -103,6 +106,7 @@ typedef enum {
     SOLAR_OS_EVENT_KEY,
     SOLAR_OS_EVENT_POINTER,
     SOLAR_OS_EVENT_AXIS,
+    SOLAR_OS_EVENT_GESTURE,
     SOLAR_OS_EVENT_TICK,
     SOLAR_OS_EVENT_RESUME,
 } solar_os_event_type_t;
@@ -114,6 +118,7 @@ typedef struct {
         solar_os_input_key_event_t key;
         solar_os_input_pointer_event_t pointer;
         solar_os_input_axis_event_t axis;
+        solar_os_input_gesture_event_t gesture;
         uint32_t tick_ms;
     } data;
 } solar_os_event_t;
@@ -180,6 +185,16 @@ struct solar_os_job {
     void (*detail)(solar_os_context_t *ctx);
     /* Optional detail for the most recent start failure. */
     void (*error_detail)(char *buffer, size_t buffer_len);
+    /* Optional context-aware callbacks used by dynamically registered jobs. */
+    void *callback_user;
+    esp_err_t (*start_with_user)(void *user,
+                                 solar_os_context_t *ctx,
+                                 int argc,
+                                 char **argv);
+    void (*stop_with_user)(void *user, solar_os_context_t *ctx);
+    bool (*event_with_user)(void *user,
+                            solar_os_context_t *ctx,
+                            const solar_os_event_t *event);
 };
 
 void solar_os_context_init(solar_os_context_t *ctx,
@@ -233,6 +248,8 @@ bool solar_os_context_take_exit_result(solar_os_context_t *ctx,
                                        int *exit_code);
 void solar_os_context_request_sleep(solar_os_context_t *ctx);
 bool solar_os_context_take_sleep_request(solar_os_context_t *ctx);
+void solar_os_context_request_deep_sleep(solar_os_context_t *ctx);
+bool solar_os_context_take_deep_sleep_request(solar_os_context_t *ctx);
 void solar_os_context_request_suspend(solar_os_context_t *ctx);
 bool solar_os_context_take_suspend_request(solar_os_context_t *ctx);
 void solar_os_context_set_session_list_handler(solar_os_context_t *ctx,

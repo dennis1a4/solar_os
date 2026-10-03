@@ -1,6 +1,7 @@
 #include "solar_os_app_registry.h"
 
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "esp_attr.h"
@@ -9,6 +10,10 @@
 #include "solar_os_config.h"
 #include "solar_os_task.h"
 #include "solar_os_app_file_types.h"
+#include "solar_os_storage.h"
+#if SOLAR_OS_PACKAGE_SERVICE_PLAYGROUND
+#include "solar_os_playground.h"
+#endif
 #if SOLAR_OS_PACKAGE_APP_APLAY || SOLAR_OS_PACKAGE_APP_ARECORD
 #include "solar_os_audio_apps.h"
 #endif
@@ -30,6 +35,12 @@
 #if SOLAR_OS_PACKAGE_APP_SCP
 #include "solar_os_scp_app.h"
 #endif
+#if SOLAR_OS_PACKAGE_APP_SFTPSYNC
+#include "solar_os_sftpsync_app.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_SFTP
+#include "solar_os_sftp_app.h"
+#endif
 #if SOLAR_OS_PACKAGE_APP_SSH
 #include "solar_os_ssh_app.h"
 #endif
@@ -38,6 +49,9 @@
 #endif
 #if SOLAR_OS_PACKAGE_APP_WEBRADIO
 #include "solar_os_webradio.h"
+#endif
+#if SOLAR_OS_PACKAGE_APP_RTSP
+#include "solar_os_rtsp_app.h"
 #endif
 #if SOLAR_OS_PACKAGE_APP_PLAYER
 #include "solar_os_player.h"
@@ -102,6 +116,9 @@
 #if SOLAR_OS_PACKAGE_APP_MQTT_EXPLORER
 #include "solar_os_mqtt_explorer.h"
 #endif
+#if SOLAR_OS_PACKAGE_APP_LTOP
+#include "solar_os_ltop.h"
+#endif
 #if SOLAR_OS_PACKAGE_APP_NOTES
 #include "solar_os_notes.h"
 
@@ -139,6 +156,9 @@
 #if SOLAR_OS_PACKAGE_APP_VIEW
 #include "solar_os_view.h"
 #endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+#include "solar_os_vplay.h"
+#endif
 #if SOLAR_OS_PACKAGE_APP_SKETCH
 #include "solar_os_sketch.h"
 #endif
@@ -168,7 +188,7 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
     APP_ENTRY("contacts", "provider-neutral contact browser", &solar_os_contacts_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "contacts", 1, 1),
 #endif
 #if SOLAR_OS_PACKAGE_APP_AGENT
-    APP_ENTRY("agent", "native LLM agent", &solar_os_agent_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "agent [new|resume <id>|ask <prompt...>|script <file> [args...]]", 1, 0),
+    APP_ENTRY("agent", "native LLM agent", &solar_os_agent_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "agent [--tts] [new|resume <id>|ask <prompt...>] | agent script <file> [args...]", 1, 0),
 #endif
 #if SOLAR_OS_PACKAGE_APP_CURL
     APP_ENTRY("curl", "HTTP client", &solar_os_curl_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "curl [-L] [-o file] <URL>", 2, 0),
@@ -179,6 +199,12 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #if SOLAR_OS_PACKAGE_APP_SCP
     APP_ENTRY("scp", "SCP file copy", &solar_os_scp_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "scp [-P port] <source> <destination>", 3, 5),
 #endif
+#if SOLAR_OS_PACKAGE_APP_SFTPSYNC
+    APP_ENTRY("sftpsync", "synchronize files over SSH", &solar_os_sftpsync_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "sftpsync [-arn] [-P port] <source> <destination>", 3, 8),
+#endif
+#if SOLAR_OS_PACKAGE_APP_SFTP
+    APP_ENTRY("sftp", "two-pane SFTP file manager", &solar_os_sftp_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "sftp [[user@]HOST[:PATH] [PORT] [--user USER] [--password PASSWORD] [--remote PATH] [--local PATH]]", 1, 11),
+#endif
 #if SOLAR_OS_PACKAGE_APP_SSH
     APP_ENTRY("ssh", "SSH client", &solar_os_ssh_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "ssh [user@]host [port]", 2, 3),
 #endif
@@ -187,6 +213,9 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #endif
 #if SOLAR_OS_PACKAGE_APP_WEBRADIO
     APP_ENTRY("webradio", "streaming internet radio", &solar_os_webradio_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "webradio [--tui] [URL] | webradio [--tui] <list | add NAME URL | remove NAME | reset>", 1, 5),
+#endif
+#if SOLAR_OS_PACKAGE_APP_RTSP
+    APP_ENTRY("rtsp", "RTSP JPEG/L16 viewer", &solar_os_rtsp_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "rtsp [--audio-only] [--stats] <[rtsp://]host[:port][/path]>", 2, 4),
 #endif
 #if SOLAR_OS_PACKAGE_APP_PLAYER
     APP_FILE_ENTRY("player", "playlist audio player", &solar_os_player_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "player [--tui] [file.wav|file.mp3]", 1, 3, ".wav .mp3"),
@@ -223,7 +252,7 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
     APP_ENTRY("launcher", "configurable graphical launcher", &solar_os_launcher_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "launcher [config.json]", 1, 2),
 #endif
 #if SOLAR_OS_PACKAGE_APP_FTP
-    APP_ENTRY("ftp", "two-pane FTP file manager", &solar_os_ftp_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "ftp HOST [PORT] [--user USER --password PASSWORD] [--remote PATH] [--local PATH]", 2, 11),
+    APP_ENTRY("ftp", "two-pane FTP file manager", &solar_os_ftp_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "ftp [HOST [PORT] [--user USER --password PASSWORD] [--remote PATH] [--local PATH]]", 1, 11),
 #endif
 #if SOLAR_OS_PACKAGE_APP_FLASH
     APP_ENTRY("flash", "download and flash SolarOS onto another ESP board", &solar_os_flash_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "flash [refresh | list | download BOARD FLAVOR [VERSION] | BOARD FLAVOR [version=VERSION] [port=uart0] [boot=PIN] [reset=PIN] [baud=RATE]]", 1, 8),
@@ -252,6 +281,9 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #endif
 #if SOLAR_OS_PACKAGE_APP_OBD
     APP_ENTRY("obd", "OBD-II diagnostics (demo backend)", &solar_os_obd_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "obd --demo [--scenario normal|timeout|sequence|reject] [--report /new/path.txt]", 1, 6),
+#endif
+#if SOLAR_OS_PACKAGE_APP_LTOP
+    APP_ENTRY("ltop", "live task and per-core CPU monitor", &solar_os_ltop_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "ltop", 1, 1),
 #endif
 #if SOLAR_OS_PACKAGE_APP_NOTES
     APP_ENTRY("notes", "Markdown checklist notes", &solar_os_notes_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "notes [file.md]", 1, 2),
@@ -290,6 +322,9 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #endif
 #if SOLAR_OS_PACKAGE_APP_VIEW
     APP_FILE_ENTRY("view", "image viewer", &solar_os_view_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "view [-fit|-actual] <image>", 2, 3, ".png .jpg .jpeg .gif .webp .bmp .pnm .pbm .pgm .ppm"),
+#endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+    APP_FILE_ENTRY("vplay", "MPEG-1 media player", &solar_os_vplay_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "vplay [-fit|-actual] <file.mpg>", 2, 3, ".mpg .mpeg"),
 #endif
 #if SOLAR_OS_PACKAGE_APP_SKETCH
     APP_FILE_ENTRY("sketch", "pointer-driven paint application", &solar_os_sketch_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "sketch [file.png]", 1, 2, ".png"),
@@ -369,6 +404,251 @@ const solar_os_app_registry_entry_t *solar_os_app_registry_find_opener(const cha
         }
     }
     return NULL;
+}
+
+static void app_discovery_native_info(const solar_os_app_registry_entry_t *entry,
+                                      solar_os_app_discovery_info_t *info)
+{
+    memset(info, 0, sizeof(*info));
+    strlcpy(info->name, entry->name, sizeof(info->name));
+    strlcpy(info->id, entry->name, sizeof(info->id));
+    strlcpy(info->title, entry->name, sizeof(info->title));
+    strlcpy(info->summary, entry->summary, sizeof(info->summary));
+    info->kind = SOLAR_OS_APP_DISCOVERY_NATIVE;
+}
+
+#if SOLAR_OS_PACKAGE_SERVICE_PLAYGROUND
+static size_t app_discovery_playground_count(void)
+{
+    size_t installed = 0U;
+    const size_t count = solar_os_playground_app_count();
+    for (size_t i = 0U; i < count; i++) {
+        char id[SOLAR_OS_PLAYGROUND_ID_MAX];
+        if (solar_os_playground_get_installed_app_id(i, id, sizeof(id))) {
+            installed++;
+        }
+    }
+    return installed;
+}
+
+static bool app_discovery_playground_get(size_t index,
+                                         solar_os_app_discovery_info_t *info)
+{
+    size_t installed = 0U;
+    const size_t count = solar_os_playground_app_count();
+    for (size_t i = 0U; i < count; i++) {
+        char id[SOLAR_OS_PLAYGROUND_ID_MAX];
+        if (!solar_os_playground_get_installed_app_id(i, id, sizeof(id))) {
+            continue;
+        }
+        if (installed++ != index) {
+            continue;
+        }
+
+        solar_os_playground_app_info_t app;
+        if (!solar_os_playground_get_app(i, &app)) {
+            return false;
+        }
+        memset(info, 0, sizeof(*info));
+        const int written = snprintf(info->name,
+                                     sizeof(info->name),
+                                     "playground:%s",
+                                     app.id);
+        if (written < 0 || (size_t)written >= sizeof(info->name)) {
+            return false;
+        }
+        strlcpy(info->id, app.id, sizeof(info->id));
+        strlcpy(info->title, app.name, sizeof(info->title));
+        strlcpy(info->summary, app.description, sizeof(info->summary));
+        strlcpy(info->runtime,
+                solar_os_playground_runtime_name(app.runtime),
+                sizeof(info->runtime));
+        info->kind = SOLAR_OS_APP_DISCOVERY_PLAYGROUND;
+        return true;
+    }
+    return false;
+}
+#endif
+
+size_t solar_os_app_discovery_count(bool include_playground)
+{
+    size_t count = solar_os_app_registry_count();
+#if SOLAR_OS_PACKAGE_SERVICE_PLAYGROUND
+    if (include_playground) {
+        count += app_discovery_playground_count();
+    }
+#else
+    (void)include_playground;
+#endif
+    return count;
+}
+
+bool solar_os_app_discovery_get(size_t index,
+                                bool include_playground,
+                                solar_os_app_discovery_info_t *info)
+{
+    if (info == NULL) {
+        return false;
+    }
+    const size_t native_count = solar_os_app_registry_count();
+    if (index < native_count) {
+        const solar_os_app_registry_entry_t *entry =
+            solar_os_app_registry_get(index);
+        if (entry == NULL) {
+            return false;
+        }
+        app_discovery_native_info(entry, info);
+        return true;
+    }
+#if SOLAR_OS_PACKAGE_SERVICE_PLAYGROUND
+    return include_playground &&
+        app_discovery_playground_get(index - native_count, info);
+#else
+    (void)include_playground;
+    return false;
+#endif
+}
+
+static esp_err_t app_registry_request_native_launch(
+    solar_os_context_t *ctx,
+    const solar_os_app_registry_entry_t *entry,
+    size_t arg_count,
+    const char *const args[])
+{
+    if (ctx == NULL || entry == NULL || entry->app == NULL ||
+        arg_count >= SOLAR_OS_APP_ARG_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const size_t argc = arg_count + 1U;
+    if (argc < entry->min_argc ||
+        (entry->max_argc != 0U && argc > entry->max_argc)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char storage[SOLAR_OS_APP_ARG_MAX][SOLAR_OS_APP_ARG_LEN];
+    char *argv[SOLAR_OS_APP_ARG_MAX] = {0};
+    if (strlcpy(storage[0], entry->name, sizeof(storage[0])) >= sizeof(storage[0])) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    argv[0] = storage[0];
+    for (size_t i = 0U; i < arg_count; i++) {
+        if (args == NULL || args[i] == NULL ||
+            strlcpy(storage[i + 1U], args[i], sizeof(storage[i + 1U])) >=
+                sizeof(storage[i + 1U])) {
+            return ESP_ERR_INVALID_SIZE;
+        }
+        argv[i + 1U] = storage[i + 1U];
+    }
+    return solar_os_context_request_launch(ctx, entry->app, (int)argc, argv);
+}
+
+esp_err_t solar_os_app_registry_request_launch(solar_os_context_t *ctx,
+                                               const char *name,
+                                               size_t arg_count,
+                                               const char *const args[])
+{
+    if (ctx == NULL || name == NULL || name[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    static const char playground_prefix[] = "playground:";
+    if (strncmp(name, playground_prefix, sizeof(playground_prefix) - 1U) != 0) {
+        const solar_os_app_registry_entry_t *entry =
+            solar_os_app_registry_find(name);
+        return entry != NULL ?
+            app_registry_request_native_launch(ctx, entry, arg_count, args) :
+            ESP_ERR_NOT_FOUND;
+    }
+
+#if SOLAR_OS_PACKAGE_SERVICE_PLAYGROUND
+    const char *id = name + sizeof(playground_prefix) - 1U;
+    solar_os_playground_app_info_t app;
+    if (id[0] == '\0' || !solar_os_playground_find_installed_app(id, &app)) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (arg_count > SOLAR_OS_APP_ARG_MAX - 2U) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *runtime_name = solar_os_playground_runtime_name(app.runtime);
+    const solar_os_app_registry_entry_t *runtime =
+        solar_os_app_registry_find(runtime_name);
+    if (runtime == NULL || runtime->app == NULL) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    char path[SOLAR_OS_APP_ARG_LEN];
+    esp_err_t err = solar_os_playground_entry_path(&app, path, sizeof(path));
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    const char *runtime_args[SOLAR_OS_APP_ARG_MAX - 1U] = {path};
+    for (size_t i = 0U; i < arg_count; i++) {
+        runtime_args[i + 1U] = args != NULL ? args[i] : NULL;
+    }
+    return app_registry_request_native_launch(ctx,
+                                              runtime,
+                                              arg_count + 1U,
+                                              runtime_args);
+#else
+    (void)arg_count;
+    (void)args;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+static bool app_registry_is_web_url(const char *target)
+{
+    return target != NULL &&
+        (strncmp(target, "http://", 7U) == 0 ||
+         strncmp(target, "https://", 8U) == 0);
+}
+
+static const solar_os_app_registry_entry_t *app_registry_find_target_opener(
+    const char *path_or_url,
+    char *resolved,
+    size_t resolved_len)
+{
+    if (path_or_url == NULL || path_or_url[0] == '\0' ||
+        resolved == NULL || resolved_len == 0U) {
+        return NULL;
+    }
+    if (app_registry_is_web_url(path_or_url)) {
+        if (strlcpy(resolved, path_or_url, resolved_len) >= resolved_len) {
+            return NULL;
+        }
+        return solar_os_app_registry_find("web");
+    }
+    if (solar_os_storage_resolve_path(path_or_url, resolved, resolved_len) != ESP_OK) {
+        return NULL;
+    }
+    return solar_os_app_registry_find_opener(resolved);
+}
+
+bool solar_os_app_registry_can_open(const char *path_or_url)
+{
+    char resolved[SOLAR_OS_APP_ARG_LEN];
+    const solar_os_app_registry_entry_t *entry =
+        app_registry_find_target_opener(path_or_url, resolved, sizeof(resolved));
+    return entry != NULL && entry->app != NULL;
+}
+
+esp_err_t solar_os_app_registry_request_open(solar_os_context_t *ctx,
+                                             const char *path_or_url)
+{
+    if (ctx == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    char resolved[SOLAR_OS_APP_ARG_LEN];
+    const solar_os_app_registry_entry_t *entry =
+        app_registry_find_target_opener(path_or_url, resolved, sizeof(resolved));
+    if (entry == NULL || entry->app == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    const char *args[] = {resolved};
+    return app_registry_request_native_launch(ctx, entry, 1U, args);
 }
 
 bool solar_os_app_registry_owner(const solar_os_app_t *app, char *owner, size_t owner_len)

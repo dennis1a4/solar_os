@@ -1,9 +1,13 @@
-# Teensy workstation command audit — updated 2026-09-30
+# Teensy workstation command audit — updated 2026-10-03
 
 Comparison: https://solar-os.eu/docs/manual/index.html (website identifies
-SolarOS 4.15.4); this checkout's version.txt is 4.13.2. The website is not the
+SolarOS 4.15.4); this checkout now merges upstream 4.15.18 (`3b4cf28a`). The website is not the
 Teensy's feature manifest. Commands below are assessed against the actual
 source allowlist, command registry and platform adapters, not just package names.
+
+The 2026-10-03 integration adds interactive `ltop`, `webradio`, `sshkey`,
+transport-independent MIDI recording/playback and STUSB4500 `pd` commands.
+See the [current handoff](teensy41-handoff.md) for validation and hardware limits.
 
 ## Why so many commands were missing
 

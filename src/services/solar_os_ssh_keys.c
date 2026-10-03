@@ -15,7 +15,11 @@
 #include "solar_os_memory.h"
 #include "solar_os_storage.h"
 
+#if SOLAR_OS_PLATFORM_IMXRT1062
+#define SSH_KEYS_DIR "flash/.ssh"
+#else
 #define SSH_KEYS_DIR ".ssh"
+#endif
 #define SSH_KEYS_PRIVATE "id_rsa"
 #define SSH_KEYS_PUBLIC "id_rsa.pub"
 #define SSH_KEYS_EXPONENT 65537

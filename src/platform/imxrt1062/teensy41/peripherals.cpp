@@ -183,6 +183,43 @@ void sk_display_write(const char *text, size_t length) {
 #if SK_USB_HOST
 #include <USBHost_t36.h>
 static USBHost host;
+#if SK_MIDI
+#include "midi_record.h"
+static MIDIDevice midi_device(host);
+EXTMEM static MidiEvent midi_events[256];
+static unsigned midi_head,midi_tail,midi_drops,midi_unsupported;
+static bool midi_capture;
+bool sk_midi_usb_connected(){return bool(midi_device);}
+void sk_midi_usb_capture(bool on){taskENTER_CRITICAL();midi_capture=on;if(on){midi_head=midi_tail=midi_drops=midi_unsupported=0;}taskEXIT_CRITICAL();}
+unsigned sk_midi_usb_drops(){return midi_drops;}
+unsigned sk_midi_usb_unsupported(){return midi_unsupported;}
+bool sk_midi_usb_pop(MidiEvent &event){
+    taskENTER_CRITICAL();bool have=midi_head!=midi_tail;
+    if(have){event=midi_events[midi_tail];midi_tail=(midi_tail+1)%256;}
+    taskEXIT_CRITICAL();return have;
+}
+bool sk_midi_usb_send(const solar_os_midi_message_t &m){
+#if SK_USB_STORAGE
+    StorageLock lock;
+#endif
+    if(!midi_device)return false;
+    midi_device.send(m.status<0xf0?m.status&0xf0:m.status,m.data1,m.data2,m.status<0xf0?(m.status&15)+1:0);
+    midi_device.send_now();return true;
+}
+static void midi_poll(){
+    for(unsigned i=0;i<128 && midi_device.read();++i){
+        if(!midi_capture)continue;
+        uint8_t status=midi_device.getType();
+        if(status<0xf0)status|=(midi_device.getChannel()-1)&15;
+        unsigned len=solar_os_midi_message_length(status);
+        if(!len || status==0xf7){++midi_unsupported;continue;}
+        MidiEvent e{millis(),{status,midi_device.getData1(),midi_device.getData2(),uint8_t(len)}};
+        taskENTER_CRITICAL();unsigned next=(midi_head+1)%256;
+        if(next==midi_tail)++midi_drops;else{midi_events[midi_head]=e;midi_head=next;}
+        taskEXIT_CRITICAL();
+    }
+}
+#endif
 static USBHub hub1(host), hub2(host);
 static USBHIDParser hid1(host), hid2(host), hid3(host);
 #include "keyboard_input.h"
@@ -281,6 +318,9 @@ void sk_usb_poll() {
     StorageLock lock;
 #endif
     host.Task();
+#if SK_MIDI
+    midi_poll();
+#endif
 #if SK_USB_STORAGE
     sk_usb_storage_poll();
 #if SK_SD_RECOVERY

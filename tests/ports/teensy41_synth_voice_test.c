@@ -1,6 +1,13 @@
 /* Exercise the unchanged shared engine using a deterministic PCM sink. */
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include "solar_os_memory.h"
+static unsigned voice_allocations;
+void *solar_os_memory_alloc(size_t n,solar_os_memory_class_t kind,const char *tag) {
+    (void)tag;assert(kind==SOLAR_OS_MEMORY_INTERNAL_CRITICAL);void *p=malloc(n);if(p)++voice_allocations;return p;
+}
+void solar_os_memory_free(void *p){if(p){assert(voice_allocations);--voice_allocations;free(p);}}
 #include <string.h>
 #include "solar_os_synth_voice.h"
 

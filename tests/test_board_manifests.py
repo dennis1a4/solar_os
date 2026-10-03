@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -56,6 +57,104 @@ class BoardManifestTest(unittest.TestCase):
                 continue
             with self.subTest(path=path.name):
                 self.assertLessEqual(required, set(board["defines"]))
+
+    def test_goouuu_esp32_s3cam_pin_contract(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "goouuu_esp32_s3cam.toml",
+            self.manifest_dir,
+        )
+        self.assertIn("camera", board["build"]["capabilities"])
+        self.assertIn(
+            "driver_camera_esp32",
+            required_packages(board, self.drivers),
+        )
+        self.assertEqual(board["build"]["psram_bytes"], 8 * 1024 * 1024)
+        pins = {pin["gpio"]: pin for pin in board["pins"]}
+        self.assertEqual(
+            {gpio for gpio, pin in pins.items() if pin["policy"] == "free"},
+            {1, 14, 21, 41, 42, 47},
+        )
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(
+            devices["storage0"]["bindings"],
+            {"clk": 39, "cmd": 38, "d0": 40},
+        )
+        self.assertEqual(devices["pixels0"]["bindings"], {"data": 48, "count": 1})
+        self.assertEqual(devices["camera0"]["driver"], "esp32-camera")
+        self.assertEqual(devices["camera0"]["bindings"], {
+            "d0": 11, "d1": 9, "d2": 8, "d3": 10, "d4": 12,
+            "d5": 18, "d6": 17, "d7": 16, "siod": 4, "sioc": 5,
+            "vsync": 6, "href": 7, "pclk": 13, "xclk": 15,
+        })
+        self.assertIn('.driver = "esp32-camera", .name = "camera0"',
+                      generate_header(board, self.drivers))
+
+    def test_qdtech_es3n28p_uses_non_touch_fixed_hardware(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "qdtech_es3n28p.toml",
+            self.manifest_dir,
+        )
+        self.assertNotIn("pointer", board["build"]["capabilities"])
+        self.assertNotIn("pointer_ft6336", board["build"]["drivers"])
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_INVERT_COLOR"], "1")
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_NATIVE_WIDTH"], "240")
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_NATIVE_HEIGHT"], "320")
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_MADCTL"], "0x48")
+        self.assertEqual(
+            board["defines"]["SOLAR_OS_BOARD_DISPLAY_U8G2_ROTATION"],
+            "U8G2_R1",
+        )
+        buses = {bus["name"]: bus for bus in board["buses"]}
+        self.assertEqual(buses["spi0"]["miso"], 13)
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(
+            set(devices),
+            {"display0", "battery0", "audio0", "storage0", "pixels0"},
+        )
+        self.assertEqual(devices["display0"]["driver"], "ili9341")
+        self.assertEqual(devices["pixels0"]["bindings"], {"data": 42, "count": 1})
+        hardware = json.loads(
+            (ROOT / "boards/qdtech_es3n28p.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(board["target"]["platformio_board"], "qdtech_es3n28p")
+        self.assertEqual(hardware["build"]["flash_mode"], "dio")
+        self.assertEqual(hardware["build"]["psram_type"], "opi")
+
+    def test_qdtech_es3c28p_adds_ft6336_touch(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "qdtech_es3c28p.toml",
+            self.manifest_dir,
+        )
+        self.assertIn("pointer", board["build"]["capabilities"])
+        self.assertIn("pointer_ft6336", board["build"]["drivers"])
+        self.assertEqual(board["target"]["platformio_board"], "qdtech_es3n28p")
+        self.assertEqual(
+            board["defines"]["SOLAR_OS_BOARD_PIN_TOUCH_INT"],
+            "GPIO_NUM_17",
+        )
+        self.assertEqual(
+            board["defines"]["SOLAR_OS_BOARD_PIN_TOUCH_RST"],
+            "GPIO_NUM_18",
+        )
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(
+            set(devices),
+            {"display0", "touch0", "battery0", "audio0", "storage0", "pixels0"},
+        )
+        self.assertEqual(devices["touch0"]["driver"], "ft6336")
+        self.assertEqual(
+            devices["touch0"]["bindings"],
+            {
+                "i2c": "i2c0",
+                "addr": 0x38,
+                "reset": 18,
+                "irq": 17,
+                "rotation": 1,
+            },
+        )
+        pins = {pin["gpio"]: pin for pin in board["pins"]}
+        self.assertEqual(pins[17]["role"], "touch interrupt")
+        self.assertEqual(pins[18]["role"], "touch reset")
 
     def test_native_display_geometry_must_match_logical_rotation(self) -> None:
         board = load_board_manifest(
@@ -258,6 +357,114 @@ bindings = { gpio = 7 }
         self.assertIn("#define SOLAR_OS_BOARD_BUTTONS", header)
         self.assertIn(".miso_pin = GPIO_NUM_NC", header)
 
+    def test_elecrow_579_uses_dual_controller_geometry(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "elecrow_crowpanel_esp32_s3_5_79_epaper.toml",
+            self.manifest_dir,
+        )
+        header = generate_header(board, self.drivers)
+        self.assertIn('#define SOLAR_OS_BOARD_DISPLAY_CONTROLLER "SSD1683x2"', header)
+        self.assertIn("#define SOLAR_OS_BOARD_DISPLAY_WIDTH 792", header)
+        self.assertIn("#define SOLAR_OS_BOARD_DISPLAY_HEIGHT 272", header)
+        self.assertIn('.role = "panel", .value = 4', header)
+        self.assertIn(".miso_pin = GPIO_NUM_NC", header)
+
+        too_many_bindings = deepcopy(board)
+        for i in range(17):
+            too_many_bindings["devices"][0]["bindings"][f"extra{i}"] = 0
+        with self.assertRaisesRegex(ManifestError, "more than 16 bindings"):
+            validate_board(too_many_bindings, self.drivers)
+
+    def test_waveshare_397_uses_ssd1677_portrait_profile(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "waveshare_esp32_s3_epaper_3_97.toml",
+            self.manifest_dir,
+        )
+        self.assertIn("battery", board["build"]["capabilities"])
+        self.assertNotIn("imu", board["build"]["capabilities"])
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_NATIVE_WIDTH"], "800")
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_NATIVE_HEIGHT"], "480")
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_WIDTH"], "480")
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_HEIGHT"], "800")
+        self.assertEqual(
+            board["defines"]["SOLAR_OS_BOARD_DISPLAY_U8G2_ROTATION"],
+            "U8G2_R3",
+        )
+        self.assertEqual(
+            board["defines"]["SOLAR_OS_BOARD_DISPLAY_DEFAULT_ORIENTATION"],
+            "270",
+        )
+
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(
+            set(devices),
+            {
+                "power0", "imu0", "display0", "rtc0", "environment0",
+                "audio0", "storage0",
+            },
+        )
+        self.assertEqual(devices["power0"]["driver"], "axp2101")
+        self.assertEqual(
+            devices["power0"]["bindings"],
+            {
+                "i2c": "i2c0", "addr": 0x34, "input_current": 1500,
+                "charge_current": 200, "charge_voltage": 4200,
+            },
+        )
+        self.assertEqual(devices["imu0"]["driver"], "qmi8658")
+        self.assertEqual(
+            devices["imu0"]["bindings"],
+            {"i2c": "i2c0", "addr": 0x6A},
+        )
+        self.assertEqual(devices["display0"]["driver"], "ssd1677")
+        self.assertEqual(
+            devices["display0"]["bindings"],
+            {
+                "spi": "spi0", "cs": 10, "dc": 9, "reset": 46,
+                "busy": 3, "rotation": 3, "power_i2c": "i2c0",
+                "power_addr": 0x34,
+            },
+        )
+        self.assertEqual(
+            devices["storage0"]["bindings"],
+            {"clk": 16, "cmd": 17, "d0": 15, "d1": 7, "d2": 8, "d3": 18},
+        )
+        self.assertEqual(
+            devices["audio0"]["bindings"],
+            {
+                "i2c": "i2c0", "i2s": 0, "mclk": 13, "bck": 14,
+                "ws": 47, "din": 48, "dout": 21, "pa": 39,
+            },
+        )
+
+        header = generate_header(board, self.drivers)
+        self.assertIn('#define SOLAR_OS_BOARD_DISPLAY_CONTROLLER "SSD1677"', header)
+        self.assertIn('#define SOLAR_OS_BOARD_DISPLAY_DEFAULT_ORIENTATION 270', header)
+        self.assertIn('.driver = "ssd1677", .name = "display0"', header)
+        self.assertIn('.role = "rotation", .value = 3', header)
+        self.assertIn(
+            'SOLAR_OS_EXPANSION_BINDING_I2C_BUS, .role = "power", .target = "i2c0"',
+            header,
+        )
+        self.assertIn(
+            '.kind = SOLAR_OS_EXPANSION_BINDING_PARAMETER, '
+            '.role = "power_addr", .value = 52', header,
+        )
+        self.assertNotIn(
+            '.kind = SOLAR_OS_EXPANSION_BINDING_I2C_ADDRESS, '
+            '.role = "power"', header,
+        )
+        self.assertFalse(self.drivers["qmi8658"].early)
+        self.assertIn("expansion_ssd1677", required_packages(board, self.drivers))
+
+        hardware = json.loads(
+            (ROOT / "boards/waveshare_esp32_s3_epaper_3_97.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(hardware["upload"]["flash_size"], "16MB")
+        self.assertEqual(hardware["build"]["psram_type"], "opi")
+
     def test_t_lora_exposes_a_real_spi_cs_and_claims_keyboard_pwm(self) -> None:
         board = load_board_manifest(
             self.manifest_dir / "t_lora_pager.toml",
@@ -452,10 +659,17 @@ bindings = { gpio = 7 }
             self.manifest_dir,
         )
         header = generate_header(board, self.drivers)
+        runtime_driver = (
+            ROOT / "src" / "services" / "solar_os_cl32_core.c"
+        ).read_text(encoding="utf-8")
         self.assertNotIn("SOLAR_OS_BOARD_HEADLESS_PREFER_CDC", header)
         self.assertIn('#define SOLAR_OS_BOARD_DISPLAY_CONTROLLER "ST7305"', header)
         self.assertIn("#define SOLAR_OS_BOARD_DISPLAY_WIDTH 384", header)
         self.assertIn("#define SOLAR_OS_BOARD_DISPLAY_HEIGHT 168", header)
+        self.assertIn(
+            "#define CL32_CORE_REG_BATTERY_VOLTAGE 0x14U",
+            runtime_driver,
+        )
         self.assertIn("display", board["build"]["capabilities"])
         self.assertIn("battery", board["build"]["capabilities"])
         self.assertIn("streaming_display", board["build"]["capabilities"])

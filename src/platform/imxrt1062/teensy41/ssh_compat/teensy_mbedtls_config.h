@@ -30,6 +30,7 @@ void sk_crypto_free(void *);
 #define MBEDTLS_SHA512_C
 #define MBEDTLS_BIGNUM_C
 #define MBEDTLS_RSA_C
+#define MBEDTLS_GENPRIME
 #define MBEDTLS_PKCS1_V15
 #define MBEDTLS_PKCS1_V21
 #define MBEDTLS_ECP_C

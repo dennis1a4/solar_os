@@ -36,16 +36,17 @@ Open a topic below, or use its ID with `man` on the device, for example
 | --- | --- |
 | [Storage and files](python.storage.md) | `solaros.storage` |
 | [Time and scheduling](python.time.md) | `solaros.time`, `solaros.rtc`, `solaros.schedule` |
-| [Networking](python.network.md) | `solaros.wifi`, `solaros.mqtt`, `solaros.http`, `solaros.net`, `solaros.ftp`, `solaros.ssh_keys` |
+| [Networking](python.network.md) | `solaros.wifi`, `solaros.mqtt`, `solaros.http`, `solaros.net`, `solaros.ftp`, `solaros.sftpsync`, `solaros.ssh_keys` |
 | [Bluetooth](python.ble.md) | `solaros.ble` |
 | [GPIO and peripherals](python.hardware.md) | `solaros.gpio`, `solaros.onewire`, `solaros.led`, `solaros.adc`, `solaros.pwm`, `solaros.i2c`, `solaros.spi`, `solaros.uart`, `solaros.neopixel`, `solaros.battery`, `solaros.sensors`, `solaros.gnss`, `solaros.nfc` |
 | [Buses and expansion](python.buses.md) | `solaros.buses`, `solaros.expansion` |
-| [Audio and control](python.audio.md) | `solaros.audio`, `solaros.synth`, `solaros.dsp`, `solaros.controls`, `solaros.parameters`, `solaros.midi`, `solaros.osc` |
+| [Audio and control](python.audio.md) | `solaros.audio`, `solaros.speech`, `solaros.synth`, `solaros.dsp`, `solaros.controls`, `solaros.parameters`, `solaros.midi`, `solaros.osc` |
 | [Input and clipboard](python.input.md) | `solaros.input`, `solaros.hid`, `solaros.clipboard` |
 | [Apps, jobs, and identity](python.system.md) | `solaros.identity`, `solaros.jobs`, `solaros.sessions`, `solaros.apps` |
 | [Contacts and messages](python.messaging.md) | `solaros.contacts`, `solaros.messages` |
 | [Text user interfaces](python.tui.md) | `solaros.tui` |
-| [Graphics](python.gfx.md) | `solaros.gfx` |
+| [Graphics and raster images](python.gfx.md) | `solaros.gfx`, `solaros.image` |
+| [Camera, streams, and RTSP](python.media.md) | `solaros.streams`, `solaros.camera`, `solaros.rtsp` |
 
 ## Conventions
 
@@ -57,6 +58,11 @@ common language features such as f-strings, sets, properties, descriptors,
 importable runtime modules are `array`, `binascii`, `cmath`, `collections`,
 `errno`, `gc`, `hashlib`, `io`, `json`, `math`, `micropython`, `random`,
 `struct`, and `sys`.
+
+Python integers support the signed 64-bit range. SolarOS service values such as
+file sizes, timestamps, counters, and storage capacities use integers throughout
+that range. An unsigned native value above `9223372036854775807` is returned as
+a decimal string instead of losing precision.
 
 `input()`, `execfile()`, and upstream `extmod` modules outside this selected
 set remain disabled. Use the typed `solaros` service APIs instead.
@@ -84,6 +90,7 @@ Optional API groups follow these package gates:
 - `network.mqtt`: `solaros.mqtt`
 - `network.http-client`: `solaros.http`
 - `network.ftp`: `solaros.ftp`
+- `network.sftpsync`: `solaros.sftpsync`
 - `network.base`: `solaros.net`
 - `network.ssh`: `solaros.ssh_keys`
 - `service.ble`: `solaros.ble`
@@ -98,6 +105,10 @@ Optional API groups follow these package gates:
 - `service.gnss` and `service.nfc`: `solaros.gnss` and `solaros.nfc`
 - `service.dsp`: `solaros.dsp` fixed-point block operations and caller-owned
   FIR, decimator, and FFT processors
+- `media.image`: `solaros.image` decoded raster handles and queued drawing
+- `service.script-media`: `solaros.streams` local handles and leased JPEG frames
+- `service.camera`: `solaros.camera` snapshots and ownership status
+- `service.rtsp-client`: `solaros.rtsp` asynchronous receivers and native audio
 
 ## Top-Level Helpers
 

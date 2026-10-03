@@ -3,7 +3,13 @@ label = "SolarOS runtime"
 category = "System"
 hidden = true
 immutable = true
-members = ["core_runtime", "core_shell"]
+members = [
+  "core_runtime",
+  "core_shell",
+  "service_native_modules",
+  "app_ltop",
+  "job_gesture_listener",
+]
 
 [groups.hardware_shell]
 label = "Hardware shell commands"
@@ -34,6 +40,16 @@ members = ["service_sd"]
 label = "Audio support"
 category = "System"
 members = ["service_audio"]
+
+[groups.camera]
+label = "Camera"
+category = "Hardware interfaces"
+members = ["driver_camera_esp32", "job_cam_webd"]
+
+[groups.rtsp]
+label = "RTSP streaming"
+category = "Networking"
+members = ["job_rtspd", "app_rtsp"]
 
 [groups.control_bindings]
 label = "Control bindings"
@@ -216,6 +232,11 @@ label = "GPIO keyboard"
 category = "Hardware tools"
 members = ["job_gpio_keys"]
 
+[groups.handwriting_input]
+label = "Graffiti handwriting input"
+category = "Hardware tools"
+members = ["job_graffiti"]
+
 [groups.ps2_keyboard]
 label = "PS/2 keyboard"
 category = "Hardware tools"
@@ -227,9 +248,9 @@ category = "Hardware tools"
 members = ["job_midi"]
 
 [groups.ssh]
-label = "SSH and SCP clients"
+label = "SSH file and terminal clients"
 category = "Networking"
-members = ["app_ssh", "app_scp"]
+members = ["app_ssh", "app_scp", "app_sftp", "app_sftpsync"]
 
 [groups.http_client]
 label = "HTTP client and Curl"
@@ -351,10 +372,20 @@ label = "MeshCore"
 category = "Radio"
 members = ["job_meshcore"]
 
+[groups.meshcore_ble]
+label = "MeshCore BLE companion"
+category = "Radio"
+members = ["job_meshcore_ble"]
+
 [groups.audio_commands]
 label = "Audio playback and recording commands"
 category = "Audio"
 members = ["app_aplay", "app_arecord"]
+
+[groups.speech]
+label = "Offline speech synthesis"
+category = "Audio"
+members = ["job_speechd"]
 
 [groups.player]
 label = "Music player"
@@ -400,6 +431,11 @@ members = ["app_notes"]
 label = "Image viewer"
 category = "Media"
 members = ["app_view"]
+
+[groups.vplay]
+label = "MPEG-1 media player"
+category = "Media"
+members = ["app_vplay"]
 
 [groups.sketch]
 label = "Sketch"
@@ -451,6 +487,11 @@ label = "SSD1683 e-paper display"
 category = "Expansion hardware"
 members = ["expansion_ssd1683"]
 
+[groups.ssd1677]
+label = "SSD1677 e-paper display"
+category = "Expansion hardware"
+members = ["expansion_ssd1677"]
+
 [groups.ssd1306]
 label = "SSD1306 OLED display"
 category = "Expansion hardware"
@@ -486,6 +527,11 @@ label = "BHI260AP IMU"
 category = "Expansion hardware"
 members = ["bhi260ap"]
 
+[groups.qmi8658]
+label = "QMI8658 IMU"
+category = "Expansion hardware"
+members = ["qmi8658"]
+
 [groups.drv2605]
 label = "DRV2605 haptic controller"
 category = "Expansion hardware"
@@ -495,6 +541,11 @@ members = ["drv2605"]
 label = "BQ25896 battery charger"
 category = "Expansion hardware"
 members = ["bq25896"]
+
+[groups.axp2101]
+label = "AXP2101 power manager"
+category = "Expansion hardware"
+members = ["axp2101"]
 
 [groups.xl9555]
 label = "XL9555 GPIO controller"
@@ -596,6 +647,11 @@ label = "GT911 touch controller"
 category = "Expansion hardware"
 members = ["driver_gt911"]
 
+[groups.mgc3130]
+label = "MGC3130 3D gesture sensor"
+category = "Expansion hardware"
+members = ["driver_mgc3130"]
+
 [groups.pcf85063]
 label = "PCF85063 real-time clock"
 category = "Expansion hardware"
@@ -668,11 +724,15 @@ sources = [
   "services/solar_os_cdc.c",
   "services/solar_os_clipboard.c",
   "services/solar_os_display.c",
+  "services/solar_os_display_layout.c",
+  "services/solar_os_display_layout_core.c",
   "services/solar_os_frame_presenter.c",
   "services/solar_os_gfx.c",
   "services/solar_os_gfx_icons.c",
   "services/solar_os_identity.c",
   "services/solar_os_input.c",
+  "services/solar_os_input_action_match.c",
+  "services/solar_os_input_actions.c",
   "services/solar_os_input_composition.c",
   "services/solar_os_keys.c",
   "services/solar_os_log.c",
@@ -724,6 +784,24 @@ requires = [
 ]
 capabilities = ["wifi"]
 
+[packages.service_native_modules]
+label = "bootstrap.native-modules"
+depends = [
+  "service_crypto",
+  "service_http_client",
+  "service_json",
+]
+sources = [
+  "services/solar_os_module_packages.c",
+  "services/solar_os_native.c",
+  "services/solar_os_native_elf.c",
+  "shell/solar_os_shell_native.c",
+  "shell/solar_os_shell_pkg_tui.c",
+]
+requires = ["espressif__elf_loader"]
+targets = ["esp32s3"]
+capabilities = ["psram"]
+
 [packages.service_docs]
 label = "maintenance.docs"
 depends = [
@@ -764,6 +842,8 @@ sources = [
   "shell/solar_os_shell_commands.c",
   "shell/solar_os_shell_input.c",
   "shell/solar_os_shell_completion.c",
+  "shell/solar_os_shell_gesture_completion.c",
+  "shell/solar_os_shell_rtspd_completion.c",
   "shell/solar_os_shell_io.c",
   "shell/solar_os_shell_manual.c",
   "shell/solar_os_shell_line.c",
@@ -866,6 +946,12 @@ depends = ["service_net"]
 sources = ["services/solar_os_net_session.c"]
 requires = ["esp-tls", "esp_timer", "lwip", "mbedtls", "tcp_transport"]
 
+[packages.service_script_media]
+label = "service.script-media"
+depends = ["service_streams"]
+sources = ["services/solar_os_script_media.c"]
+requires = ["esp_timer"]
+
 [packages.service_ftp]
 label = "network.ftp"
 depends = ["service_net"]
@@ -893,6 +979,18 @@ sources = [
   "services/solar_os_ssh_transport.c",
 ]
 requires = ["esp-tls", "mbedtls"]
+capabilities = ["wifi"]
+
+[packages.service_sftpsync]
+label = "network.sftpsync"
+depends = ["service_ssh"]
+sources = ["services/solar_os_sftpsync.c"]
+capabilities = ["wifi"]
+
+[packages.service_sftp]
+label = "network.sftp"
+depends = ["service_ssh"]
+sources = ["services/solar_os_sftp.c"]
 capabilities = ["wifi"]
 
 [packages.service_mail]
@@ -979,7 +1077,20 @@ sources = [
 
 [packages.service_image]
 label = "media.image"
+sources = [
+  "services/solar_os_mjpeg.c",
+  "services/solar_os_raster_image.c",
+]
 requires = ["stb_image", "webp_decoder"]
+
+[packages.service_media]
+label = "service.media"
+sources = [
+  "services/solar_os_media.c",
+  "services/solar_os_rtp.c",
+  "services/solar_os_rtp_jpeg.c",
+  "services/solar_os_rtsp.c",
+]
 
 [packages.service_document]
 label = "media.document"
@@ -1004,6 +1115,7 @@ sources = [
   "services/solar_os_ble_keyboard.c",
   "services/solar_os_ble_keyboard_scan_policy.c",
   "services/solar_os_hid_keyboard_report.c",
+  "shell/solar_os_shell_ble_tui.c",
 ]
 requires = ["bt", "esp_hid", "nvs_flash"]
 capabilities = ["ble"]
@@ -1019,6 +1131,26 @@ capabilities = ["cdc"]
 [packages.service_sd]
 label = "service.sd"
 capabilities = ["sd"]
+
+[packages.service_camera]
+label = "service.camera"
+depends = ["service_streams"]
+sources = [
+  "services/solar_os_camera.c",
+  "services/solar_os_camera_stream.c",
+  "shell/solar_os_shell_camera.c",
+]
+capabilities = ["psram"]
+targets = ["esp32s3"]
+
+[packages.driver_camera_esp32]
+label = "driver.camera-esp32"
+depends = ["service_camera", "service_expansion", "service_resources"]
+sources = ["drivers/solar_os_camera_esp32.c"]
+expansion_drivers = ["solar_os_camera_esp32_expansion_driver"]
+requires = ["espressif__esp32-camera"]
+targets = ["esp32s3"]
+capabilities = ["psram", "expansion_gpio"]
 
 [packages.service_audio]
 label = "service.audio"
@@ -1278,6 +1410,15 @@ requires = ["mbedtls", "nvs_flash"]
 capabilities = ["psram"]
 any_capabilities = ["expansion_spi", "expansion_gpio", "expansion_uart"]
 
+[packages.service_meshcore_ble]
+label = "service.meshcore-ble"
+depends = ["service_ble", "service_contacts", "service_messaging"]
+sources = [
+  "services/solar_os_meshcore_ble.c",
+  "services/solar_os_meshcore_ble_protocol.c",
+]
+capabilities = ["ble", "psram"]
+
 [packages.expansion_rfm69]
 label = "expansion.rfm69"
 expansion_drivers = [
@@ -1330,6 +1471,43 @@ sources = [
 ]
 requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
 capabilities = ["gfx", "expansion_gpio"]
+
+[packages.expansion_ssd1677]
+label = "expansion.ssd1677"
+targets = ["esp32s3"]
+expansion_drivers = ["solar_os_ssd1677_expansion_driver"]
+depends = ["axp2101", "service_expansion", "service_spi"]
+sources = [
+  "board/solar_os_board_display_expansion.c",
+  "drivers/epd_ssd1677.c",
+  "services/solar_os_ssd1677.c",
+  "services/solar_os_ssd1677_driver.c",
+]
+requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
+capabilities = ["gfx"]
+
+[packages.driver_axp2101]
+label = "driver.axp2101"
+targets = ["esp32s3"]
+sources = ["drivers/axp2101.c"]
+
+[packages.axp2101]
+label = "expansion.axp2101"
+targets = ["esp32s3"]
+expansion_drivers = ["solar_os_axp2101_expansion_driver"]
+depends = [
+  "driver_axp2101",
+  "service_battery",
+  "service_charger",
+  "service_expansion",
+  "service_i2c",
+]
+sources = [
+  "services/solar_os_axp2101.c",
+  "services/solar_os_axp2101_driver.c",
+]
+requires = ["esp_driver_i2c"]
+capabilities = ["i2c"]
 
 [packages.expansion_ssd1306]
 label = "expansion.ssd1306"
@@ -1410,6 +1588,19 @@ sources = [
 ]
 requires = ["esp_driver_gpio", "esp_timer"]
 capabilities = ["expansion_gpio", "expansion_i2c"]
+
+[packages.qmi8658]
+label = "expansion.qmi8658"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_qmi8658_expansion_driver"]
+depends = ["service_expansion", "service_i2c", "service_imu"]
+sources = [
+  "drivers/qmi8658.c",
+  "services/solar_os_qmi8658.c",
+  "services/solar_os_qmi8658_driver.c",
+]
+requires = ["esp_timer"]
+capabilities = ["i2c"]
 
 [packages.drv2605]
 label = "expansion.drv2605"
@@ -1809,6 +2000,19 @@ sources = [
 requires = ["esp_driver_gpio"]
 capabilities = ["i2c", "gpio"]
 
+[packages.driver_mgc3130]
+label = "driver.mgc3130"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_mgc3130_expansion_driver"]
+depends = ["service_expansion"]
+sources = [
+  "drivers/mgc3130.c",
+  "services/solar_os_mgc3130.c",
+  "services/solar_os_mgc3130_driver.c",
+]
+requires = ["esp_driver_gpio"]
+capabilities = ["i2c", "gpio", "gfx"]
+
 [packages.driver_pcf85063]
 label = "driver.pcf85063"
 targets = ["esp32", "esp32s3"]
@@ -1869,7 +2073,10 @@ capabilities = ["uart"]
 [packages.service_battery]
 label = "service.battery"
 depends = ["service_streams"]
-sources = ["services/solar_os_battery.c"]
+sources = [
+  "services/solar_os_battery.c",
+  "services/solar_os_battery_trend.c",
+]
 
 [packages.service_rtc]
 label = "service.rtc"
@@ -1964,6 +2171,18 @@ depends = ["service_ssh"]
 sources = ["apps/solar_os_scp.c"]
 capabilities = ["wifi"]
 
+[packages.app_sftpsync]
+label = "app.sftpsync"
+depends = ["service_sftpsync"]
+sources = ["apps/solar_os_sftpsync.c"]
+capabilities = ["wifi"]
+
+[packages.app_sftp]
+label = "app.sftp"
+depends = ["service_sftp", "service_text_search"]
+sources = ["apps/solar_os_sftp_app.c"]
+capabilities = ["wifi"]
+
 [packages.app_curl]
 label = "app.curl"
 depends = ["service_http_client"]
@@ -1981,6 +2200,19 @@ depends = [
   "service_webradio",
 ]
 sources = ["apps/solar_os_webradio.c"]
+capabilities = ["wifi"]
+
+[packages.service_rtsp_client]
+label = "service.rtsp-client"
+depends = ["service_media", "service_audio", "service_net"]
+sources = ["services/solar_os_rtsp_receiver.c", "services/solar_os_rtsp_client.c"]
+capabilities = ["wifi"]
+
+[packages.app_rtsp]
+label = "app.rtsp"
+depends = ["service_rtsp_client", "service_signal_widgets", "service_media_widgets"]
+sources = ["apps/solar_os_rtsp_app.c"]
+requires = ["stb_image"]
 capabilities = ["wifi"]
 
 [packages.app_telnet]
@@ -2041,9 +2273,21 @@ capabilities = ["psram"]
 
 [packages.app_view]
 label = "app.view"
-depends = ["service_image"]
+depends = ["service_image", "service_vector"]
 sources = ["apps/solar_os_view.c"]
 capabilities = ["psram", "gfx"]
+
+[packages.app_vplay]
+label = "app.vplay"
+depends = ["service_mpeg", "service_audio", "service_media_widgets"]
+sources = ["apps/solar_os_vplay.c"]
+capabilities = ["psram", "gfx"]
+
+[packages.service_mpeg]
+label = "service.mpeg"
+sources = ["services/solar_os_mpeg.c", "services/solar_os_mpeg_raster.c", "services/solar_os_mpeg_simd.S"]
+requires = ["pl_mpeg"]
+capabilities = ["psram"]
 
 [packages.app_sketch]
 label = "app.sketch"
@@ -2073,14 +2317,14 @@ capabilities = ["gfx", "psram", "sd", "streaming_display"]
 
 [packages.app_python]
 label = "app.python"
-depends = ["service_ftp", "service_messaging", "service_script_net", "service_script_runner"]
+depends = ["service_script_net", "service_script_runner", "service_script_media"]
 sources = ["apps/solar_os_python.c"]
 requires = ["micropython_embed"]
 capabilities = ["psram"]
 
 [packages.app_lua]
 label = "app.lua"
-depends = ["service_ftp", "service_messaging", "service_script_net", "service_script_runner"]
+depends = ["service_script_net", "service_script_runner", "service_script_media"]
 sources = ["apps/solar_os_lua.c"]
 requires = ["lua"]
 capabilities = ["psram"]
@@ -2116,6 +2360,10 @@ label = "app.less"
 depends = ["service_text_search"]
 sources = ["apps/solar_os_less.c"]
 
+[packages.app_ltop]
+label = "app.ltop"
+sources = ["apps/solar_os_ltop.c"]
+
 [packages.app_docs]
 label = "app.docs"
 depends = ["app_less"]
@@ -2148,6 +2396,7 @@ capabilities = ["psram", "gfx"]
 
 [packages.app_files]
 label = "app.files"
+depends = ["service_text_search"]
 sources = ["apps/solar_os_files.c"]
 
 [packages.app_launcher]
@@ -2161,7 +2410,7 @@ capabilities = ["gfx"]
 
 [packages.app_ftp]
 label = "app.ftp"
-depends = ["service_ftp"]
+depends = ["service_ftp", "service_text_search"]
 sources = ["apps/solar_os_ftp_app.c"]
 capabilities = ["wifi"]
 
@@ -2204,6 +2453,20 @@ sources = ["apps/solar_os_sheet.c"]
 label = "job.httpd"
 depends = ["service_http_server"]
 sources = ["jobs/solar_os_httpd_job.c"]
+capabilities = ["wifi"]
+
+[packages.job_cam_webd]
+label = "job.cam-webd"
+depends = ["service_camera", "service_http_server"]
+sources = ["jobs/solar_os_cam_webd_job.c"]
+capabilities = ["psram", "wifi"]
+targets = ["esp32s3"]
+
+[packages.job_rtspd]
+label = "job.rtspd"
+depends = ["service_media", "service_streams", "service_wifi"]
+sources = ["jobs/solar_os_rtspd_job.c", "jobs/solar_os_rtspd_options.c"]
+requires = ["esp_timer", "esp_hw_support"]
 capabilities = ["wifi"]
 
 [packages.job_displayd]
@@ -2288,6 +2551,25 @@ label = "job.controls"
 depends = ["service_controls"]
 sources = ["jobs/solar_os_controls_job.c"]
 
+[packages.job_gesture_listener]
+label = "job.gesture-listener"
+sources = ["jobs/solar_os_gesture_listener_job.c"]
+
+[packages.service_unistroke]
+label = "service.unistroke"
+sources = ["services/solar_os_unistroke.c"]
+
+[packages.service_graffiti]
+label = "service.graffiti"
+depends = ["service_unistroke"]
+sources = ["services/solar_os_graffiti.c"]
+
+[packages.job_graffiti]
+label = "job.graffiti"
+depends = ["service_graffiti"]
+sources = ["jobs/solar_os_graffiti_job.c"]
+capabilities = ["psram"]
+
 [packages.job_gpio_keys]
 label = "job.gpio-keys"
 depends = ["expansion_gpio_keys"]
@@ -2320,6 +2602,24 @@ label = "job.ntp-sync"
 depends = ["service_net"]
 sources = ["jobs/solar_os_ntp_sync_job.c"]
 capabilities = ["wifi"]
+
+[packages.service_speech]
+label = "service.speech"
+depends = ["service_audio"]
+sources = ["services/solar_os_speech.c"]
+capabilities = ["psram"]
+any_capabilities = ["audio", "expansion_i2s", "expansion_pwm"]
+
+[packages.job_speechd]
+label = "job.speechd"
+depends = ["service_speech"]
+sources = [
+  "jobs/solar_os_speechd_job.c",
+  "shell/solar_os_shell_speech.c",
+]
+requires = ["picotts"]
+capabilities = ["psram"]
+any_capabilities = ["audio", "expansion_i2s", "expansion_pwm"]
 
 [packages.job_osc]
 label = "job.osc"
@@ -2389,3 +2689,8 @@ members = ["app_pdpower"]
 [packages.app_pdpower]
 label = "app.pdpower"
 sources = ["apps/solar_os_power_app.c", "services/solar_os_pd_power.c"]
+[packages.job_meshcore_ble]
+label = "job.meshcore-ble"
+depends = ["service_meshcore_ble"]
+sources = ["jobs/solar_os_meshcore_ble_job.c"]
+capabilities = ["ble", "psram"]

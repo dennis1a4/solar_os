@@ -58,7 +58,7 @@ class AgentReferenceTest(unittest.TestCase):
             descriptor,
             re.MULTILINE,
         )
-        self.assertEqual(len(modules), 47)
+        self.assertEqual(len(modules), 53)
 
         for language in ("python", "lua"):
             reference_text = ""
@@ -97,7 +97,9 @@ class AgentReferenceTest(unittest.TestCase):
         self.assertIn("lua.network.http-requests", lua_topics)
         self.assertIn("lua.network.ftp-operations", lua_topics)
         self.assertIn("lua.network.managed-tcp-udp-and-websocket-clients", lua_topics)
-        self.assertIn("lua.input.generic-pointer-and-axis-input", lua_topics)
+        self.assertIn(
+            "lua.input.generic-pointer-axis-and-gesture-input", lua_topics
+        )
 
     def test_three_largest_excerpts_fit_the_agent_tool_result(self):
         matches = []

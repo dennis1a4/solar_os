@@ -10,5 +10,5 @@ for i,c in enumerate(['red','green','blue','yellow','cyan','magenta','white','bl
 for ext in ['png','jpg']:im.save('/tmp/solaros-image-host/colors.'+ext)
 PY
 cc -std=c11 -O1 -g -fsanitize=address,undefined -Itests/host -Isrc/platform/imxrt1062/teensy41/compat -Icomponents/stb_image/include \
-    components/stb_image/stb_image_port.c tests/ports/teensy41_image_test.c -lm -o "$image_test_dir/test"
+    components/stb_image/stb_image_port.c components/stb_image/jpeg_fast.c tests/ports/teensy41_image_test.c -lm -o "$image_test_dir/test"
 "$image_test_dir/test" "$image_test_dir/colors.png" "$image_test_dir/colors.jpg"

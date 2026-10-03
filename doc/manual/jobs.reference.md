@@ -428,6 +428,27 @@ Control definitions are runtime configuration. Put the `control create`,
 restore a hardware setup after reboot. See `man controls` for calibration,
 manual script inputs, MIDI examples, and inspection commands.
 
+## gestures
+
+Gesture-to-command listener. Rules are configured independently with `gesture
+bind`, while this job owns observation and dispatch:
+
+```text
+gesture bind source=gesture0 gesture=flick direction=east -- input emit ALT+RIGHT
+gesture bind source=gesture0 gesture=flick direction=west -- input emit ALT+LEFT
+job start gestures
+job status gestures
+job stop gestures
+```
+
+Stopping the job preserves the rules, prevents new gesture actions, and drops
+queued actions. A command already executing finishes normally. Use `gesture
+bindings` to inspect rules and counters, `gesture unbind <id>` to remove one, or
+`gesture unbind all` to clear the table and reset the next ID to 1. Rules and job
+state are volatile; recreate them in the startup script when persistence is
+needed. The command worker is created on demand and releases its internal stack
+when its queue is idle.
+
 ## osc
 
 OSC 1.0 IPv4 UDP adapter for automatic incoming native-parameter writes and
@@ -453,6 +474,149 @@ OSC has no authentication or encryption. Start the job only on a trusted LAN,
 SoftAP, or WireGuard path. Bindings are volatile and can be restored from
 `/.shell/startup`. See `man osc` for address mapping, binding syntax, limits,
 and the sampled-event caveat.
+
+## cam-webd
+
+HTTP access to the fitted camera as one-shot JPEG images or a single-client
+MJPEG stream.
+
+```text
+job start cam-webd [qvga|vga] [fps] [auth=none|required]
+job status cam-webd
+job stop cam-webd
+```
+
+The defaults are QVGA JPEG at five frames per second with no authentication.
+The optional frame rate is `1..30`; JPEG quality is fixed at 12. Options can be
+given in any order. The job leases the camera as `job:cam-webd` until it stops.
+The shell `camera` command and other camera users report that owner while the
+lease is active.
+
+API:
+
+```text
+GET /api/camera
+GET /camera.jpg
+GET /camera.mjpeg
+```
+
+With the default `auth=none`, the endpoints can be opened directly:
+
+```text
+http://device/camera.mjpeg
+```
+
+Use `auth=required` to require `Authorization: Bearer <code>` on all three
+endpoints. Starting in that mode prints a random six-digit access code. For
+example:
+
+```text
+curl -H 'Authorization: Bearer 123456' http://device/camera.jpg -o frame.jpg
+curl -H 'Authorization: Bearer 123456' http://device/camera.mjpeg -o stream.mjpeg
+```
+
+The MJPEG endpoint uses the shared HTTP server's asynchronous request path.
+Only one stream client is admitted. The worker captures and transmits one
+camera framebuffer at a time and releases it on every success or error path;
+there is no frame queue or JPEG copy. A slow client therefore reduces the
+capture rate through socket backpressure instead of consuming more memory.
+Snapshot requests are rejected while the stream owns the capture path.
+
+The server is plain HTTP. With the default `auth=none`, anyone who can reach the
+device can view the camera. Use it only on a trusted Wi-Fi network. The optional
+access code limits casual access but does not encrypt images and is not intended
+for exposure to an untrusted network.
+
+## rtspd
+
+Publish explicitly selected sources as a standard single-client RTSP session.
+Video uses RTP/JPEG; audio uses RTP/L16 PCM. Each enabled track has its own
+RTP/RTCP UDP port pair, SSRC, and sender reports, with a shared RTCP CNAME and
+session start clock.
+
+```text
+job start rtspd [video=<stream>|none] [audio=<stream>|none] [size=qvga|vga] [fps=0..30] [port=<port>]
+job start rtspd video=camera0 audio=none size=qvga fps=10
+job start rtspd video=none audio=audio0.capture
+job start rtspd video=camera0 audio=audio0.capture
+job status rtspd
+job stop rtspd
+```
+
+Defaults are `video=camera0 audio=none size=qvga fps=5 port=554`. `video=camera`
+is a compatibility alias for `camera0`. Video selects a typed JPEG frame source
+from `stream list`; opening it holds the same exclusive hardware lease as the camera
+service. At least one source must be enabled. `fps=` is a maximum video
+publication rate, not a
+capture timer; `fps=0` removes the cap. `size=` and `fps=` are invalid with
+`video=none`. JPEG quality is fixed at 12.
+
+Use `stream list` to find available video and audio source IDs. `audio0.capture`
+is the board codec's PCM microphone endpoint when available; `mic0` is a scalar
+level sensor, not a PCM source. Audio must be a source or
+duplex S16LE PCM endpoint with 16-bit samples, 1..8 channels, and a native rate
+of 8000..192000 Hz. The job advertises the source's native rate and channels;
+it does not resample. Only selected hardware is leased as `job:rtspd`.
+Tab completion after `job start rtspd` offers unused option keys. After `audio=`
+or `video=`, double Tab lists compatible registered source IDs and `none`;
+partial IDs complete normally. Selection does not open or lease the source.
+Audio-only publishing requires neither a camera nor the camera package.
+For playback on another SolarOS device, use JPEG video and L16 audio at
+8000..48000 Hz with one or two channels. A 16000 Hz mono source is the
+recommended low-bandwidth audio format; native 16000 Hz stereo capture also
+works. The publisher's wider native-format support does not imply that every
+receiver supports those formats, and selecting a source never resamples it.
+External publishers should use baseline JPEG with both quantization tables;
+160x120 at 10 fps is a useful initial ESP32 receiver workload. RTP packets must
+fit the path MTU; SolarOS publishes packets of at most 1200 bytes.
+Selecting an absent, busy, sink-only, or incompatible source fails startup;
+there is no silent fallback to another source.
+
+Reader workers block on camera/audio availability and immediately publish or
+discard the completed frame/block. They continuously drain idle sources, so
+connecting does not expose a stale camera image or audio backlog. The video
+cap drops newly captured images rather than holding them until a timer expires.
+There is one leased PSRAM camera framebuffer, no JPEG copy or video queue,
+and at most one MTU-sized PCM block. Disabled sources allocate no reader stack.
+Temporary UDP transmit pressure drops the current frame/block and newly
+captured data during a short backoff instead of disconnecting or building a
+queue. Audio sample timestamps advance across dropped blocks. Status reports
+congestion drops and the last transmit errno separately from fatal send errors.
+Each enabled source uses an additional 4096-byte internal worker stack, shown
+by `job status rtspd`, and is closed by its owning reader during cancellation.
+Source stack minimum-free values are reported in bytes, including microphone
+startup and publishing. Packet scratch and RTSP session storage are allocated
+only when the job starts, using the PSRAM-preferred memory policy; disabled
+sources allocate no scratch. Audio scratch is one 1188-byte PCM block plus
+one 1200-byte RTP packet, off the reader's stack. I2S DMA buffers and task
+stacks remain internal. Runtime buffers are freed after workers and leases
+have closed, including failed startup; a pending stop retains them safely.
+An unused/stopped job reserves no session or media buffers, only its small
+internal control state and lock. `job status rtspd` reports runtime buffer sizes.
+
+Open the single RTSP client session:
+
+```text
+vlc rtsp://device/media
+rtsp rtsp://device/media
+ffplay -rtsp_transport udp -fflags nobuffer -probesize 32 -analyzeduration 1 -max_delay 100000 rtsp://device/media
+```
+
+FFplay's default probing/playback buffers can add seconds of latency; the
+example reduces client-side probing and UDP reordering delay. It does not
+guarantee a particular glass-to-glass latency. Capture timestamps determine
+video RTP timing; audio timestamps advance by sample frames. Images and audio
+blocks predating each `PLAY` are discarded.
+
+The camera lease excludes `cam-webd`, shell camera capture, and other camera
+owners only when a camera source is selected. Each packet is at most 1200 bytes.
+Unsupported JPEG modes are counted and dropped, not sent using private payloads.
+Transport is UDP; RTSP-over-TCP interleaving is unsupported. VLC requires a
+build with Live555: if its log reports `satip` or `access_realrtsp` failures,
+check for `--disable-live555` and use FFplay or a compatible VLC build.
+
+The stream is unauthenticated and unencrypted; use it only on a trusted LAN
+or protected network path.
 
 ## displayd
 
@@ -817,13 +981,50 @@ The job requires PSRAM and a packet-radio expansion capability. It claims the
 radio, applies the explicit regional profile, sends one zero-hop startup
 advert, and continuously handles adverts, direct messages, ACKs, and group
 messages. Its complete protocol context is allocated as external-required
-PSRAM; the 6144-byte worker stack remains internal and its minimum watermark is
+PSRAM; the 7168-byte worker stack remains internal and its minimum watermark is
 reported by `meshcore status`.
 
 Stopping restores the previous radio configuration and state before releasing
 ownership. MeshCore and `radio-link` therefore report normal ownership
 conflicts when pointed at the same radio. See [meshcore.md](meshcore.md) for
 identity, trust, channel, regional-profile, and security details.
+
+## meshcore-ble
+
+MeshCore companion-protocol client for a separate BLE radio device. The job
+connects to one explicit peer, synchronizes its contacts and channels, drains
+queued messages, and carries Chat messages through the standard MeshCore
+messaging provider.
+
+Usage:
+
+```text
+job start meshcore-ble <address> <public|random|rpa_public|rpa_random> [six-digit-pin]
+job status meshcore-ble
+job stop meshcore-ble
+```
+
+Example:
+
+```text
+job start meshcore-ble 68:ee:8f:69:5f:35 public 123456
+contacts
+chat
+```
+
+The job requires BLE and PSRAM. The optional PIN requests Secure Connections
+pairing; inspect `job status meshcore-ble` and confirm `encrypted=yes` and
+`bonded=yes`. The PIN is retained only while the job runs, but the start command
+can remain in shell history. The worker reconnects with exponential backoff and
+coexists with the BLE keyboard; a concurrent keyboard connection attempt can
+delay a reconnect but does not tear down either established link.
+
+`meshcore` and `meshcore-ble` are alternative transports for the same messaging
+provider and cannot run at the same time. Contacts, direct conversations, Chat,
+and Inbox remain provider-neutral. Channels and the external device's radio and
+identity are configured on the companion device; the `meshcore` shell command
+continues to configure only SolarOS's local packet-radio implementation. See
+[meshcore.md](meshcore.md) for transport and security details.
 
 ## espnow-link
 
@@ -1029,6 +1230,42 @@ Notes:
 - `cdc0` is useful for Linux host testing; `uart0` is the natural expansion
   port path.
 
+## graffiti
+
+Full-screen Palm Graffiti handwriting input for boards with absolute touch and
+PSRAM. The job does not draw an overlay or change the active application.
+
+```text
+job start graffiti
+job status graffiti
+job stop graffiti
+```
+
+The pen-down position chooses the recognition alphabet for the complete
+stroke. Start in the left two-thirds of the oriented display for letters, or
+in the right one-third for numbers. The boundary follows the current display
+orientation. Relative pointer sources are ignored.
+
+The recognizer implements the `$1` unistroke pipeline with Palm Graffiti 1
+alphabet and numeral templates. It preserves stroke direction so a downward
+vertical stroke can be `I` or `1`, while an upward vertical stroke is Shift.
+The Palm editing gestures are also available:
+
+| Stroke | Result |
+| --- | --- |
+| Upward vertical | Shift; repeat before a character for Caps Lock. |
+| Left to right | Space. |
+| Right to left | Backspace. |
+| Upper right to lower left | Enter. |
+
+While running, the job registers the `pointer-observer` resource. It observes
+absolute pointer events over the whole display but does not consume them, so
+the foreground application continues to receive the same press, move, and
+release events. Recognized characters are published by a virtual keyboard
+source named `graffiti` and therefore go to the current input focus. `job
+status graffiti` reports recognized, rejected, and dropped stroke counts plus
+the current case state.
+
 ## gpio-keys
 
 Maps runtime-safe GPIO inputs to SolarOS keyboard presses. The job configures
@@ -1160,6 +1397,66 @@ waiting until the running MIDI job receives its first matching value.
 Use a compliant electrical interface: MIDI IN requires an optoisolated
 receiver and MIDI OUT requires a current-limited driver. Do not connect DIN
 MIDI pins directly to ESP32 GPIOs.
+
+## speechd
+
+Offline text-to-speech queue. The optional job loads a PicoTTS voice from
+storage into PSRAM and accepts asynchronous requests from native applications,
+Python, and Lua.
+
+```text
+job start speechd /voices/en-US
+say "Solar O S is ready"
+say --pitch 85 --speed 120 "Solar O S is ready"
+say --file /documents/announcement.txt
+say --file /books/novel.txt
+job status speechd
+job stop speechd
+```
+
+`say --file <path>` validates and reads a plain UTF-8 text file in bounded
+chunks. It keeps the shell in a foreground playback mode, but advances from
+shell events so the display and progress bar refresh while speech is running.
+The percentage is submitted-file progress: it advances whenever the next
+bounded chunk is accepted by `speechd`. The complete file is one streaming
+speech request: PicoTTS and the audio player stay open between chunks, while a
+single bounded handoff slot prevents the file from being buffered in memory.
+Press `Esc` or `Ctrl+C` to cancel the current speech request and stop reading.
+The foreground command returns only after `speechd` confirms cancellation, so a
+new `say` request cannot race the previous stream's cleanup. Cancellation
+discards queued text and soft-resets PicoTTS instead of synthesizing the
+unspoken remainder of the file.
+There is no file-size limit because only one bounded chunk is held and submitted
+at a time. Tab completion after `--file` lists filesystem paths. Ordinary `say
+<text...>` remains asynchronous and returns the queued request ID.
+`--pitch 50..200` and `--speed 20..500` use PicoTTS's native controls; both
+default to 100 and apply to ordinary text and file playback.
+
+The voice directory must contain `ta.bin` and `sg.bin`. No voice blobs are
+compiled into `firmware.bin`. The repository's top-level `picotts_voices/`
+directory contains ready-to-copy voices for `en-GB`, `en-US`, `de-DE`, `es-ES`,
+`fr-FR`, and `it-IT`. Builds also mirror them below
+`.pio/build/<environment>/picotts_voices/`. Copy one or more complete locale
+directories to SD or flash storage, then select the language when starting the
+job:
+
+```text
+job start speechd /voices/de-DE
+```
+
+Restarting `speechd` with another directory changes the language at runtime.
+The directory name is used as the voice label in `job status speechd`; PicoTTS
+validates the TA and SG resource contents while starting. Missing, truncated,
+or incompatible resources make the job fail instead of accepting requests.
+
+The job acquires the selected audio output only while an utterance is active
+and releases it between requests. Normal requests wait for another audio owner;
+callers can mark disposable notifications `drop_if_busy`.
+
+The queue holds eight requests of at most 512 UTF-8 bytes. Request IDs support
+polling and cancellation through `solaros.speech`. Stopping the job cancels
+pending speech and releases the roughly 1.1 MiB PicoTTS engine allocation plus
+the selected TA and SG buffers.
 
 ## sump
 

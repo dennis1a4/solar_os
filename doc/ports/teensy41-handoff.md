@@ -1,8 +1,46 @@
 # Teensy / SuperKeyboard handover
 
-Updated 2026-10-03. Branch: `teensy41`; GitHub: `dennis1a4/solar_os`.
+Updated 2026-10-03. Integration branch: `teensy41-upstream-4.15.18`; GitHub: `dennis1a4/solar_os`.
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
+
+## Upstream 4.15.18 integration — 2026-10-03
+
+Merged upstream `3b4cf28a` after local checkpoint `12593dac`. The checkpoint
+firmware and source backup are in the sibling `solar_os-baselines` directory.
+Teensy adapters and the legacy bench wiring remain in use.
+
+- Memory: measured idle internal free heap increased from 24,388 to 38,148 bytes
+  (+13,760); free PSRAM is 8,123,928 bytes. Keep one 8 MiB chip, the existing
+  system reserve and bounded pipe policy. Up to three external workers allocate
+  PSRAM stacks on demand; critical tasks retain internal stacks. The linker still
+  requires 72 KiB startup headroom.
+- `ltop`: interactive interval CPU/task monitor; FREE is stack high-water headroom
+  in bytes on Teensy. Repeated LCD launch/exit recovered memory exactly.
+- `webradio`: shared station catalog/TUI and a 128 KiB PSRAM PCM ring. Catalog and
+  UI lifecycle pass on hardware; real streaming/audio awaits the absent SGTL5000.
+- `sshkey status|pub|gen|rm`: persistent RSA identity under `/flash/.ssh`.
+  Offline 2048-bit generation, public export, overwrite refusal and removal pass.
+  Entropy initialization now works before Ethernet starts.
+- `midi record usb|slotN NEWFILE.smr` and `midi play FILE.smr usb|slotN` use a
+  transport-independent timestamped SMR1 format. USB cable 0 and short MIDI events
+  are supported; SysEx and standard MIDI file import/export are not implemented.
+  UART slots use 31,250 baud and existing ownership claims. Record cancellation
+  passes; physical USB/DIN routing and timing await connected MIDI hardware.
+- `pd open i2cN ADDRESS BOARD_MAX_MV BOARD_MAX_MA`, `pd status`,
+  `pd request MV MA`, `pd close`: STUSB4500 volatile fixed-PDO control with board
+  limits and confirmed negotiation state. Hardware is explicitly not connected;
+  nothing opens automatically. Close stops monitoring, not power delivery.
+  Existing I2C/SPI/UART tools remain available with resource ownership.
+
+Host sanitizer tests cover the PD register/state model, MIDI codec/record format,
+radio PCM backpressure and cleanup, plus composition, synth, images, graphics,
+settings, clock and hardware services. Device acceptance covers key commands,
+monitor/radio cleanup, MIDI recording cancellation and LCD appearance. The existing
+composition regression passed USB/LCD pipelines, 20-cycle memory recovery and
+7 MiB PSRAM pressure, but its host NTP fixture timed out; this network check needs
+rerunning. Physical audio, MIDI and PD checks are tracked in the
+[needs-testing checklist](teensy41-test-checklist.md), including PD ALERT latency.
 
 ## Revised PCB target — separate from the bench
 
@@ -48,8 +86,8 @@ The normal `teensy41_display` image requires that wiring change and disables
 Serial1. Both scope and USB-PD demo apps are available on the installed image.
 
 Installed HEX SHA256:
-`888276f3ba37a23596b5ad8a63322aa6ff16fd482d2417b4103a5c2664b4c0d0`.
-Flash 1,430,344 bytes; RAM1 439,936; RAM2 324,464.
+`0233dfebeb49c759ef6708f96cc38e627a8cf9dbee4b0c3a44f1fa9a59917860`.
+Flash 1,414,040 bytes; RAM1 428,224; RAM2 324,472.
 Microsoft keyboard `045e:0750`, powered USB host hub, RA8875 LCD, native SD,
 USB drive, QSPI flash and 8 MiB PSRAM. Audio shield was absent in recent tests.
 See [quick-start and wiring](README.md).

@@ -104,8 +104,10 @@ static TaskHandle_t reconnect_task_handle;
 static portMUX_TYPE key_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE reconnect_task_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE bond_remove_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE client_lease_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool reconnect_stop_requested;
 static bool reconnect_open_in_progress;
+static uint32_t client_leases;
 static ble_address_t deferred_forget_bda;
 static bool deferred_forget_valid;
 static bool initialized;
@@ -128,6 +130,7 @@ static uint8_t keyboard_battery_level;
 static bool reconnect_suppressed_for_sleep;
 static bool reconnect_suppressed_for_pairing;
 static bool reconnect_suppressed_for_forget;
+static bool reconnect_suppressed_for_client;
 static bool pairing_retry_pending;
 static bool pairing_scan_stop_requested;
 static bool reconnect_scan_stop_requested;
@@ -137,6 +140,7 @@ static ble_keyboard_scan_mode_t active_scan_mode = BLE_KEYBOARD_SCAN_DISCOVERY;
 static bool caps_lock;
 static uint8_t previous_keys[BLE_KEYBOARD_MAX_KEYS];
 static uint8_t previous_modifiers;
+static uint32_t wake_generation;
 static solar_os_hid_keyboard_report_tracker_t keyboard_report_tracker;
 static solar_os_input_source_t input_source;
 static solar_os_ble_keyboard_key_state_t key_state;
@@ -436,6 +440,7 @@ static void restore_status_after_scan(ble_keyboard_scan_mode_t mode);
 static esp_err_t run_keyboard_scan(ble_keyboard_scan_mode_t mode,
                                    ble_keyboard_candidate_t *selected_candidate);
 static esp_err_t start_pairing_scan_now(void);
+static esp_err_t forget_remembered_keyboard(void);
 static void request_pairing_after_pending_connect(const char *reason);
 static bool deferred_bond_forget_pending(void);
 static bool forget_operation_pending(void);
@@ -478,6 +483,7 @@ static bool reconnect_is_suppressed(void)
     return reconnect_suppressed_for_sleep ||
         reconnect_suppressed_for_pairing ||
         reconnect_suppressed_for_forget ||
+        reconnect_suppressed_for_client ||
         pairing_retry_pending;
 }
 
@@ -564,6 +570,49 @@ static bool stop_reconnect_task(const char *reason, uint32_t timeout_ms)
                   reason != NULL ? reason : "ble",
                   open_in_progress ? " by active HID open" : "");
     return false;
+}
+
+esp_err_t solar_os_ble_keyboard_client_acquire(uint32_t timeout_ms)
+{
+    portENTER_CRITICAL(&client_lease_lock);
+    if (client_leases != 0U) {
+        ++client_leases;
+        portEXIT_CRITICAL(&client_lease_lock);
+        return ESP_OK;
+    }
+    client_leases = 1U;
+    reconnect_suppressed_for_client = true;
+    portEXIT_CRITICAL(&client_lease_lock);
+
+    const bool stopped = stop_reconnect_task("GATT client", timeout_ms);
+    const bool keyboard_busy = scan_task_handle != NULL ||
+        state == BLE_KEYBOARD_SCANNING ||
+        state == BLE_KEYBOARD_CONNECTING ||
+        state == BLE_KEYBOARD_PASSKEY;
+    if (stopped && !keyboard_busy) {
+        return ESP_OK;
+    }
+
+    portENTER_CRITICAL(&client_lease_lock);
+    client_leases = 0U;
+    reconnect_suppressed_for_client = false;
+    portEXIT_CRITICAL(&client_lease_lock);
+    schedule_reconnect(0U);
+    return stopped ? ESP_ERR_INVALID_STATE : ESP_ERR_TIMEOUT;
+}
+
+void solar_os_ble_keyboard_client_release(void)
+{
+    bool resume = false;
+    portENTER_CRITICAL(&client_lease_lock);
+    if (client_leases != 0U && --client_leases == 0U) {
+        reconnect_suppressed_for_client = false;
+        resume = true;
+    }
+    portEXIT_CRITICAL(&client_lease_lock);
+    if (resume) {
+        schedule_reconnect(0U);
+    }
 }
 
 static void stop_scan_task_for_sleep(uint32_t timeout_ms)
@@ -1496,6 +1545,21 @@ static bool key_in_report(uint8_t key, const uint8_t *keys)
     return false;
 }
 
+static void note_wake_activity(void)
+{
+    portENTER_CRITICAL(&key_state_lock);
+    wake_generation++;
+    portEXIT_CRITICAL(&key_state_lock);
+}
+
+uint32_t solar_os_ble_keyboard_wake_generation(void)
+{
+    portENTER_CRITICAL(&key_state_lock);
+    const uint32_t generation = wake_generation;
+    portEXIT_CRITICAL(&key_state_lock);
+    return generation;
+}
+
 static void keyboard_report_state_publish(uint8_t modifiers, const uint8_t *keys)
 {
     solar_os_ble_keyboard_key_state_t next = {
@@ -1539,6 +1603,12 @@ static void handle_keyboard_report(uint8_t map_index,
         keyboard_report_state_reset(connected);
         previous_modifiers = modifiers;
         return;
+    }
+
+    if (solar_os_hid_keyboard_report_has_new_press(previous_modifiers,
+                                                    previous_keys,
+                                                    &report_state)) {
+        note_wake_activity();
     }
 
     const uint8_t changed_modifiers = (uint8_t)(previous_modifiers ^ modifiers);
@@ -1662,6 +1732,7 @@ static void hidh_callback(solar_os_ble_hid_event_type_t id, solar_os_ble_hid_eve
             connected_dev = param->open.dev;
             set_keyboard_battery(false, 0);
             keyboard_report_state_reset(true);
+            note_wake_activity();
             const char *name = pending_name;
             const char *display_name = name != NULL && name[0] ? name : pending_name;
             strlcpy(connected_name, display_name[0] ? display_name : "keyboard", sizeof(connected_name));
@@ -1872,6 +1943,9 @@ esp_err_t solar_os_ble_backend_init(void)
     }
     ble_hs_cfg.sync_cb = host_sync;
     ble_hs_cfg.reset_cb = host_reset;
+    /* Generic GATT clients temporarily lease keyboard-only capability while
+     * an explicit peer pairing is active. The default preserves the existing
+     * displayed-passkey behavior for HID central and peripheral links. */
     ble_hs_cfg.sm_io_cap = BLE_HS_IO_DISPLAY_ONLY;
     ble_hs_cfg.sm_bonding = 1;
     ble_hs_cfg.sm_mitm = 1;
@@ -2297,13 +2371,15 @@ static void finish_forget_operation(esp_err_t result, bool bond_removed)
         SOLAR_OS_LOGW(TAG, "BLE keyboard forget failed: %s", esp_err_to_name(result));
     }
 
-    if (pairing_retry_pending) {
+    if (pairing_retry_pending && result == ESP_OK) {
         const esp_err_t pair_ret = start_pairing_scan_now();
         if (pair_ret != ESP_OK) {
             SOLAR_OS_LOGW(TAG,
                           "deferred pairing start after forget failed: %s",
                           esp_err_to_name(pair_ret));
         }
+    } else if (pairing_retry_pending) {
+        pairing_retry_pending = false;
     } else if (!bond_removed && remembered_peer_count() > 0U) {
         schedule_reconnect(BLE_KEYBOARD_RECONNECT_INITIAL_DELAY_MS);
     }
@@ -2541,6 +2617,12 @@ esp_err_t solar_os_ble_keyboard_start_pairing(void)
         set_status(BLE_KEYBOARD_PAIRING_PENDING, "pairing after forget");
         SOLAR_OS_LOGI(TAG, "pairing waits for keyboard forget completion");
         return ESP_OK;
+    }
+
+    if (remembered_peer_count() > 0U) {
+        pairing_retry_pending = true;
+        SOLAR_OS_LOGI(TAG, "pairing replaces the remembered keyboard");
+        return forget_remembered_keyboard();
     }
 
     const bool reconnect_stopped = stop_reconnect_task("pairing", 50U);

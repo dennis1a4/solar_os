@@ -9,6 +9,7 @@
 #include "solar_os_fonts.h"
 #include "solar_os_log.h"
 #include "solar_os_memory.h"
+#include "solar_os_gfx_mono_raster.h"
 
 #define GFX_INDEX8_PALETTE_SIZE 256U
 #define GFX_INDEX8_COLOR_COUNT 216U
@@ -1373,6 +1374,210 @@ void solar_os_gfx_bitmap_2bpp(solar_os_gfx_t *gfx,
     gfx_mark_dirty(gfx);
 }
 
+static size_t gfx_raster_bytes_per_pixel(solar_os_gfx_raster_format_t format)
+{
+    switch (format) {
+    case SOLAR_OS_GFX_RASTER_GRAY8:
+        return 1U;
+    case SOLAR_OS_GFX_RASTER_RGB888:
+        return 3U;
+    default:
+        return 0U;
+    }
+}
+
+static bool gfx_raster_is_valid(const solar_os_gfx_raster_t *raster)
+{
+    if (raster == NULL || raster->pixels == NULL || raster->width == 0U ||
+        raster->height == 0U) {
+        return false;
+    }
+
+    const size_t bytes_per_pixel = gfx_raster_bytes_per_pixel(raster->format);
+    if (bytes_per_pixel == 0U || raster->width > SIZE_MAX / bytes_per_pixel) {
+        return false;
+    }
+    const size_t row_bytes = (size_t)raster->width * bytes_per_pixel;
+    if (raster->stride < row_bytes ||
+        raster->height - 1U > (SIZE_MAX - row_bytes) / raster->stride) {
+        return false;
+    }
+    const size_t required =
+        (size_t)(raster->height - 1U) * raster->stride + row_bytes;
+    return raster->pixels_size >= required;
+}
+
+static uint32_t gfx_raster_rgb888(const solar_os_gfx_raster_t *raster,
+                                  uint32_t x,
+                                  uint32_t y)
+{
+    const uint8_t *pixel = raster->pixels + (size_t)y * raster->stride;
+    if (raster->format == SOLAR_OS_GFX_RASTER_GRAY8) {
+        const uint8_t gray = pixel[x];
+        return ((uint32_t)gray << 16U) | ((uint32_t)gray << 8U) | gray;
+    }
+
+    pixel += (size_t)x * 3U;
+    return ((uint32_t)pixel[0] << 16U) |
+           ((uint32_t)pixel[1] << 8U) |
+           pixel[2];
+}
+
+static uint8_t gfx_raster_luminance(const solar_os_gfx_raster_t *raster,
+                                    uint32_t x,
+                                    uint32_t y)
+{
+    const uint8_t *pixel = raster->pixels + (size_t)y * raster->stride;
+    if (raster->format == SOLAR_OS_GFX_RASTER_GRAY8) {
+        return pixel[x];
+    }
+
+    pixel += (size_t)x * 3U;
+    return (uint8_t)(((uint32_t)pixel[0] * 77U +
+                      (uint32_t)pixel[1] * 150U +
+                      (uint32_t)pixel[2] * 29U) >> 8U);
+}
+
+typedef struct {
+    solar_os_display_surface_t surface;
+    uint8_t *pixels;
+    size_t row_bytes;
+} gfx_mono_raster_target_t;
+
+static bool gfx_mono_raster_target(solar_os_gfx_t *gfx,
+                                   gfx_mono_raster_target_t *target)
+{
+    if (!gfx_ready(gfx) || target == NULL) {
+        return false;
+    }
+    const u8x8_display_info_t *info = u8g2_GetU8x8(gfx->u8g2)->display_info;
+    uint8_t *buffer = u8g2_GetBufferPtr(gfx->u8g2);
+    if (info == NULL || buffer == NULL) {
+        return false;
+    }
+
+    *target = (gfx_mono_raster_target_t){
+        .surface = {
+            .native_width = info->pixel_width,
+            .native_height = info->pixel_height,
+            .rotation = gfx_rotation(gfx->u8g2),
+        },
+        .pixels = buffer,
+        .row_bytes = (size_t)u8g2_GetBufferTileWidth(gfx->u8g2) * 8U,
+    };
+    return target->row_bytes > 0U;
+}
+
+static void gfx_set_mono_pixel_raw(const gfx_mono_raster_target_t *target,
+                                   int x,
+                                   int y,
+                                   uint8_t draw_color)
+{
+    int native_x = 0;
+    int native_y = 0;
+    gfx_logical_to_native(&target->surface, x, y, &native_x, &native_y);
+    const size_t offset =
+        (size_t)(native_y >> 3) * target->row_bytes + (size_t)native_x;
+    const uint8_t mask = (uint8_t)(1U << (native_y & 7));
+    if (draw_color != 0U) {
+        target->pixels[offset] |= mask;
+    } else {
+        target->pixels[offset] &= (uint8_t)~mask;
+    }
+}
+
+esp_err_t solar_os_gfx_blit_raster(solar_os_gfx_t *gfx,
+                                   const solar_os_gfx_raster_t *raster,
+                                   int x,
+                                   int y,
+                                   int width,
+                                   int height,
+                                   const solar_os_gfx_clip_t *clip)
+{
+    if (!gfx_ready(gfx) || !gfx_raster_is_valid(raster) ||
+        width <= 0 || height <= 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int64_t x0 = x;
+    int64_t y0 = y;
+    int64_t x1 = (int64_t)x + width;
+    int64_t y1 = (int64_t)y + height;
+    if (clip != NULL) {
+        if (clip->width <= 0 || clip->height <= 0) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        const int64_t clip_x1 = (int64_t)clip->x + clip->width;
+        const int64_t clip_y1 = (int64_t)clip->y + clip->height;
+        if (x0 < clip->x) x0 = clip->x;
+        if (y0 < clip->y) y0 = clip->y;
+        if (x1 > clip_x1) x1 = clip_x1;
+        if (y1 > clip_y1) y1 = clip_y1;
+    }
+
+    const int display_width = (int)solar_os_gfx_width(gfx);
+    const int display_height = (int)solar_os_gfx_height(gfx);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > display_width) x1 = display_width;
+    if (y1 > display_height) y1 = display_height;
+    if (x0 >= x1 || y0 >= y1) {
+        return ESP_OK;
+    }
+
+    const bool index8 = gfx_uses_index8(gfx);
+    gfx_mono_raster_target_t mono_target = {0};
+    if (!index8 && !gfx_mono_raster_target(gfx, &mono_target)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const bool unscaled =
+        (uint32_t)width == raster->width && (uint32_t)height == raster->height;
+    if (!index8 && unscaled) {
+        solar_os_gfx_mono_blit_unscaled(mono_target.pixels, mono_target.row_bytes,
+            &mono_target.surface, raster->pixels, raster->stride,
+            raster->format == SOLAR_OS_GFX_RASTER_GRAY8 ? 1U : 3U,
+            x, y, (int)x0, (int)y0, (int)x1, (int)y1,
+            gfx->black_is_one != gfx->palette_inverted);
+        gfx_mark_dirty(gfx);
+        return ESP_OK;
+    }
+    for (int draw_y = (int)y0; draw_y < (int)y1; draw_y++) {
+        const uint32_t source_y = unscaled ? (uint32_t)(draw_y - y) :
+            (uint32_t)(((uint64_t)((int64_t)draw_y - y) * raster->height) /
+                       (uint32_t)height);
+        for (int draw_x = (int)x0; draw_x < (int)x1; draw_x++) {
+            const uint32_t source_x = unscaled ? (uint32_t)(draw_x - x) :
+                (uint32_t)(((uint64_t)((int64_t)draw_x - x) * raster->width) /
+                           (uint32_t)width);
+            if (index8) {
+                gfx->index8->pixels[
+                    (size_t)draw_y * gfx->index8->surface.stride + draw_x] =
+                    gfx_index8_for_rgb888(
+                        gfx_raster_rgb888(raster, source_x, source_y));
+                continue;
+            }
+
+            const uint8_t luminance =
+                gfx_raster_luminance(raster, source_x, source_y);
+            const uint8_t level = (uint8_t)(
+                ((uint16_t)luminance * SOLAR_OS_GFX_GRAY_MAX + 127U) / 255U);
+            const uint8_t draw_color = gfx_pattern_draw_color(
+                gfx, solar_os_gfx_gray(level), draw_x, draw_y);
+            gfx_set_mono_pixel_raw(&mono_target, draw_x, draw_y, draw_color);
+        }
+    }
+
+    if (index8) {
+        gfx_mark_index8_dirty_rect(gfx,
+                                   (int)x0,
+                                   (int)y0,
+                                   (int)(x1 - x0),
+                                   (int)(y1 - y0));
+    }
+    gfx_mark_dirty(gfx);
+    return ESP_OK;
+}
+
 esp_err_t solar_os_gfx_present_mono_xbm(solar_os_gfx_t *gfx,
                                         const uint8_t *bitmap,
                                         size_t bitmap_size,
@@ -1409,6 +1614,17 @@ esp_err_t solar_os_gfx_present_mono_xbm(solar_os_gfx_t *gfx,
         gfx->dirty = false;
     }
     return ret;
+}
+
+bool solar_os_gfx_supports_frame_format(const solar_os_gfx_t *gfx,
+                                      solar_os_display_format_t format)
+{
+    char name[SOLAR_OS_DISPLAY_TARGET_NAME_MAX];
+    solar_os_display_target_t target;
+    return gfx_ready(gfx) && (unsigned)format <= SOLAR_OS_DISPLAY_FORMAT_RGB565 &&
+        solar_os_display_target_name_for_u8g2(gfx->u8g2, name, sizeof(name)) &&
+        solar_os_display_find_target(name, &target) && target.present_frame &&
+        (target.frame_formats & SOLAR_OS_DISPLAY_FORMAT_BIT(format)) != 0U;
 }
 
 esp_err_t solar_os_gfx_present_frame(

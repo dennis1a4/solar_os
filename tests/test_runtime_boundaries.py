@@ -42,12 +42,12 @@ class RuntimeBoundaryTest(unittest.TestCase):
             source = (ROOT / relative_path).read_text(encoding="utf-8")
             self.assertIn(declaration, source, relative_path)
 
-    def test_hardware_facing_core_registries_stay_internal(self):
+    def test_task_only_registries_move_but_provider_control_stays_internal(self):
         declarations = {
             "src/services/solar_os_buses.c":
-                "static solar_os_bus_info_t buses",
+                "static StaticSemaphore_t bus_mutex_buffers",
             "src/services/solar_os_port.c":
-                "static solar_os_port_entry_t ports",
+                "static EXT_RAM_BSS_ATTR solar_os_port_entry_t ports",
             "src/jobs/solar_os_telnetd_job.c":
                 "static telnetd_job_state_t telnetd_job",
         }
@@ -124,6 +124,35 @@ class RuntimeBoundaryTest(unittest.TestCase):
         self.assertIn("device_address = alternate_address;", init)
         self.assertNotIn("device_address = GT911_ALTERNATE_ADDRESS", init)
         self.assertIn("addr = 0x5d, alt_addr = 0x14", manifest)
+
+    def test_mgc3130_is_a_buttonless_hover_pointer(self):
+        source = (ROOT / "src/services/solar_os_mgc3130.c").read_text(
+            encoding="utf-8"
+        )
+        registration = source.split(
+            "const uint32_t capabilities =", 1
+        )[1].split("if (ret != ESP_OK)", 1)[0]
+        pointer = source.split("static void publish_pointer", 1)[1].split(
+            "static uint32_t gesture_flags", 1
+        )[0]
+
+        self.assertIn("SOLAR_OS_INPUT_CAP_POINTER_ABSOLUTE", registration)
+        self.assertNotIn("SOLAR_OS_INPUT_CAP_POINTER_BUTTONS", registration)
+        self.assertIn("SOLAR_OS_INPUT_SOURCE_GESTURE", registration)
+        self.assertNotIn("SOLAR_OS_INPUT_SOURCE_TOUCH", registration)
+        self.assertIn(".action = SOLAR_OS_INPUT_POINTER_MOVE", pointer)
+        self.assertIn(".buttons = 0", pointer)
+
+    def test_graffiti_tracks_one_pointer_source_per_stroke(self):
+        source = (ROOT / "src/jobs/solar_os_graffiti_job.c").read_text(
+            encoding="utf-8"
+        )
+        pointer_filter = source.split(
+            "static bool graffiti_job_filter", 1
+        )[1].split("static void graffiti_job_worker", 1)[0]
+
+        self.assertIn("state->pointer_source = event->source", pointer_filter)
+        self.assertIn("event->source != state->pointer_source", pointer_filter)
 
     def test_system_key_can_emit_a_board_defined_short_press_input(self):
         main = (ROOT / "src/main.c").read_text(encoding="utf-8")
@@ -610,6 +639,100 @@ class RuntimeBoundaryTest(unittest.TestCase):
         self.assertIn("open_keyboard(selected_candidate.bda", open_path)
         self.assertNotIn("open_keyboard(candidate.bda", open_path)
 
+    def test_ble_pairing_retires_the_remembered_keyboard_bond(self):
+        ble = (ROOT / "src/services/solar_os_ble_keyboard.c").read_text(
+            encoding="utf-8"
+        )
+        pairing_start = ble.index("esp_err_t solar_os_ble_keyboard_start_pairing(")
+        pairing_end = ble.index(
+            "esp_err_t solar_os_ble_backend_prepare_sleep(", pairing_start
+        )
+        pairing = ble[pairing_start:pairing_end]
+        finish_start = ble.index("static void finish_forget_operation(")
+        finish_end = ble.index("static esp_err_t complete_bond_forget(", finish_start)
+        finish = ble[finish_start:finish_end]
+
+        self.assertIn("if (remembered_peer_count() > 0U)", pairing)
+        self.assertIn("pairing_retry_pending = true;", pairing)
+        self.assertIn("return forget_remembered_keyboard();", pairing)
+        self.assertIn("pairing_retry_pending && result == ESP_OK", finish)
+        self.assertIn("pairing_retry_pending = false;", finish)
+
+    def test_ble_hid_replaces_a_conflicting_keyboard_bond(self):
+        hid = (ROOT / "src/services/solar_os_ble_hid.c").read_text(
+            encoding="utf-8"
+        )
+        replace_start = hid.index("static int replace_repeat_pairing_bond(")
+        replace_end = hid.index("static int gap_callback(", replace_start)
+        replace = hid[replace_start:replace_end]
+
+        self.assertIn("ble_gap_conn_find", replace)
+        self.assertIn("ble_store_util_delete_peer", replace)
+        self.assertIn("return BLE_GAP_REPEAT_PAIRING_RETRY;", replace)
+        self.assertIn(
+            "case BLE_GAP_EVENT_REPEAT_PAIRING:\n"
+            "        return replace_repeat_pairing_bond(event);",
+            hid,
+        )
+
+    def test_ble_keyboard_activity_resumes_suspend(self):
+        main = (ROOT / "src/main.c").read_text(encoding="utf-8")
+        ble = (ROOT / "src/services/solar_os_ble_keyboard.c").read_text(
+            encoding="utf-8"
+        )
+
+        suspend = main.split("static void enter_suspend", 1)[1].split(
+            "static void exit_suspend", 1
+        )[0]
+        dispatch = main.split("static void dispatch_input_key", 1)[1].split(
+            "static void dispatch_input_pointer", 1
+        )[0]
+        runtime = main.split("while (true)", 1)[1]
+        report = ble.split("static void handle_keyboard_report", 1)[1].split(
+            "static int scan_callback", 1
+        )[0]
+        opened = ble.split("case SOLAR_OS_BLE_HID_OPEN:", 1)[1].split(
+            "case SOLAR_OS_BLE_HID_BATTERY:", 1
+        )[0]
+
+        self.assertIn("suspend_ble_wake_generation =", suspend)
+        self.assertIn("solar_os_ble_keyboard_wake_generation()", suspend)
+        self.assertIn("maybe_exit_suspend_for_ble_keyboard();", dispatch)
+        self.assertIn("maybe_exit_suspend_for_ble_keyboard();", runtime)
+        self.assertIn("solar_os_hid_keyboard_report_has_new_press", report)
+        self.assertIn("note_wake_activity();", report)
+        self.assertIn("note_wake_activity();", opened)
+
+    def test_deepsleep_is_a_cold_boot_power_command(self):
+        main = (ROOT / "src/main.c").read_text(encoding="utf-8")
+        shell = (ROOT / "src/apps/solar_os_shell.c").read_text(
+            encoding="utf-8"
+        )
+        system = (ROOT / "src/shell/solar_os_shell_system.c").read_text(
+            encoding="utf-8"
+        )
+        manual = (ROOT / "doc/manual/commands.md").read_text(encoding="utf-8")
+
+        sleep_path = main.split("static void enter_sleep", 1)[1].split(
+            "static void enter_light_sleep", 1
+        )[0]
+        command = system.split("void solar_os_shell_cmd_deepsleep", 1)[1].split(
+            "void solar_os_shell_cmd_suspend", 1
+        )[0]
+
+        self.assertIn(
+            '{"deepsleep", "enter deep sleep and cold boot on wake",', shell
+        )
+        self.assertIn("solar_os_context_request_deep_sleep(ctx);", command)
+        self.assertIn("esp_sleep_enable_ext1_wakeup_io", sleep_path)
+        self.assertIn("esp_sleep_enable_timer_wakeup", sleep_path)
+        self.assertIn("solar_os_ble_keyboard_prepare_sleep", sleep_path)
+        self.assertIn("solar_os_wifi_prepare_sleep", sleep_path)
+        self.assertIn("solar_os_display_suspend_primary", sleep_path)
+        self.assertIn("esp_deep_sleep_start();", sleep_path)
+        self.assertIn("fresh boot", manual)
+        self.assertIn("not a hardware power-off", manual)
+
     def test_audio_stream_direction_and_shell_capabilities(self):
         audio = (ROOT / "src/services/solar_os_audio.c").read_text(
             encoding="utf-8"
@@ -691,10 +814,46 @@ class RuntimeBoundaryTest(unittest.TestCase):
         end = main.index("static void dispatch_app_resume(", start)
         overlay_request = main[start:end]
 
-        self.assertIn("u8g2_ClearBuffer(display_u8g2);", overlay_request)
+        self.assertIn("u8g2_ClearBuffer(session_overlay_u8g2);", overlay_request)
         self.assertNotIn(
-            "solar_os_display_present(display_u8g2", overlay_request
+            "solar_os_display_present(session_overlay_u8g2", overlay_request
         )
+
+    def test_display_focus_shortcuts_are_global(self):
+        main = (ROOT / "src/main.c").read_text(encoding="utf-8")
+        sessions = (ROOT / "src/services/solar_os_sessions.c").read_text(
+            encoding="utf-8"
+        )
+        dispatch = main.split("static void dispatch_input_key", 1)[1].split(
+            "static void dispatch_input_pointer", 1
+        )[0]
+
+        ctrl_shortcut = dispatch.split(
+            "if (ctrl_active && alt_active", 1
+        )[1].split(
+            "if (alt_active && !ctrl_active", 1
+        )[0]
+        self.assertIn("solar_os_sessions_cycle_display_focus()", ctrl_shortcut)
+        self.assertIn(
+            "solar_os_sessions_cycle_display_focus_previous()", ctrl_shortcut
+        )
+        self.assertIn(
+            "solar_os_sessions_cycle_display_focus_down()", ctrl_shortcut
+        )
+        self.assertIn(
+            "solar_os_sessions_cycle_display_focus_up()", ctrl_shortcut
+        )
+        self.assertNotIn("dispatch_key_to_input_focus", ctrl_shortcut)
+        self.assertIn("SOLAR_OS_INPUT_MOD_CTRL", dispatch)
+        self.assertIn("SOLAR_OS_INPUT_MOD_ALT", dispatch)
+        self.assertIn("SOLAR_OS_KEY_CTRL_LEFT", dispatch)
+        self.assertIn("SOLAR_OS_KEY_CTRL_RIGHT", dispatch)
+        self.assertIn("SOLAR_OS_KEY_CTRL_UP", dispatch)
+        self.assertIn("SOLAR_OS_KEY_CTRL_DOWN", dispatch)
+        self.assertIn("if (alt_active && !ctrl_active", dispatch)
+        self.assertIn("session_split_focus_neighbor(", sessions)
+        self.assertIn("info.axis != axis", sessions)
+        self.assertIn("session_store_input_focus(targets[next_index]);", sessions)
 
     def test_gameboy_presents_clean_first_resume_frame(self):
         gameboy = (ROOT / "src/apps/solar_os_gameboy_presenter.c").read_text(
@@ -737,6 +896,32 @@ class RuntimeBoundaryTest(unittest.TestCase):
         self.assertIn(".width = u8g2_GetDisplayWidth(u8g2)", registered_geometry)
         self.assertIn(".height = u8g2_GetDisplayHeight(u8g2)", registered_geometry)
         self.assertNotIn("SOLAR_OS_BOARD_DISPLAY_NATIVE_WIDTH", registered_geometry)
+
+    def test_builtin_shell_follows_display_layouts(self):
+        commands = (
+            ROOT / "src/shell/solar_os_shell_commands.c"
+        ).read_text(encoding="utf-8")
+        sessions = (
+            ROOT / "src/services/solar_os_sessions.c"
+        ).read_text(encoding="utf-8")
+        terminal = (
+            ROOT / "src/services/solar_os_terminal.c"
+        ).read_text(encoding="utf-8")
+
+        split = commands.split("static void display_cmd_split", 1)[1].split(
+            "static bool display_find_layout", 1
+        )[0]
+        destroy = commands.split(
+            "static void display_cmd_destroy_layout", 1
+        )[1].split("static void display_draw_test_pattern", 1)[0]
+        self.assertIn("solar_os_sessions_builtin_shell_uses_display", split)
+        self.assertIn("solar_os_sessions_rebind_builtin_shell_display", split)
+        self.assertIn("solar_os_display_layout_unsplit(argv[2])", split)
+        self.assertIn("solar_os_sessions_builtin_display_base", destroy)
+        self.assertIn("solar_os_sessions_rebind_builtin_shell_display", destroy)
+        self.assertIn("solar_os_terminal_rebind_display", sessions)
+        self.assertIn("session_state.builtin_display_target", sessions)
+        self.assertIn("terminal_apply_settings(terminal, false);", terminal)
 
     def test_runtime_displays_on_headless_boards_use_target_registry(self):
         display = (ROOT / "src/services/solar_os_display.c").read_text(

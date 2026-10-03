@@ -275,22 +275,38 @@ These controls affect only the LCD; USB/Telnet geometry is independent.
 | --- | --- | --- |
 | `sd` | `sd [status\|mount\|eject]` | Show, mount or safely eject the Teensy SD card. |
 | `usb` | `usb [status\|mount\|eject]` | Show, mount or safely eject a Teensy USB drive. |
+| `midi` | `midi status`, `midi record usb\|slotN NEWFILE.smr`, `midi play FILE.smr usb\|slotN` | Teensy timestamped USB/UART MIDI recording and playback; Ctrl+C stops. SMR1 event files, not standard .mid; SysEx unsupported. |
+| `pd` | `pd status`, `pd open i2cN ADDRESS MAX_MV MAX_MA`, `pd request MV MA`, `pd close` | Teensy STUSB4500 monitor; board limits required, no automatic startup or NVM writes. Hardware validation pending. |
 | `version` | `version` | Print the SolarOS version and firmware flavor. |
-| `pkg` | `pkg` | Print compiled package groups and build units. |
+| `pkg` | `pkg` | Open the native-module package manager. |
+| `pkg` | `pkg system` | Print compiled package groups and build units. |
+| `pkg` | `pkg available` | Verify the signed native-module catalog and print its compact module list. |
+| `pkg` | `pkg installed` | List installed application, job, and driver modules. |
+| `pkg` | `pkg install <module>` | Download, verify, validate, and atomically install a native module; Ctrl+C, Esc, or the app-exit key cancels. |
+| `pkg` | `pkg remove <module>` | Remove an installed native module. |
+| `load` | `load <file.elf> [args...]` | Validate, relocate, run, and unload one native ELF module from storage. |
 | `board` | `board` | Print board ID, name, and capabilities. |
 | `identity` | `identity [status]` | Show the configured user and hostname. |
 | `identity` | `identity user <name>` | Save the SolarOS user and default SSH/SCP username in NVS. |
 | `identity` | `identity hostname <name>` | Save the device hostname in NVS; reboot to update Wi-Fi. |
 | `engine` | `engine [status|reset]` | Print or reset generic engine utilization counters for CPU/SIMD-style backends and vector bulk operations. |
-| `display` | `display [list]`; `display test <target>`; `display mode <target> [mode]` | List drawable display targets, draw a test pattern, or change driver-specific display settings. |
-| `input` | `input [status|keyboard|touch|mouse|joystick|dpad|buttons]` | List all input sources or filter them by semantic class. |
-| `input` | `input test <source>` | Show event counters and the last key, pointer, or axis event accepted from one source. |
+| `display` | `display [list]`; `display layouts`; `display test <target>`; `display mode <target> [mode]` | List targets and layouts, draw a test pattern, or change driver-specific display settings. |
+| `display` | `display join <name> --horizontal\|--vertical <target> <target> [target ...]`; `display unjoin <name>` | Join two to four physical targets into one logical display, or remove the join. |
+| `display` | `display split <target> --horizontal\|--vertical <first> <second>`; `display unsplit <target>` | Split one physical target into two equal logical viewports, or remove the split. |
+| `input` | `input [status|keyboard|touch|mouse|joystick|dpad|buttons|gesture]` | List all input sources or filter them by semantic class. |
+| `input` | `input test <source>` | Show event counters and the last key, pointer, axis, or gesture event accepted from one source. |
 | `input` | `input calibrate <source> [set <min-x> <max-x> <min-y> <max-y> <width> <height>\|reset]` | Show, save, or reset coordinate calibration for an absolute-pointer source. |
+| `input` | `input emit <key\|chord>` | Emit a local key tap, such as `RIGHT`, `ALT+RIGHT`, `ENTER`, or one literal character, through the normal input-focus path. |
+| `gesture` | `gesture [status]` | List gesture-capable input sources, readiness, and the gesture kinds each source advertises. |
+| `gesture` | `gesture bind source=<name\|*> gesture=<name> [direction=<name\|*>] [cooldown=<ms>] -- <command> [args...]` | Configure a volatile gesture-to-command rule for the `gestures` job. |
+| `gesture` | `gesture bindings` | Show listener state and list volatile gesture bindings, trigger counts, queue drops, cooldowns, and commands. |
+| `gesture` | `gesture unbind <id\|all>` | Remove one volatile gesture binding or all of them. |
 | `status` | `status` | Print a compact system summary, including the last foreground-app exit code. |
 | `uptime` | `uptime` | Print elapsed time since boot. |
 | `mem` | `mem [policy]` | Print heap status; `policy` also shows allocation-class counters, guarded fallback limits, and the last tagged failure. |
-| `top` | `top` | Print FreeRTOS task resource information when available. |
+| `top` | `top` | Print a one-shot cumulative FreeRTOS task snapshot. Use `ltop` for live interval CPU, memory, and stack monitoring. |
 | `sleep` | `sleep` | Enter explicit light sleep. |
+| `deepsleep` | `deepsleep` | Turn off the ESP32 radios and enter deep sleep. KEY, an armed RTC or scheduled timer, or RESET starts a fresh boot. |
 | `suspend` | `suspend` | Turn off the primary display and temporarily use the `lowpower` profile while services and jobs continue. Press KEY to resume. |
 | `power` | `power [status]` | Show the selected and effective profiles, suspend state, sleep policy, and wake statistics. |
 | `power` | `power profile [performance\|balanced\|battery\|lowpower]` | Show or save the power profile. |
@@ -334,8 +350,84 @@ These controls affect only the LCD; USB/Telnet geometry is independent.
 | `setterm` | `setterm otaurl [url]` | Show or set the OTA metadata URL. |
 
 Input completion lists every current source after `input test`, only absolute
-pointer sources after `input calibrate`, `status` after an input class, and
-`set` or `reset` after a calibration source.
+pointer sources after `input calibrate`, common named keys after `input emit`,
+`status` after an input class, and `set` or `reset` after a calibration source.
+Gesture completion lists gesture-capable sources after `source=`, limits
+`gesture=` values to the selected source's advertised gestures, and offers
+`all` after `gesture unbind`.
+
+### Native ELF modules
+
+`load` is the low-level maintainer interface for the native-module runtime. It
+is compiled only for ESP32-S3 boards with PSRAM. The command resolves the ELF
+path through the calling shell's current directory, reads at most 2 MiB into
+PSRAM, validates every ELF header and table boundary, checks for an Xtensa
+ELF32 dynamic object, relocates it into executable PSRAM, and calls its entry
+point with the supplied arguments.
+
+Native modules import the single versioned `solar_os_native_host_v1` symbol.
+The returned function table reports the ABI version, target, firmware version,
+and provides UTF-8 output through the shell that invoked `load`. Arbitrary
+SolarOS or ESP-IDF internals are not exported. The first ABI is intentionally
+small so later operations can be added after their ownership and lifetime
+rules are defined. Native ELF code is not sandboxed; `load` is for trusted,
+maintainer-produced modules only.
+
+The `load` runner is for short-lived command-style modules. A module must stop
+all of its work and release every callback and resource before its entry point
+returns, because the runner immediately unloads its code and data. Installed
+jobs and drivers use separate resident lifecycle ABIs instead of this runner.
+
+The standalone `modules/hello` ESP-IDF project builds a small acceptance
+module.
+
+Official native-module catalogs are versioned with the host firmware. `pkg`
+accepts a catalog only when its ECDSA signature, SolarOS version, ESP target,
+and native ABI match the running firmware. Each downloaded ELF must match the
+signed size and SHA-256, pass the same ELF validation as `load`, and is staged
+before atomic activation. The signed type selects the storage and lifecycle
+boundary: application modules use `/modules/apps/<module>.elf`, jobs use
+`/modules/jobs`, and drivers use `/modules/drivers`. Every entry separately
+declares its lifecycle ABI and its type-specific native host API size.
+Application lifecycle ABI 1 is the synchronous `main(argc, argv)`
+run-and-unload contract. Job lifecycle ABI 1 registers start, stop, and tick
+callbacks and keeps the ELF resident until the stopped job is removed. Driver
+lifecycle ABI 1 registers a zero-binding utility driver contract and keeps the
+ELF resident until all devices are detached and the module is removed.
+Installed jobs and drivers are reactivated during boot. The default repository is
+`https://solar-os.eu/ota/modules`.
+
+Run `pkg` without arguments to open the package manager. It refreshes the
+signed catalog in a worker, marks installed entries with `*`, and lets you
+inspect, install, remove, or refresh modules without blocking screen redraws.
+After a successful catalog check, `pkg install` completion uses that verified
+catalog. `pkg remove` completion and `pkg installed` read the installed module
+directories directly.
+
+Installed application modules are shell commands: the module ID resolves under
+`/modules/apps` after built-in commands, compiled applications, and aliases.
+Command completion lists installed applications. `load` remains available for
+explicit paths and diagnostics. Reinstalling an application from the schema-v1
+layout moves it into `/modules/apps`; `pkg remove` also recognizes the legacy
+flat application path during this transition.
+
+The acceptance modules exercise all three paths. Use `pkg install hello-job`,
+then `job start hello-job`, `job status hello-job`, and `job stop hello-job`.
+Use `pkg install hello-driver`, then `expansion attach hello-driver hello0` and
+`expansion detach hello0`. The hello driver claims no GPIO or bus. `pkg remove`
+rejects a running job or a driver with an attached device.
+
+For example:
+
+```text
+pkg available
+pkg installed
+pkg install hello
+hello SolarOS
+pkg remove hello
+```
+
+### Power, RTC, schedules, and terminal settings
 
 `power` usage:
 
@@ -368,6 +460,14 @@ the selected profile, effective profile, and suspend state.
 sleep path, and `suspend` toggles the runtime suspend state. The default for a
 new or cleared NVS configuration is `suspend`; an existing saved value remains
 unchanged.
+
+`deepsleep` is a standalone command. It turns off the ESP32 radios and enters
+ESP32 deep sleep after configuring the same KEY, compatible RTC interrupt, and
+next scheduled timer wake sources used by explicit light sleep. KEY, an armed
+RTC or scheduled timer, and RESET start a normal fresh boot; running jobs,
+sessions, and RAM state are not restored. BLE and Wi-Fi are off and cannot wake
+the device. This is not a hardware power-off: the board remains powered, and a
+separate board power control must still be used to remove its supply.
 
 `rtc` is the low-level hardware interface. `rtc status` remains useful on
 boards without RTC hardware and reports `unavailable` there.
@@ -616,8 +716,13 @@ link stream create link0 vser0 0x12345678
 job start bridge cdc0 vser0
 job start gpio-keys gpio17:UP gpio2:ENTER
 job start gpio-keys --config /flash/gpio-keys.conf
+job start graffiti
+job start gestures
 job start httpd /www
+job start meshcore-ble 68:ee:8f:69:5f:35 public 123456
 job start displayd [display-target]   # display0 by default, web0 when headless
+job start cam-webd [qvga|vga] [fps] [auth=none|required]  # QVGA, 5 fps, no auth by default
+job start rtspd [video=<stream>|none] [audio=<stream>|none] [size=qvga|vga] [fps=0..30] [port=<port>]
 job start ntp-sync once
 job start batmon 60
 job start slip uart0 115200
@@ -781,10 +886,11 @@ xfer recv <port> <file> --zmodem [--append|--replace]
 | `ble` | `ble default` | Clear the saved override and use the board default on the next boot. |
 | `ble` | `ble keepalive [on\|off]` | Show or save the best-effort BLE keyboard keepalive setting. |
 | `ble` | `ble scan` | Scan nearby BLE devices. |
-| `ble` | `ble pair` | Start keyboard pairing. |
+| `ble` | `ble pair` | Forget the remembered keyboard and its bond, then start pairing a replacement. |
 | `ble` | `ble forget` | Erase the remembered keyboard, its BLE bond, and its cached GATT service database. |
 | `ble gatt` | `ble gatt status` | Show the generic GATT connection state and discovered-service count. |
 | `ble gatt` | `ble gatt connect <aa:bb:cc:dd:ee:ff> <public\|random\|rpa_public\|rpa_random>` | Connect to a BLE peripheral by address and address type. |
+| `ble gatt` | `ble gatt pair <six-digit-pin>` | Secure and bond the connected GATT peripheral with its six-digit PIN. |
 | `ble gatt` | `ble gatt disconnect` | Request disconnect of the shell's GATT session and cancel its pending operation. |
 | `ble gatt` | `ble gatt services` | List discovered services and their indexes and handle ranges. |
 | `ble gatt` | `ble gatt chars <service-index>` | List the characteristics discovered for one service. |
@@ -826,6 +932,19 @@ Battery Level notifications and reads the initial level when supported. `ble
 status`, the general `status` command, and the Python/Lua BLE status strings
 include the latest percentage while that keyboard remains connected.
 
+### BLE inspector TUI
+
+Run `ble` without arguments to open the BLE Inspector TUI. Its Devices,
+Services, Chars, and Settings tabs support scanning, connecting, service and
+characteristic inspection, characteristic reads and hexadecimal writes, and
+BLE keyboard settings. Press Tab to move between tabs. The inspector owns its
+GATT connection and disconnects it when the TUI closes. Existing `ble status`,
+`ble scan`, and `ble gatt ...` commands remain available for scripts and plain
+text use. On a BLE-disabled boot, the Settings tab remains available so BLE can
+be enabled for the next boot.
+
+### BLE keepalive and GATT
+
 `ble keepalive on` sends the standard HID Exit Suspend command every 30 seconds
 when the connected keyboard exposes a writable HID Control Point. It falls back
 to reading the HID Information characteristic when Exit Suspend is unavailable.
@@ -841,6 +960,7 @@ BLE GATT usage:
 ```text
 ble gatt status
 ble gatt connect <aa:bb:cc:dd:ee:ff> <public|random|rpa_public|rpa_random>
+ble gatt pair <six-digit-pin>
 ble gatt disconnect
 ble gatt services
 ble gatt chars <service-index>
@@ -924,12 +1044,16 @@ available for the compiled board.
 | `audio` | `audio mic [ms]` | Sample microphone level. |
 | `audio` | `audio loopback [ms] [volume]` | Run microphone-to-speaker loopback. |
 | `audio` | `audio off` | Stop audio output. |
+| `say` | `say [-v <0..100>] [--volume <0..100>] [--pitch <50..200>] [--speed <20..500>] [--drop-if-busy] (--file <path> \| [--] <text...>)` | Queue text for offline speech, or stream a plain UTF-8 text file aloud with live progress. Pitch and speed default to 100. File mode submits bounded chunks through one continuous PicoTTS/audio session, completes paths with Tab, and remains responsive; press Esc or Ctrl+C to stop. Start `speechd` with a PicoTTS voice directory first. |
 | `led` | `led [status|on|off|toggle]` | Inspect or control the built-in status LED when available. |
+| `camera` | `camera [status]` | Initialize the camera on first use and show the detected sensor, JPEG configuration, current owner and frame lease, capture count, and last error. |
+| `camera` | `camera capture <path> [qvga|vga]` | Capture one JPEG into a caller-selected SolarOS path. The default is QVGA; changing size reinitializes the idle camera. Existing files are replaced. |
+| `camera` | `camera off` | Deinitialize an idle camera and release its framebuffer and driver resources. |
 | `expansion` | `expansion` | Open the expansion device manager. Browse attached devices and driver categories, inspect details, attach supported drivers, save runtime attachments to the selected startup script, and detach runtime devices. Bus lifecycle remains in the `io` app. |
 | `expansion` | `expansion status` | Show expansion capabilities, named buses and leases, connector resources, active devices, and resource claims. |
 | `expansion` | `expansion layout [connector]` | Draw the board's physical connector map with live free, releasable, claimed, fixed, power, ground, and NC markers. |
 | `expansion` | `expansion scan` | List expansion resources and probe-capable drivers. |
-| `expansion` | `expansion drivers` | List compiled expansion drivers. |
+| `expansion` | `expansion drivers` | List registered expansion drivers. |
 | `expansion` | `expansion devices` | List fixed board and runtime-attached expansion devices with origin, readiness, startup mode, policy, and bindings. |
 | `expansion` | `expansion bus create i2c <name> port=<i2c0\|i2c1> sda=<gpio> scl=<gpio> [speed=<hz>]` | Define a runtime I2C bus on an unused controller and approved expansion pins. |
 | `expansion` | `expansion bus create onewire <name> pin=<gpio>` | Define a runtime named 1-Wire bus on an approved expansion pin. |
@@ -940,7 +1064,7 @@ available for the compiled board.
 | `expansion` | `expansion bus attach <name>` | Attach a named detachable bus and reserve its endpoint and signal pins. |
 | `expansion` | `expansion bus detach <name>` | Detach an idle named bus, preserving its descriptor while releasing its endpoint and signal pins. |
 | `expansion` | `expansion bus remove <name>` | Remove an idle runtime bus and release its signal pins. |
-| `expansion` | `expansion attach <driver> <name> <resource...>` | Attach a compiled expansion driver or manual resource profile. |
+| `expansion` | `expansion attach <driver> <name> <resource...>` | Attach a registered expansion driver or manual resource profile. |
 | `expansion` | `expansion detach <name>` | Detach an active expansion device and release its resource claims. |
 | `expansion` | `expansion export <path>` | Atomically export runtime buses and catalog-backed device attachments as a portable expansion manifest for custom-board generation. |
 | `neopixel` | `neopixel [status\|list] [name]` | List attached WS2812/NeoPixel strips. |
@@ -1094,7 +1218,34 @@ after it is attached. The built-in board panel is not an expansion driver.
 test <target>` claims the target while it draws a visible frame/test pattern,
 then releases it. `display mode <target>` lists driver-specific display
 settings for supported display drivers; `display mode <target> <mode>` applies
-one setting. With `power=auto`, the built-in ST7305 path uses the normal power
+one setting.
+
+`display join wall0 --horizontal display0 lcd0` claims two to four backing
+targets and registers `wall0` as one logical target. Horizontal joins place
+targets from left to right; vertical joins place them from top to bottom. The
+largest cross-axis dimension defines the logical canvas and unused backing
+area is cleared. `display split display0 --horizontal left0 right0` claims one
+backing target and registers two equal logical viewports. On a 792x272
+CrowPanel this creates two 396x272 targets. Each viewport has its own display
+buffer, terminal profile, session ownership, and frame-export surface; updating
+one viewport preserves the other.
+
+Layouts are runtime-only and are shown by `display layouts`. Backing targets
+remain visible in `display list` with an owner such as
+`display-layout:display0`, while logical targets have source `layout` and role
+`joined` or `viewport`. Layout targets work with normal commands such as
+`session create shell left0` and `session create files right0`. A layout cannot
+use another layout as backing, does not scale content, and cannot be removed
+while any logical target is owned or exported. When the built-in display shell
+creates a split, session 0 automatically moves to the first viewport; when it
+creates a join containing its current display, it moves to the joined target.
+Removing that layout moves session 0 back to its original board display. Shell
+state and scrollback are preserved while terminal geometry is recalculated for
+the new target. Layout updates are coalesced and backing targets are refreshed
+sequentially, which is especially important for e-paper panels. `display
+unjoin wall0` and `display unsplit display0` release the backing targets.
+
+With `power=auto`, the built-in ST7305 path uses the normal power
 profile before writing changed frame content and switches to the paired `lpm`
 profile after the frame has been idle for the configured driver debounce, or
 immediately when a present pass finds no changed pixels. The default ST7305
@@ -1108,12 +1259,14 @@ field, and `hpm-hz=<16|25.5|32|51>` changes the controller's HPM frame-rate
 field. These driver values are stored in NVS when changed. The ST7305
 `inverted=` setting controls panel polarity and remains independent of the
 terminal palette selected with `setterm palette`.
-On SSD1683 board and expansion targets, `refresh=auto` uses a full waveform for
-the first changed frame and after every 19 non-full updates, while unchanged
-frames are skipped. Waveshare V2 expansion targets use the changed framebuffer
-rectangle and the controller's partial-window waveform for those intermediate
-updates. `refresh=fast` forces a fast full-frame waveform and `refresh=full`
-forces the full cleanup waveform on every changed frame.
+On SSD1683 board and expansion targets, `refresh=auto` starts with a full
+waveform and skips unchanged frames. Waveshare V2 expansion targets use the
+changed framebuffer rectangle and the controller's partial-window waveform,
+with a full cleanup after every 19 partial updates. The Elecrow 5.79-inch dual
+controller transfers both RAM halves with its `0xDC` partial waveform after the
+initial cleanup and does not schedule periodic full refreshes. `refresh=fast`
+forces a fast full-frame waveform and `refresh=full` forces the full cleanup
+waveform on every changed frame.
 
 Packet radio devices are datagram endpoints registered by expansion drivers, not
 byte-stream ports. The common radio layer preserves packet metadata such as RSSI
@@ -1200,6 +1353,7 @@ pocsag send radio 448425000 1200 1841525 "SolarOS calling" alpha inverted
 help
 version
 pkg
+hello SolarOS
 board
 wifi on
 ping wintermute

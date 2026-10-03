@@ -364,3 +364,49 @@ See [RAMFS notes](teensy41-ramfs.md). Final main acceptance:
   on the actual LCD; try editing and scrolling a representative large script.
 
 See [syntax notes](teensy41-syntax.md) and `/tmp/teensy-syntax-device.json`.
+
+
+## Upstream 4.15.18 integration: MIDI, WebRadio and USB-PD
+
+These physical checks remain pending even when automated software checks pass.
+
+- [ ] **MIDI-1 — USB input/output:** enumerate a class-compliant USB MIDI device
+  on the powered host hub with keyboard/storage present. Record note, controller,
+  pitch-bend, program-change and real-time messages; verify channels and timing.
+  First implementation supports USB cable 0 and short messages; SysEx is excluded.
+- [ ] **MIDI-2 — DIN/UART:** fit a proper 3.3 V compatible MIDI input/output
+  interface (including isolated MIDI input). Verify 31250 baud and slot pin
+  routing. Record on USB and replay through UART; then test the reverse.
+- [ ] **MIDI-3 — Load/recovery:** sustain dense events while SD writes and other
+  consoles run; measure timestamp jitter. Confirm overflow reporting, disconnect
+  handling, Ctrl+C cleanup and receiver note release. SMR1 files are timestamped
+  event recordings, not Standard MIDI Files; viewer/editor and .mid import/export
+  remain future work. USB device-mode MIDI is not enabled.
+- [ ] **RADIO-1 — Audio hardware:** reconnect SGTL5000, verify real MP3 radio
+  playback, pause/resume, volume and ownership against Synth/aplay/recording.
+- [ ] **RADIO-2 — Network/audio soak:** test HTTP and HTTPS stations, reconnects,
+  stalls and cancellation while audio plays; check underruns, PSRAM recovery and
+  external worker stack headroom. Teensy defaults to the text UI; PCM buffer is
+  bounded at 128 KiB. Lack of an audio shield must produce a clean error.
+- [ ] **PD-1 — Wiring/ratings:** STUSB4500 is NOT wired on the current bench.
+  Record the I2C bus, address straps, ALERT wiring, board voltage/current ratings,
+  regulator limits and load-switch arrangement before `pd open`. No auto-start.
+- [ ] **PD-2 — Controller event timing:** measure alert-to-PDO capture latency
+  under load; source capability registers can be overwritten in about 3 ms.
+  The polling backend must be validated with actual hardware; add interrupt
+  notification/dedicated bus speed as required. Missed/stale messages must never
+  become a confirmed contract. Check fixed source PDO position mapping.
+- [ ] **PD-3 — Negotiation:** explicit open starts 5 V discovery. Verify source
+  capabilities, limits, successful requests, reject/wait, mismatched contract,
+  timeout, detach/reconnect, hard reset and I2C errors. Measure VBUS externally;
+  displayed contract current is not a current measurement.
+- [ ] **PD-4 — Exit/reset behavior:** `pd close` stops monitoring and releases the
+  address; it DOES NOT switch off power or restore 5 V. Controller state persists
+  independently of app exit. Verify power-cycle defaults and confirm no NVM
+  writes or high-voltage restore on firmware boot. No load/motor control added.
+- [ ] **BUS-5 — New clients:** verify MIDI UART and PD I2C ownership blocks raw
+  commands from accessing claimed resources; retest external I2C/SPI peripherals.
+
+- [ ] **UPSTREAM-NTP:** rerun `test_teensy41_compose.py` host UDP NTP fixture.
+  On the 4.15.18 integration, command/pipe and PSRAM pressure checks passed, but
+  the local NTP reply timed out; network regression remains unverified.

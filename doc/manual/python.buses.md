@@ -160,7 +160,7 @@ for device in solaros.buses.onewire_scan("onewire0"):
 The expansion API mirrors the `expansion` shell lifecycle when the expansion
 service is compiled.
 
-- `drivers()`: return compiled driver dictionaries with `name`, `summary`,
+- `drivers()`: return registered driver dictionaries with `name`, `summary`,
   `category`, `required_capabilities`, `probe_supported`, and `supported`.
 - `devices()`: return active device dictionaries with `name`, `driver`,
   `origin` (`board` or `runtime`), `ready`, `autostart`, `detachable`, and
@@ -176,6 +176,10 @@ Binding dictionaries accept `spi`, `cs` (or `ce`), `i2c`, `addr`, `alt_addr`, `u
 name scalar streams;
 `keys` maps logical key names to GPIO numbers. `cs` requires `spi`; `addr` and
 `alt_addr` require `i2c`. Unknown keys are rejected.
+
+Camera DVP attachments also accept GPIO-number bindings `d0`..`d7`, `siod`,
+`sioc`, `vsync`, `href`, `pclk`, `xclk`, and optional `pwdn`/`reset`. The camera
+driver validates required pins and claims; board-owned cameras cannot be detached.
 
 ```python
 import solaros

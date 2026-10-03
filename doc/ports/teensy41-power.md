@@ -1,8 +1,9 @@
 # USB-PD power app — 2026-09-28
 
 Native text `pdpower --demo` app and portable negotiation policy implemented.
-This is a simulation-first implementation: the STUSB4500 hardware backend is
-not implemented or enabled. The demo is now installed with the Telnet legacy
+The upstream integration branch adds a portable STUSB4500 backend and explicit
+`pd` controller commands. Hardware is not wired and remains unvalidated; no
+controller starts automatically. The `pdpower --demo` UI remains a simulator. The demo is now installed with the Telnet legacy
 image; power-app on-device interaction tests remain pending.
 
 ## Use
@@ -70,3 +71,22 @@ bytes (15.6%), an increase of 5,016 bytes over the Clock image. Reported static
 RAM allocations are unchanged: RAM1 435,360 and RAM2 225,856 bytes. Runtime
 heap/PSRAM has not been measured for this app on the board.
 No real PD hardware or LCD visual testing has been performed.
+
+
+## STUSB4500 software backend (integration branch)
+
+`pd status` is read-only. After wiring and limits are verified, use
+`pd open i2cN ADDRESS BOARD_MAX_MV BOARD_MAX_MA` to claim the address and start
+5 V / 100 mA discovery. `pd request MV MA` requires an advertised fixed source
+profile and enforces the supplied board limits. `pd status` reports the result.
+`pd close` releases the service but does not change the negotiated voltage.
+Configuration is not saved. No NVM access, automatic high-voltage selection,
+measured current, load switching or motor control is implemented.
+
+The backend checks fresh Source_Capabilities, Accept and PS_RDY observations,
+then the source-indexed RDO and ready state. Register reads/writes use the locked
+Teensy I2C adapter; failures invalidate cached contract information. Host mock
+checks cover fresh/stale observations, source-index mapping, limits, failures,
+timeout and detach. Hardware tests are listed in the master checklist.
+Register references: [ST reference implementation](https://github.com/usb-c/STUSB4500/blob/master/Firmware/Project/Src/USB_PD_core.c)
+and [register definitions](https://github.com/usb-c/STUSB4500/blob/master/Firmware/Project/Inc/USB_PD_defines_STUSB-GEN1S.h).

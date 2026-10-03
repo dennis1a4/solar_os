@@ -2,6 +2,211 @@
 
 ## 4.x
 
+- **4.15.17** — 2026-10-02 — Python and Lua gain
+  `solaros.storage.write_file()` for creating, saving, and appending text or
+  binary files through the storage service. Writes support up to 64 KiB per
+  call and flush and sync the file before returning the byte count.
+- **4.15.16** — 2026-10-02 — MeshCore group conversations identify radio
+  and companion transports; unavailable channels remain readable as history
+  and reject new sends. Chat follows actual delivery updates, and messages
+  interrupted by a restart are restored as failed instead of queued. Contacts
+  now retain up to 512 contacts and 576 endpoints, with migration of existing
+  contact IDs and trust settings. Companion imports preserve retained contacts,
+  batch their storage writes, and report imported, skipped, and supported
+  contact counts. An online MeshCore BLE companion displays the radio icon.
+- **4.15.15** — 2026-10-01 — Updated to ESP-IDF 5.5.5 and pinned the
+  pioarduino platform to release `55.03.312-1` for reproducible builds.
+  PlatformIO Core 6.2.0 or newer is required. The NimBLE overlay retains
+  transactional dynamic GATT registration and guards an absent connection
+  awareness table when GATT caching is enabled.
+- **4.15.14** — 2026-10-01 — `player` and `vplay` gain
+  backward/forward seeking in ten-second steps with `<`/`>` and shared
+  rewind/forward buttons. Seeking retains the selected track and pause
+  state, releases queued audio, and rebases playback timing. Player supports
+  seeking in both graphical and text interfaces. WAV seeks to sample
+  boundaries; MP3 scans frame headers and decodes a bounded reservoir/filter
+  warm-up near the target. MPEG uses timestamped intra-frame seeking with
+  video-reference and MP2 warm-up, falling back to sequential decoding when
+  timestamps are unavailable. Seek processing remains bounded, cancellable,
+  and watchdog-safe, preserves audio/video timing, and displays SEEKING while
+  preparing playback. Player, WebRadio, and VPlay share a compact bottom
+  controls panel with status/time above volume and a larger media viewport.
+  WebRadio adds elapsed output time, clickable transport controls, and Space
+  pause/resume. The middle Stop/Play control indicates pause while paused;
+  seek icons match the other controls' height.
+- **4.15.13** — 2026-10-01 — Files opens MPEG-1 `.mpg` and
+  `.mpeg` files in `vplay` when the app is installed, including uppercase
+  extensions. Closing playback returns to the file browser. The Files help
+  lists the MPEG association alongside its other supported file types.
+- **4.15.12** — 2026-10-01 — RTSP now uses the common player
+  header, volume bar, and clickable Stop/Play control. Enter or Space stops
+  playback without closing the app; Play reconnects to the same source after
+  its workers release their resources. The audio-only oscilloscope fills the
+  available viewport and expands edge-to-edge in full screen, where controls
+  are hidden. `vplay` adds tab completion for size options and file paths.
+- **4.15.11** — 2026-10-01 — Added `vplay` for MPEG-1 program
+  stream files with optional MP2 audio. Playback uses bounded PSRAM buffers,
+  audio-clock synchronization, native RGB565 or monochrome output, and
+  ESP32-S3 SIMD color conversion. The shared player controls provide pause,
+  Stop/Play, volume, and previous/next MPEG files in the current folder.
+  Fit, actual-size, and full-screen modes are available; the source limit
+  is 640x480. MPEG-2, H.264, AVI, and transport streams are not supported.
+- **4.15.10** — 2026-10-01 — Shared JPEG decoding now uses a
+  fast ROM path and bounded ESP32-S3 SIMD acceleration, with fallbacks for
+  unsupported images or limited working memory. Color and monochrome consumers
+  share the improved decoder, and fit-mode output avoids full-size intermediate
+  rasters. Reduced idle SRAM usage by moving suitable registry state to PSRAM
+  and allocating display-layout, Telnet, Chat, DAQ, and Synth working buffers
+  only when needed.
+- **4.15.9** — 2026-10-01 — Python and Lua gain owned camera
+  snapshots, local stream frames, native frame-to-image presentation, and
+  asynchronous RTSP receiver handles. JPEG save failures report the path and
+  filesystem cause. Native RTSP playback retries transient failures with
+  bounded backoff, discards frames from previous connections, and recovers
+  audio after forward clock jumps. The viewer accepts addresses without
+  `rtsp://`; omitted control ports default to TCP 554.
+- **4.15.8** — 2026-10-01 — DVP cameras are reusable expansion
+  devices and exclusive typed video sources in `streams`. The native `rtsp`
+  app plays JPEG/L16 streams with bounded video/audio buffering, global
+  volume, an audio-only oscilloscope, full-screen viewing, and frame
+  diagnostics. Color TFTs with native RGB565 support bypass palette conversion;
+  monochrome displays retain grayscale rendering. `rtspd` selects compatible
+  audio/video stream IDs explicitly and offers source-aware tab completion.
+- **4.15.7** — 2026-09-30 — Added the `rtspd` job for single-client
+  RTSP publishing with RTP/JPEG video, RTP/L16 PCM audio, and RTCP timing.
+  Explicit `video=` and `audio=` sources support camera-only, audio-only,
+  or combined streams using standard UDP transport. Publishing follows source
+  availability; `fps=0` removes the video rate cap. Runtime buffers are
+  allocated only while the job runs, and stale data is discarded on reconnect.
+- **4.15.6** — 2026-09-30 — Web now plays HTTP MJPEG camera feeds
+  alongside its existing static image formats. Multipart stream detection
+  accepts split headers and common server variations, while bounded frame
+  buffering and cancellation keep live viewing responsive.
+- **4.15.5** — 2026-09-30 — Added the GOOUUU ESP32-S3CAM board,
+  OV2640 JPEG snapshots, and the `camera` command. Exclusive camera leases
+  coordinate capture and streaming, with direct framebuffer DMA to PSRAM.
+  The `cam-webd` job serves JPEG snapshots and a single-client MJPEG feed
+  through asynchronous HTTP routes. Trusted-LAN viewing is unauthenticated
+  by default; `auth=required` enables an optional bearer access code.
+- **4.15.4** — 2026-09-29 — Updated CL-32 support for its current core
+  firmware battery register and serialized ST7305 display transactions. ADC
+  battery monitoring now uses a smoothed voltage trend with hysteresis to avoid
+  erratic charger detection. Files, FTP, and SFTP add `Alt+S` and `AltGr+S`
+  entry search; FTP and SFTP preserve the selected directory when returning to
+  a parent. Tree views in Docs, Flash, and Playground now collapse the current
+  branch with Left even when a leaf is selected.
+- **4.15.3** — 2026-09-29 — Added the built-in `meshcore-ble` job for an
+  external MeshCore companion. It pairs over BLE, synchronizes contacts,
+  channels, and queued messages, and carries direct and group Chat traffic
+  through the existing Contacts, Messages, and Inbox services while leaving
+  the companion's identity and configuration authoritative. The BLE host can
+  keep a keyboard and companion connected together, and native jobs now have
+  an owned multi-peer GATT client ABI with passkey pairing. The gesture binding
+  job is now named `gestures`. To remain within their flash limits, Rover and
+  VGA32 no longer include Bluetooth, and Writerdeck no longer includes offline
+  speech.
+- **4.15.2** — 2026-09-29 — Added the standalone display-shell `deepsleep`
+  command. It stops the ESP32 radios, powers down the primary display, and
+  enters deep sleep with KEY, compatible RTC interrupt, scheduled timer, and
+  RESET wake paths. Wake starts a fresh boot rather than restoring RAM state;
+  this is ESP32 deep sleep, not hardware power-off.
+- **4.15.1** — 2026-09-29 — Suspended devices now resume their configured
+  power profile and display when a remembered BLE keyboard reconnects or sends
+  a new key press. Release-only keyboard reports do not wake the device.
+- **4.15.0** — 2026-09-28 — Added signed native ELF module packages for
+  ESP32-S3 targets with PSRAM. The `pkg` package manager browses the versioned
+  repository, verifies catalog signatures and host compatibility, and
+  atomically installs verified application, job, and driver artifacts.
+  Application modules become shell commands, while resident jobs and expansion
+  drivers register with the normal SolarOS runtime and reactivate during boot.
+  The repository includes source projects for acceptance modules across all
+  three lifecycle paths, and CID can publish their signed catalogs
+  independently of firmware OTA releases.
+- **4.14.1** — 2026-09-26 — Added runtime display layouts: two to four
+  physical displays can be joined into one logical canvas, while one physical
+  display can be split into two independent logical viewports with their own
+  sessions and frame exports. The built-in shell follows layout changes, and
+  `Ctrl+Alt+Arrow` or `Ctrl+AltGr+Arrow` moves local input focus between split
+  screens without interrupting either foreground application. Terminal geometry
+  now uses the full display width at every text size, including unusually wide
+  panels.
+- **4.14.0** — 2026-09-26 — Added the Elecrow CrowPanel ESP32-S3 5.79-inch
+  e-paper target with its 792x272 dual-SSD1683 display, non-flashing partial
+  refresh, microSD, rotary controls, status LED, and expansion interfaces. The
+  writerdeck flavor now focuses on file transfer, editing and reading, Python
+  and Playground, image viewing, audio, and offline speech while omitting
+  hardware-hacking and external-radio packages to fit the 8 MB OTA layout.
+- **4.13.10** — 2026-09-26 — Added `ltop`, a resumable live task monitor for
+  display and port terminals. It shows interval-based CPU load for each core,
+  aggregate CPU load, internal and external memory utilization, and a
+  width-aware task table with current CPU use, state, priority, and peak stack
+  consumption.
+- **4.13.9** — 2026-09-25 — Added the QDtech ES3N28P 2.8-inch target with
+  its 320x240 ILI9341 display, SDMMC storage, ES8311 audio, battery monitor,
+  status pixel, and expansion connectors. Python and Lua applications can now
+  open static PNG, JPEG, GIF, and WebP images as native PSRAM-backed handles
+  and draw them with clipping and nearest-neighbor scaling. View, Web, and
+  Reader now share the native raster blitter for direct color and monochrome
+  output. Full HTTP stream queues now backpressure the native worker until the
+  consumer drains or cancels them instead of terminating the stream.
+- **4.13.8** — 2026-09-25 — Running `ble` without arguments now opens a
+  multi-tab BLE Inspector for scanning and connecting devices, browsing GATT
+  services and characteristics, reading values, and writing hexadecimal data.
+  The inspector exposes BLE keyboard and GATT operation settings, keeps key
+  mnemonics visible, reports scan and connection progress and failures through
+  standard TUI popups, and releases its connection when closed. Existing text
+  subcommands remain available.
+- **4.13.7** — 2026-09-25 — Improved offline PicoTTS playback with deeper
+  buffering and smooth underrun recovery. Agent now preserves raw `ask` prompts,
+  requests tool calls sequentially from Chat Completions-compatible providers,
+  and isolates Python and Lua script runner state from foreground applications.
+  BLE keyboard replacement now removes the previous keyboard bond and recovers
+  conflicting stale bonds, so switching keyboards and pairing again after
+  `ble forget` work reliably.
+- **4.13.6** — 2026-09-22 — Added offline PicoTTS speech with runtime-loaded
+  voice directories, an asynchronous native/Python/Lua service, and the `say`
+  command for text or streaming plain-text files with progress, cancellation,
+  pitch, and speed controls. `agent --tts` can speak final model answers while
+  keeping tool activity and intermediate messages silent. PicoTTS voice assets
+  are included in the repository for copying to device storage but remain
+  outside the firmware image. Python and Lua apps can now discover native and
+  installed Playground apps, hand off to another app, and open supported files
+  or URLs. Their storage APIs add metadata, existence checks, bounded directory
+  enumeration, and recursive directory creation. MicroPython integers now
+  support the signed 64-bit range.
+- **4.13.5** — 2026-09-22 — FTP now starts as a disconnected file manager and
+  opens connection setup with `F2`/`n`; its Copy, Move, Mkdir, and Delete
+  function keys and letter mnemonics now match Files. Added a two-pane `sftp` file
+  manager with the same browsing, recursive copy/move/delete, mkdir, viewing,
+  progress, and cursor-retention behavior over the existing SSH transport and
+  SFTP subsystem. SFTP supports known hosts, host aliases, password or key
+  authentication, an `F2` connection form, and the compatible direct-connect
+  command-line form, including `user@host:path`. Connection forms keep a visible
+  cursor in the active field. FTP and SFTP reopen on the password field when
+  authentication fails instead of exposing a low-level error. FTP reports
+  refused, timed-out, and unreachable connections without a generic ESP error.
+- **4.13.4** — 2026-09-21 — Added a full-screen, overlay-free Palm Graffiti
+  keyboard job with alphanumeric templates, Palm editing gestures, and
+  automatic letter/number selection from the stroke's starting region. It
+  accepts absolute touch devices attached at runtime without taking the
+  foreground application's pointer stream. Added the MGC3130/Skywriter
+  expansion driver with 3D position, absolute hover-pointer, and gesture input.
+  Gesture-capable devices now use a common source class and can bind advertised
+  gestures and directions to shell commands or scripts through the
+  `gesture-listener` job. `input emit` supports modifier chords such as
+  `ALT+RIGHT`, releases synthetic modifiers correctly, and gesture binding
+  completion now suggests live sources and their supported gestures. Idle
+  listeners release their worker stack while preserving bindings.
+- **4.13.3** — 2026-09-21 — Added `sftpsync`, a one-way incremental file and
+  directory updater over a standard SSH server's SFTP subsystem. It supports
+  recursive and dry-run modes, password and key authentication, Python and Lua
+  bindings, per-file progress bars, and cancellation with `Ctrl+C`; matching
+  size/modification-time pairs are skipped and destination-only files are
+  preserved. SIM7670 GNSS startup now waits for the receiver to become ready,
+  configures its positioning mode, and polls for a valid fix for the requested
+  timeout instead of immediately returning the first invalid result. MAX17048
+  battery readings now fetch voltage and state of charge in separate hardware
+  transactions, fixing devices that otherwise reported a constant 100% charge.
 - **4.13.2** — 2026-09-20 — Shell startup now defaults to `auto`: targets
   with board-owned SD storage use `/sdcard/.shell/startup` when the card mounts
   and fall back to flash when SD is unavailable. `setterm startup flash` and

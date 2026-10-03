@@ -40,6 +40,7 @@
 #include "solar_os_gfx_internal.h"
 #include "solar_os_fonts.h"
 #include "solar_os_input.h"
+#include "solar_os_input_actions.h"
 #if SOLAR_OS_PACKAGE_SERVICE_INBOX
 #include "solar_os_inbox.h"
 #endif
@@ -49,6 +50,9 @@
 #include "solar_os_port_shell.h"
 #include "solar_os_power.h"
 #include "solar_os_radio.h"
+#if SOLAR_OS_PACKAGE_SERVICE_MESHCORE_BLE
+#include "solar_os_meshcore_ble.h"
+#endif
 #include "solar_os_rtc.h"
 #include "solar_os_schedule.h"
 #include "solar_os_sessions.h"
@@ -124,6 +128,7 @@ static EXT_RAM_BSS_ATTR solar_os_context_t os_ctx;
 static bool alt_prefix_pending;
 static uint32_t session_overlay_until_ms;
 static char session_overlay_title[SESSION_OVERLAY_TITLE_MAX];
+static u8g2_t *session_overlay_u8g2;
 static volatile bool key_irq_pending;
 static bool key_interrupt_ready;
 static bool key_pressed;
@@ -133,7 +138,11 @@ static bool key_ignore_until_released;
 static solar_os_input_source_t key_input_source;
 #endif
 static bool deferred_sleep_pending;
+static bool deferred_sleep_deep;
 static char deferred_sleep_reason[SLEEP_REASON_MAX];
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
+static uint32_t suspend_ble_wake_generation;
+#endif
 static uint32_t key_pressed_ms;
 static uint32_t last_app_tick_ms;
 static uint32_t last_status_update_ms;
@@ -149,6 +158,7 @@ static void process_app_requests(void);
 static void maybe_enter_deferred_sleep(void);
 static void maybe_enter_idle_sleep(void);
 static void update_status(void);
+static void exit_suspend(const char *reason);
 
 static uint32_t millis_u32(void)
 {
@@ -320,7 +330,7 @@ static void draw_terminal_if_needed(void)
 
 static void draw_session_overlay_if_needed(void)
 {
-    if (display_u8g2 == NULL || session_overlay_until_ms == 0) {
+    if (session_overlay_u8g2 == NULL || session_overlay_until_ms == 0) {
         return;
     }
 
@@ -332,7 +342,8 @@ static void draw_session_overlay_if_needed(void)
         last_session_overlay_draw_ms = 0U;
         session_overlay_persistent = false;
         session_overlay_after_next_frame = false;
-        (void)solar_os_display_set_overlay_active(display_u8g2, false);
+        (void)solar_os_display_set_overlay_active(session_overlay_u8g2, false);
+        session_overlay_u8g2 = NULL;
         if (solar_os_context_graphics_active(&os_ctx)) {
             solar_os_sessions_dispatch_resume(now_ms);
         } else {
@@ -346,7 +357,7 @@ static void draw_session_overlay_if_needed(void)
     }
     last_session_overlay_draw_ms = now_ms;
 
-    u8g2_t *u8g2 = display_u8g2;
+    u8g2_t *u8g2 = session_overlay_u8g2;
     const int display_width = (int)u8g2_GetDisplayWidth(u8g2);
     const int display_height = (int)u8g2_GetDisplayHeight(u8g2);
     u8g2_SetFont(u8g2, u8g2_font_solar_os_default_b_14_tf);
@@ -394,7 +405,8 @@ static void close_session_overlay(void)
     last_session_overlay_draw_ms = 0U;
     session_overlay_persistent = false;
     session_overlay_after_next_frame = false;
-    (void)solar_os_display_set_overlay_active(display_u8g2, false);
+    (void)solar_os_display_set_overlay_active(session_overlay_u8g2, false);
+    session_overlay_u8g2 = NULL;
     const uint32_t now_ms = millis_u32();
     if (solar_os_context_graphics_active(&os_ctx)) {
         solar_os_sessions_dispatch_resume(now_ms);
@@ -410,12 +422,22 @@ static void session_terminal_changed(solar_os_terminal_t *new_terminal, void *us
 }
 
 static void session_overlay_requested(const char *title,
+                                      const char *target_name,
                                       bool after_next_frame,
                                       void *user)
 {
     (void)user;
 
-    if (display_u8g2 == NULL) {
+    solar_os_display_target_t target;
+    u8g2_t *overlay_u8g2 = NULL;
+    if (target_name != NULL && target_name[0] != '\0' &&
+        solar_os_display_find_target(target_name, &target)) {
+        overlay_u8g2 = target.u8g2;
+    }
+    if (overlay_u8g2 == NULL) {
+        overlay_u8g2 = terminal != NULL ? terminal->u8g2 : display_u8g2;
+    }
+    if (overlay_u8g2 == NULL) {
         return;
     }
     if (title == NULL || title[0] == '\0') {
@@ -424,6 +446,11 @@ static void session_overlay_requested(const char *title,
     }
 
     const uint32_t now_ms = millis_u32();
+    if (session_overlay_u8g2 != NULL &&
+        session_overlay_u8g2 != overlay_u8g2) {
+        (void)solar_os_display_set_overlay_active(session_overlay_u8g2, false);
+    }
+    session_overlay_u8g2 = overlay_u8g2;
     strlcpy(session_overlay_title, title, sizeof(session_overlay_title));
     session_overlay_persistent = session_switch_alt_held;
     session_overlay_after_next_frame = after_next_frame;
@@ -431,12 +458,12 @@ static void session_overlay_requested(const char *title,
         now_ms + SESSION_OVERLAY_MS;
     last_session_overlay_draw_ms = 0U;
     if (after_next_frame) {
-        (void)solar_os_display_set_overlay_active(display_u8g2, false);
+        (void)solar_os_display_set_overlay_active(session_overlay_u8g2, false);
         /*
          * Discard the outgoing session's backing buffer without presenting an
          * empty frame. The incoming session supplies the next complete frame.
          */
-        u8g2_ClearBuffer(display_u8g2);
+        u8g2_ClearBuffer(session_overlay_u8g2);
     }
     draw_session_overlay_if_needed();
 }
@@ -487,6 +514,14 @@ static void enter_suspend(const char *reason)
     update_status();
     draw_terminal_if_needed();
 
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
+    if (board_has(SOLAR_OS_BOARD_CAP_BLE) &&
+        solar_os_ble_keyboard_enabled_for_current_boot()) {
+        suspend_ble_wake_generation =
+            solar_os_ble_keyboard_wake_generation();
+    }
+#endif
+
     esp_err_t err = solar_os_power_begin_suspend();
     if (err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "%s: suspend power policy failed: %s",
@@ -509,11 +544,37 @@ static void enter_suspend(const char *reason)
     session_overlay_after_next_frame = false;
     session_switch_alt_held = false;
     session_switch_nav_held = 0U;
-    (void)solar_os_display_set_overlay_active(display_u8g2, false);
+    if (session_overlay_u8g2 != NULL) {
+        (void)solar_os_display_set_overlay_active(session_overlay_u8g2, false);
+        session_overlay_u8g2 = NULL;
+    }
     SOLAR_OS_LOGI(TAG,
                   "%s: suspended; profile=lowpower restore=%s",
                   reason,
                   solar_os_power_profile_name(status.profile));
+}
+
+static void maybe_exit_suspend_for_ble_keyboard(void)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
+    if (!board_has(SOLAR_OS_BOARD_CAP_BLE) ||
+        !solar_os_ble_keyboard_enabled_for_current_boot()) {
+        return;
+    }
+
+    solar_os_power_status_t status;
+    solar_os_power_get_status(&status);
+    if (!status.suspend_active) {
+        return;
+    }
+
+    const uint32_t generation = solar_os_ble_keyboard_wake_generation();
+    if (generation == suspend_ble_wake_generation) {
+        return;
+    }
+    suspend_ble_wake_generation = generation;
+    exit_suspend("BLE keyboard activity");
+#endif
 }
 
 static void exit_suspend(const char *reason)
@@ -645,10 +706,13 @@ static bool wait_key_rtc_released_stable(uint32_t stable_ms, uint32_t timeout_ms
     return false;
 }
 
-static void enter_light_sleep(const char *reason)
+static void enter_sleep(const char *reason, bool deep_sleep)
 {
     if (!board_has(SOLAR_OS_BOARD_CAP_KEY)) {
-        SOLAR_OS_LOGW(TAG, "%s: light sleep needs a KEY wake source", reason);
+        SOLAR_OS_LOGW(TAG,
+                      "%s: %s needs a KEY wake source",
+                      reason,
+                      deep_sleep ? "deep sleep" : "light sleep");
         return;
     }
 
@@ -665,7 +729,10 @@ static void enter_light_sleep(const char *reason)
     draw_terminal_if_needed();
     key_irq_pending = false;
 
-    SOLAR_OS_LOGI(TAG, "%s: entering light sleep", reason);
+    SOLAR_OS_LOGI(TAG,
+                  "%s: preparing %s",
+                  reason,
+                  deep_sleep ? "deep sleep" : "light sleep");
 
     esp_err_t err = solar_os_power_begin_explicit_sleep();
     if (err != ESP_OK) {
@@ -764,6 +831,7 @@ static void enter_light_sleep(const char *reason)
         if (ble_sleep_err != ESP_OK) {
             if (ble_sleep_err == ESP_ERR_NOT_FINISHED) {
                 deferred_sleep_pending = true;
+                deferred_sleep_deep = deep_sleep;
                 strlcpy(deferred_sleep_reason,
                         reason != NULL ? reason : "deferred sleep",
                         sizeof(deferred_sleep_reason));
@@ -816,6 +884,18 @@ static void enter_light_sleep(const char *reason)
 #endif
 
     solar_os_power_note_sleep_enter(millis_u32());
+    if (deep_sleep) {
+        const esp_err_t display_err = solar_os_display_suspend_primary();
+        if (display_err != ESP_OK && display_err != ESP_ERR_NOT_SUPPORTED) {
+            SOLAR_OS_LOGW(TAG,
+                          "display deep-sleep prepare failed: %s",
+                          esp_err_to_name(display_err));
+        }
+        SOLAR_OS_LOGI(TAG, "%s: entering deep sleep", reason);
+        (void)fflush(NULL);
+        esp_deep_sleep_start();
+    }
+
     err = esp_light_sleep_start();
 
     const esp_sleep_wakeup_cause_t wake_cause = esp_sleep_get_wakeup_cause();
@@ -889,6 +969,16 @@ static void enter_light_sleep(const char *reason)
     resume_display_after_sleep(now_ms);
 }
 
+static void enter_light_sleep(const char *reason)
+{
+    enter_sleep(reason, false);
+}
+
+static void enter_deep_sleep(const char *reason)
+{
+    enter_sleep(reason, true);
+}
+
 static void maybe_enter_deferred_sleep(void)
 {
     if (!deferred_sleep_pending) {
@@ -903,11 +993,13 @@ static void maybe_enter_deferred_sleep(void)
 #endif
 
     char reason[SLEEP_REASON_MAX];
+    const bool deep_sleep = deferred_sleep_deep;
     strlcpy(reason, deferred_sleep_reason, sizeof(reason));
     deferred_sleep_pending = false;
+    deferred_sleep_deep = false;
     deferred_sleep_reason[0] = '\0';
     SOLAR_OS_LOGI(TAG, "%s: deferred sleep is ready", reason);
-    enter_light_sleep(reason);
+    enter_sleep(reason, deep_sleep);
 }
 
 static void handle_key_short_press(void)
@@ -1152,16 +1244,35 @@ static void dispatch_input_key(const solar_os_input_key_event_t *event)
         return;
     }
 
+    maybe_exit_suspend_for_ble_keyboard();
     solar_os_power_note_activity(millis_u32());
     const bool alt_active =
         (event->modifiers & SOLAR_OS_INPUT_MOD_ALT) != 0U;
+    const bool ctrl_active =
+        (event->modifiers & SOLAR_OS_INPUT_MOD_CTRL) != 0U;
+    const bool navigation_left =
+        event->key == SOLAR_OS_KEY_LEFT ||
+        event->key == SOLAR_OS_KEY_CTRL_LEFT;
+    const bool navigation_right =
+        event->key == SOLAR_OS_KEY_RIGHT ||
+        event->key == SOLAR_OS_KEY_CTRL_RIGHT;
+    const bool navigation_up =
+        event->key == SOLAR_OS_KEY_UP ||
+        event->key == SOLAR_OS_KEY_CTRL_UP;
+    const bool navigation_down =
+        event->key == SOLAR_OS_KEY_DOWN ||
+        event->key == SOLAR_OS_KEY_CTRL_DOWN;
     uint8_t navigation_bit = 0U;
-    if (event->key == SOLAR_OS_KEY_LEFT) {
+    if (navigation_left) {
         navigation_bit = 1U;
-    } else if (event->key == SOLAR_OS_KEY_RIGHT) {
+    } else if (navigation_right) {
         navigation_bit = 2U;
     } else if (event->key == '\t') {
         navigation_bit = 4U;
+    } else if (navigation_up) {
+        navigation_bit = 8U;
+    } else if (navigation_down) {
+        navigation_bit = 16U;
     }
 
     if (!session_switch_alt_held &&
@@ -1187,7 +1298,33 @@ static void dispatch_input_key(const solar_os_input_key_event_t *event)
         return;
     }
 
-    if (alt_active &&
+    if (ctrl_active && alt_active &&
+        (navigation_right || navigation_left ||
+         navigation_up || navigation_down)) {
+        if ((session_switch_nav_held & navigation_bit) != 0U) {
+            return;
+        }
+        if (event->action == SOLAR_OS_INPUT_KEY_PRESS) {
+            bool changed = false;
+            if (navigation_right) {
+                changed = solar_os_sessions_cycle_display_focus();
+            } else if (navigation_left) {
+                changed = solar_os_sessions_cycle_display_focus_previous();
+            } else if (navigation_down) {
+                changed = solar_os_sessions_cycle_display_focus_down();
+            } else {
+                changed = solar_os_sessions_cycle_display_focus_up();
+            }
+            if (changed) {
+                session_switch_nav_held |= navigation_bit;
+                solar_os_sessions_show_input_focus_overlay();
+                process_app_requests();
+            }
+        }
+        return;
+    }
+
+    if (alt_active && !ctrl_active &&
         (event->key == SOLAR_OS_KEY_RIGHT ||
          event->key == SOLAR_OS_KEY_LEFT)) {
         if (event->action != SOLAR_OS_INPUT_KEY_RELEASE) {
@@ -1272,6 +1409,11 @@ static void dispatch_input_pointer(const solar_os_input_pointer_event_t *pointer
         }
     }
 
+    if (solar_os_input_pointer_filter_event(&oriented_pointer)) {
+        solar_os_power_note_activity(millis_u32());
+        return;
+    }
+
     const solar_os_event_t event = {
         .type = SOLAR_OS_EVENT_POINTER,
         .data.pointer = oriented_pointer,
@@ -1309,6 +1451,26 @@ static void dispatch_input_axis(const solar_os_input_axis_event_t *axis)
     const solar_os_event_t event = {
         .type = SOLAR_OS_EVENT_AXIS,
         .data.axis = *axis,
+    };
+    if (solar_os_sessions_dispatch_input_event(&event)) {
+        solar_os_power_note_activity(millis_u32());
+        process_app_requests();
+    }
+}
+
+static void dispatch_input_gesture(const solar_os_input_gesture_event_t *gesture)
+{
+    if (gesture == NULL) {
+        return;
+    }
+    const solar_os_app_t *input_app = solar_os_sessions_input_app();
+    if (input_app == NULL ||
+        (input_app->flags & SOLAR_OS_APP_FLAG_GESTURE_EVENTS) == 0) {
+        return;
+    }
+    const solar_os_event_t event = {
+        .type = SOLAR_OS_EVENT_GESTURE,
+        .data.gesture = *gesture,
     };
     if (solar_os_sessions_dispatch_input_event(&event)) {
         solar_os_power_note_activity(millis_u32());
@@ -1355,6 +1517,14 @@ static void dispatch_input_sources(void)
                 sizeof(axis_events) / sizeof(axis_events[0]))) > 0) {
         for (size_t i = 0; i < count; i++) {
             dispatch_input_axis(&axis_events[i]);
+        }
+    }
+    solar_os_input_gesture_event_t gesture_events[8];
+    while ((count = solar_os_input_read_gesture_events(
+                gesture_events,
+                sizeof(gesture_events) / sizeof(gesture_events[0]))) > 0) {
+        for (size_t i = 0; i < count; i++) {
+            dispatch_input_gesture(&gesture_events[i]);
         }
     }
 }
@@ -1477,6 +1647,13 @@ static void update_status(void)
 #if SOLAR_OS_PACKAGE_SERVICE_RADIO
     status.radio_attached = solar_os_radio_count() > 0U;
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_MESHCORE_BLE
+    solar_os_meshcore_ble_status_t companion;
+    if (solar_os_meshcore_ble_get_status(&companion) == ESP_OK) {
+        status.radio_attached |= companion.running && companion.connected &&
+            companion.state == SOLAR_OS_MESHCORE_BLE_ONLINE;
+    }
+#endif
 
 #if SOLAR_OS_PACKAGE_JOB_RADIO_LINK || SOLAR_OS_PACKAGE_JOB_ESPNOW_LINK
     solar_os_job_status_t link_job;
@@ -1534,6 +1711,9 @@ static void process_app_requests(void)
 
     if (solar_os_context_take_sleep_request(&os_ctx)) {
         enter_light_sleep("shell sleep");
+    }
+    if (solar_os_context_take_deep_sleep_request(&os_ctx)) {
+        enter_deep_sleep("deepsleep command");
     }
     if (solar_os_context_take_suspend_request(&os_ctx)) {
         enter_suspend("shell suspend");
@@ -1627,6 +1807,13 @@ void app_main(void)
     if (log_err != ESP_OK) {
         ESP_LOGW(TAG, "Log service unavailable: %s", esp_err_to_name(log_err));
     }
+    const esp_err_t input_actions_err = solar_os_input_actions_init();
+    if (input_actions_err != ESP_OK) {
+        ESP_LOGW(TAG,
+                 "Input actions unavailable: %s",
+                 esp_err_to_name(input_actions_err));
+    }
+    solar_os_input_actions_set_runner(solar_os_shell_run_background_command);
     print_boot_summary();
     key_button_init();
 
@@ -1756,6 +1943,7 @@ void app_main(void)
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
         if (board_has(SOLAR_OS_BOARD_CAP_BLE)) {
             solar_os_ble_keyboard_poll(millis_u32());
+            maybe_exit_suspend_for_ble_keyboard();
         }
 #endif
         poll_key_button();

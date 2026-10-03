@@ -25,7 +25,9 @@ adapter; other serial, USB, or radio transports can reuse it without registering
 a cellular modem.
 
 `service.streams` owns the dynamic typed endpoint registry. Sensor, port, and
-audio providers register their endpoints there at runtime. `service.audio`
+audio and camera providers register their endpoints there at runtime. Video
+sources expose JPEG frame acquire/release operations, not byte-stream reads;
+listing endpoints does not open them or allocate capture buffers. `service.audio`
 also owns audio-device discovery; devices refer to their capture and playback
 stream IDs instead of exposing a board-specific global data path. It has no
 board-audio capability requirement. Concrete audio driver packages publish
@@ -33,6 +35,24 @@ devices and endpoints when attached, including immutable board-default
 attachments for built-in hardware. The independent `service.audio-codecs`
 package owns incremental compressed-audio decoding, so file players and
 network sources can share the same decoder without owning an audio device.
+
+`service.camera` owns camera configuration, exclusive owner tokens, subordinate
+frame leases, capture status, and the `camera` shell command.
+`driver.camera-esp32` is the ESP32-S3
+DVP/SCCB expansion adapter backed by the pinned Espressif component. Explicit
+GPIO bindings make it reusable on PSRAM-equipped ESP32-S3 boards, without a
+fitted-camera capability requirement. GOOUUU declares a fixed `camera0` board
+instance; runtime instances use the attached device name as their video stream
+ID. Detach fails while the camera or its stream is leased. Camera consumers
+must release each borrowed frame before reconfiguration or another capture;
+the initial backend uses one JPEG framebuffer in PSRAM and supports QVGA and
+VGA stills only.
+
+`service.http-server` owns the shared inbound HTTP listener, route registry,
+and access-code authentication. Long-lived handlers use asynchronous routes so
+the server task remains available to other endpoints. An asynchronous consumer
+must complete every accepted request exactly once; its route stays referenced
+until completion so package or job teardown cannot invalidate live state.
 
 `expansion.audio-pwm` depends on the generic audio and expansion services. On a
 board with expansion PWM it can therefore add a runtime playback device even
@@ -52,7 +72,8 @@ Both use the generic audio backend; a board with built-in audio declares a
 fixed default attachment instead of compiling a separate board adapter.
 The `driver.display-st7305`, `driver.display-st7796`,
 `driver.display-st7789`, `driver.display-ili9341`, `driver.display-cvbs-pal`,
-`driver.display-vga32`, and `expansion.ssd1683` packages use the same model.
+`driver.display-vga32`, `expansion.ssd1677`, and `expansion.ssd1683` packages use
+the same model.
 Each package registers an expansion driver and a board with that integrated
 panel declares an immutable early `display0` attachment. SSD1683, ST7305,
 ST7796, and ILI9341 are available on both ESP32 and ESP32-S3; ST7789 is
@@ -62,7 +83,27 @@ implementations with driver-specific preprocessor branches.
 `expansion.ssd1683` uses a named SPI bus and claimed CS, D/C, reset, BUSY, and
 optional power pins. Runtime attachments register an auxiliary display target;
 Elecrow declares the same driver as its fixed primary display. Automatic mode
-uses changed-frame partial windows.
+uses changed-frame partial windows when the panel profile supports them; the
+dual-controller 792x272 profile transfers both RAM halves with the panel's
+partial-update waveform.
+`expansion.ssd1677` follows the same resource model for 800x480 panels. Its
+automatic mode uses byte-aligned dirty windows and periodic full cleanup
+refreshes. It can control a GPIO power gate or the AXP2101 ALDO3 rail used by
+the Waveshare ESP32-S3-ePaper-3.97 fixed `display0`. PMIC-controlled panels use
+the attached `expansion.axp2101` service, which owns the I2C address and serializes
+rail control with battery and charger operations. The panel holds an exclusive
+ALDO3 lease and prevents PMIC detach until the panel is detached.
+`expansion.axp2101` verifies the PMIC identity, enables its battery ADC and fuel
+gauge, and publishes battery percentage, voltage, external-power, charging,
+and charger-control data through the common battery and charger services. The
+Waveshare board declares it as the fixed early `power0` attachment and exposes
+the charger as `charger0`.
+`expansion.qmi8658` configures the six-axis IMU for the Waveshare reference
+profile's 8 g accelerometer and 512 degrees-per-second gyroscope ranges at
+1 kHz, then publishes SI-unit acceleration and angular velocity through
+`imu0`. It polls the data-ready register, so the fixed board attachment does
+not claim either interrupt pin. It attaches after the early display setup and
+uses the board-device retry policy if the sensor is not ready at startup.
 `expansion.cardkb` polls the M5Stack Unit CardKB at its fixed I2C address and
 publishes its character taps and navigation keys through the shared input
 service used by shells and foreground apps.
@@ -88,7 +129,16 @@ matrix.
 ## Ownership Rules
 
 - `bootstrap` is immutable and contains only the runtime and shell needed to
-  start SolarOS. A flavor cannot disable its members.
+  start SolarOS. A flavor cannot disable its members. On ESP32-S3 boards with
+  PSRAM it also contains the native-module loader service and its `load`
+  maintainer command, plus signed-catalog installation through `pkg`; target
+  and capability pruning remove those services from other boards.
+- Native module manifests and signed catalogs carry an explicit `app`, `job`,
+  or `driver` type. Each type has a versioned runtime contract. Installed
+  artifacts use separate `/modules/apps`, `/modules/jobs`, and
+  `/modules/drivers` namespaces. Application modules run synchronously and
+  unload; jobs and drivers remain resident while their callbacks are
+  registered. A per-entry lifecycle ABI is distinct from the native host ABI.
 - Groups are selection shortcuts only. They cannot own source files or ESP-IDF
   component requirements.
 - Every source file and component requirement belongs to a package.
@@ -143,10 +193,15 @@ fixed-frequency emulator submits compact INDEX2 frames to the shared bounded-
 cadence presenter. When `service.synth` is present, Game Boy also uses the
 MiniGB APU through the shared synth and audio services.
 
-The `writerdeck` flavor targets the Elecrow e-paper board with the `reader`,
-`writer`, and `notes` groups plus selected system, maintenance, and network
-tools. It excludes general utilities and hardware-diagnostics jobs to stay
-focused and fit the board's smaller OTA slot.
+The `writerdeck` flavor targets the Elecrow e-paper boards with editing,
+pagination, Files, Reader, Writer, Notes, View, Python, Playground, audio
+playback, and offline speech synthesis. Its transfer tools include FTP/FTPD,
+SSH, SCP, SFTP, SFTP Sync, and Curl. PCM5102/I2S and PWM audio
+output remain available for boards such as CrowPanel that expose audio-capable
+expansion pins but have no built-in speaker path. Hardware diagnostics, broad
+expansion-driver collections, external radio stacks, messaging servers, the
+graphical Web browser and spectrum-heavy music player, VPN, MQTT, SLIP, PPP,
+and OSC are omitted to preserve the smaller OTA slot and suit e-paper refresh.
 
 The `rover` flavor targets the 4 MiB classic-ESP32 boards. It includes the
 expansion framework and drivers, networking, media viewing, writing and general
@@ -355,7 +410,9 @@ For maintainer experiments, an optional `[packages]` table can override
 individual internal packages. The builder does not expose that table as
 another selection layer.
 
-Use `pkg` on the device to inspect the resolved package list.
+Use `pkg system` on the device to inspect the resolved firmware package list.
+Use `pkg` without arguments to browse signed native modules in the package
+manager.
 
 ## Quick reference
 
@@ -363,5 +420,5 @@ Select a board, an update layout, and then granular groups. Build to replace the
 total estimate with a measured image size; adjust, rebuild, and flash when it
 fits. A flavor stores only portable groups. The board supplies required hardware
 drivers and removes unsupported groups, while the layout defines the image
-limit. Internal packages and services are resolved automatically. Use `pkg`
-on-device to inspect the resolved firmware.
+limit. Internal packages and services are resolved automatically. Use
+`pkg system` on-device to inspect the resolved firmware.

@@ -3,8 +3,8 @@ id = "expansion"
 title = "Expansion drivers and attached devices"
 section = "hardware"
 summary = "Discover, attach, and detach package-gated expansion devices"
-aliases = ["devices", "drivers", "expansion-export", "ssd1683", "epaper", "e-paper", "st7305", "ili9341", "st7796", "st7789", "cvbs", "pal", "vga32", "cardkb", "tdeck-keyboard", "keyboard", "tca8418", "rotary-encoder", "ft6336", "gt911", "sdmmc", "sdspi", "micro-sd", "pcf85063", "shtc3", "battery-adc", "max17048", "audio-pwm", "ledc-audio", "pcm1808", "i2s-adc", "pcm5102", "pcm5102a", "i2s-output", "i2s-dac", "es8311", "es7210", "esp32-dac", "rfm69", "rfm69h", "rfm95", "sx1262", "ublox-mia-m10q", "st25r3916", "bhi260ap", "drv2605", "bq25896", "bq27220", "xl9555", "neopixel", "ws2812", "lora", "fsk", "gfsk", "msk", "gmsk", "ook"]
-keywords = "python lua expansion device driver category attach detach save startup export manifest snapshot custom board bindings display epaper e-paper ssd1683 st7305 ili9341 st7796 st7789 cvbs pal composite vga vga32 waveshare cardkb m5stack tdeck keyboard tca8418 rotary encoder quadrature mouse joystick pointer ft6336 gt911 input i2c sd sdmmc sdspi microsd storage oled lcd rtc pcf85063 sensor shtc3 peripheral battery battery-adc fuel gauge max17048 bq27220 charger bq25896 audio pwm ledc pcm1808 adc pcm5102 i2s-output es8311 es7210 esp32 dac i2s radio rfm69 rfm69h rfm95 sx1262 modem sim7670 gnss ublox mia-m10q nfc st25r3916 imu bhi260ap haptic drv2605 gpio expander xl9555 neopixel ws2812 rgb led strip fsk gfsk msk gmsk ook lora"
+aliases = ["devices", "drivers", "expansion-export", "ssd1683", "epaper", "e-paper", "st7305", "ili9341", "st7796", "st7789", "cvbs", "pal", "vga32", "cardkb", "tdeck-keyboard", "keyboard", "tca8418", "rotary-encoder", "ft6336", "gt911", "mgc3130", "skywriter", "sdmmc", "sdspi", "micro-sd", "pcf85063", "shtc3", "battery-adc", "max17048", "audio-pwm", "ledc-audio", "pcm1808", "i2s-adc", "pcm5102", "pcm5102a", "i2s-output", "i2s-dac", "es8311", "es7210", "esp32-dac", "rfm69", "rfm69h", "rfm95", "sx1262", "ublox-mia-m10q", "st25r3916", "bhi260ap", "drv2605", "bq25896", "bq27220", "xl9555", "neopixel", "ws2812", "lora", "fsk", "gfsk", "msk", "gmsk", "ook"]
+keywords = "python lua expansion device driver category attach detach save startup export manifest snapshot custom board bindings display epaper e-paper ssd1677 ssd1683 st7305 ili9341 st7796 st7789 cvbs pal composite vga vga32 waveshare cardkb m5stack tdeck keyboard tca8418 rotary encoder quadrature mouse joystick pointer ft6336 gt911 mgc3130 skywriter 3d gesture airwheel input i2c sd sdmmc sdspi microsd storage oled lcd rtc pcf85063 sensor shtc3 peripheral battery battery-adc fuel gauge max17048 bq27220 charger bq25896 axp2101 audio pwm ledc pcm1808 adc pcm5102 i2s-output es8311 es7210 esp32 dac i2s radio rfm69 rfm69h rfm95 sx1262 modem sim7670 gnss ublox mia-m10q nfc st25r3916 imu bhi260ap qmi8658 haptic drv2605 gpio expander xl9555 neopixel ws2812 rgb led strip fsk gfsk msk gmsk ook lora"
 packages_any = ["service_expansion"]
 +++
 # Expansion drivers and attached devices
@@ -36,7 +36,7 @@ shell.
 
 Built-in displays follow the same rule and appear as fixed `display0`
 attachments: Waveshare uses `st7305`, Freenove uses `st7796`, ODROID-GO uses
-`ili9341`, Elecrow CrowPanel uses `ssd1683`, ESP32-WROVER v3.0 uses `cvbs-pal`,
+`ili9341`, Elecrow CrowPanel boards use `ssd1683`, ESP32-WROVER v3.0 uses `cvbs-pal`,
 T-LoRa-Pager uses `st7796`, T-Deck Plus uses `st7789`, and TTGO VGA32 uses
 `vga32`. They attach before the splash and primary display service start.
 
@@ -73,7 +73,7 @@ existing named buses; create, attach, detach, or remove buses in the `io` app.
 `expansion status` retains the textual capabilities, buses, devices, and claims
 report for scripts and terminal inspection.
 
-`expansion drivers` groups compiled drivers under bold Audio, Display, Input,
+`expansion drivers` groups registered drivers under bold Audio, Display, Input,
 Power, Radio, Sensor, Storage, and Utility headings, with driver names sorted
 inside each category. Its aligned rows also show probe support, bus type, and
 the driver summary. `expansion devices` prints each attached device in a
@@ -184,10 +184,11 @@ expansion detach epd0
 
 The runtime defaults are the Waveshare V2 panel profile, 2 MHz SPI, and
 rotation 0. Optional `power=<gpio>`, `clock=<khz>`, `rotation=<0..3>`, and
-`panel=<0..3>` bindings adapt the same driver to integrated panels. Panel 0
+`panel=<0..4>` bindings adapt the same driver to integrated panels. Panel 0
 selects Elecrow BUSY-based revision detection and defaults to rotation 2;
 panels 1, 2, and 3 select the legacy Elecrow, green-sticker Elecrow, and
-Waveshare V2 profiles.
+Waveshare V2 profiles. Panel 4 selects Elecrow's 792x272 cascaded dual-SSD1683
+profile and defaults to rotation 0.
 
 Use the module's eight-wire SPI connector and power it from the same 3.3 V
 logic domain as the ESP32. The module keeps its last image after detach.
@@ -261,7 +262,7 @@ running board. A rotary encoder decodes interrupts from its quadrature A/B
 signals and publishes Up/Down detents; wire its independent push switch through
 `gpio-keys`. A PS/2 mouse publishes relative pointer events. An analog joystick
 consumes two scalar streams and publishes axes, never keys.
-Foreground Python and Lua applications receive those pointer and axis events
+Foreground Python and Lua applications receive those pointer, axis, and gesture events
 through `solaros.input`; use `solaros.tui.getch()` for keyboard characters.
 
 On a board without built-in SD hardware, an SPI microSD adapter can provide
@@ -439,9 +440,9 @@ board-default `display0` cannot be detached.
 
 ## Quick reference
 
-solaros.expansion.drivers() lists compiled drivers and devices() lists
+solaros.expansion.drivers() lists registered drivers and devices() lists
 currently attached devices with normalized bindings. attach(driver, name,
 bindings) and detach(name) manage them. Never assume an example name such as
 lcd0 or oled0 exists; inspect devices() or use a name explicitly supplied by
-the user. Foreground scripts consume attached pointer and axis sources through
+the user. Foreground scripts consume attached pointer, axis, and gesture sources through
 solaros.input.

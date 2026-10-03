@@ -12,7 +12,7 @@ env.Append(LINKFLAGS=["-Wl,--wrap=solar_os_gfx_prepare_surface", "-Wl,--wrap=sol
 for name, path, pattern in [
     ("u8g2", "components/u8g2/src", ["+<clib/*.c>", "-<clib/u8g2_d_*.c>", "-<clib/u8g2_d_setup.c>", "-<clib/u8x8_d_*.c>", "-<clib/u8g2_fonts.c>", "-<clib/u8x8_fonts.c>", "+<fonts/*.c>"]),
     ("fonts", "fonts/build/u8g2", ["+<*.c>"]),
-    ("stb", "components/stb_image", ["+<stb_image_port.c>"]),
+    ("stb", "components/stb_image", ["+<stb_image_port.c>", "+<jpeg_fast.c>"]),
 ]:
     env.Append(LIBS=[env.BuildLibrary(env.subst("$BUILD_DIR") + "/gfx_" + name, str(root/path), src_filter=pattern)])
 # Object placement is handled by the linker script, including generated fonts.

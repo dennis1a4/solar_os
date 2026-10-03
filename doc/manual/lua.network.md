@@ -2,8 +2,8 @@
 id = "lua.network"
 title = "Lua networking API"
 section = "api"
-summary = "Networking: wifi, mqtt, http, net, ftp, ssh_keys"
-keywords = "lua solaros api network wifi mqtt http net ftp ssh_keys"
+summary = "Networking: wifi, mqtt, http, net, ftp, sftpsync, ssh_keys"
+keywords = "lua solaros api network wifi mqtt http net ftp sftpsync ssh_keys"
 packages_any = ["app_lua"]
 agent_reference_sections = true
 +++
@@ -26,6 +26,10 @@ agent_reference_sections = true
 ## `solaros.ftp`
 
 - `solaros.ftp`: passive-mode list, download, upload, directory, delete, and rename operations when `network.ftp` is compiled
+
+## `solaros.sftpsync`
+
+- `solaros.sftpsync`: incremental file and directory synchronization over SFTP when `network.sftpsync` is compiled
 
 ## `solaros.net`
 
@@ -127,10 +131,11 @@ ordered `header`, `response`, `data`, `complete`, or `error` event. Data events
 contain up to 1024 binary bytes. Terminal events include status, content
 length, received byte count, duration, cancellation flags, and ESP error
 details. The limits are two streams per runtime and four globally, with eight
-queued events per stream. A full queue terminates the stream instead of
-dropping bytes. Streams close at interpreter teardown; close them explicitly
-to release resources promptly. Protocol records such as SSE messages can cross
-data-event boundaries and must be reassembled by the script.
+queued events per stream. A full queue backpressures the native worker until
+the script drains it or cancels the stream; body bytes are never dropped.
+Streams close at interpreter teardown; close them explicitly to release
+resources promptly. Protocol records such as SSE messages can cross data-event
+boundaries and must be reassembled by the script.
 
 ```lua
 local response = solaros.http.get("https://example.com/")
@@ -175,6 +180,28 @@ end
 solaros.ftp.download("fileserver", "/incoming/report.txt", "/notes/report.txt")
 ```
 
+## SFTP synchronization
+
+`solaros.sftpsync.sync(source, destination[, recursive[, dry_run[, port[, password]]]])`
+synchronizes one local path with one `[user@]host:path` endpoint. The direction
+follows the operand order. Local paths use the SolarOS storage resolver. The
+username defaults to the SolarOS identity, the port defaults to `22`, and an
+empty password allows SSH key authentication.
+
+The call blocks while it transfers, but remains cancellation-aware. It skips
+regular files whose size and modification time match, never deletes
+destination-only files, and limits recursive traversal to eight directory
+levels. Set `recursive` for directories or `dry_run` to report what would
+change. The returned table contains `files_changed`, `bytes_transferred`, and
+`dry_run`; failures raise a Lua error.
+
+```lua
+local result = solaros.sftpsync.sync(
+    "/notes", "backup@example.com:/srv/terminal/notes", true
+)
+print(result.files_changed, result.bytes_transferred)
+```
+
 A script-driven continuous control uses the same target mappings as an ADC
 potentiometer. Lua can create, bind, inspect, and remove controls directly:
 
@@ -199,5 +226,5 @@ native-unit value after the parameter's range and step handling.
 
 ## Quick reference
 
-Use `solaros.wifi`, `solaros.mqtt`, `solaros.http`, `solaros.net`, `solaros.ftp`, `solaros.ssh_keys` for networking.
+Use `solaros.wifi`, `solaros.mqtt`, `solaros.http`, `solaros.net`, `solaros.ftp`, `solaros.sftpsync`, `solaros.ssh_keys` for networking.
 See `man lua` for runtime conventions and service availability.

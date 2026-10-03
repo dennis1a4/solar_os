@@ -4,7 +4,7 @@ title = "Boards and hardware targets"
 section = "build"
 summary = "Supported boards, capabilities, porting structure, and validation"
 aliases = ["board", "targets"]
-keywords = "boards targets custom board profile fixed expansion platformio waveshare devkit odroid elecrow freenove wrover ttgo vga32 composite vga capabilities porting validation"
+keywords = "boards targets custom board profile fixed expansion platformio waveshare epaper e-paper ssd1677 devkit odroid elecrow freenove wrover ttgo vga32 composite vga capabilities porting validation"
 packages_any = []
 +++
 # Defining SolarOS Boards
@@ -203,12 +203,17 @@ The current tree includes these board targets:
 | --- | --- | --- | --- |
 | `solar_term` | `solar_term` | [SolarTerm](https://github.com/nilseuropa/solar_term), built from the Waveshare ESP32-S3-RLCD-4.2 | Primary ST7305 reflective display target with SDMMC, CDC, UART, RTC, SHTC3, battery ADC, ES8311/ES7210 audio, expansion I2C/SPI/UART/GPIO/ADC/PWM, and runtime-routable SPI3 on GPIO1/GPIO2/GPIO3/GPIO17. SolarOS refers to this hardware configuration as SolarTerm. |
 | `freenove_esp32_s3_display_4_0` | `freenove_esp32_s3_display_4_0` | Freenove ESP32-S3 Display 4.0-inch (FNK0104S) | Integrated 480x320 ST7796 display, FT6336 capacitive pointer, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, native USB CDC, and UART/I2C/GPIO expansion connectors. |
+| `qdtech_es3c28p` | `qdtech_es3c28p` | [QDtech ES3C28P 2.8-inch ESP32-S3 Touch Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display) | Capacitive-touch ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 landscape ILI9341V display, FT6336 pointer, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, one WS2812B, native USB CDC, and UART/I2C/GPIO expansion connectors. |
+| `qdtech_es3n28p` | `qdtech_es3n28p` | [QDtech ES3N28P 2.8-inch ESP32-S3 Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display) | Non-touch ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 landscape ILI9341V display, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, one WS2812B, native USB CDC, and UART/I2C/GPIO expansion connectors. |
 | `elecrow_crowpanel_esp32_s3_4_2_epaper` | `elecrow_crowpanel_esp32_s3_4_2_epaper` | Elecrow CrowPanel ESP32-S3 4.2-inch E-paper | ESP32-S3-WROOM-1-N8R8 target with a 400x300 SSD1683 e-paper display, microSD over SDSPI, CH340C/UART console, rotary/menu/exit controls, status LED, Wi-Fi, BLE, and expansion I2C/SPI/UART/1-Wire/GPIO/ADC/PWM. |
+| `elecrow_crowpanel_esp32_s3_5_79_epaper` | `elecrow_crowpanel_esp32_s3_5_79_epaper` | [Elecrow CrowPanel ESP32-S3 5.79-inch E-paper](https://www.elecrow.com/wiki/CrowPanel_ESP32_E-paper_5.79-inch_HMI_Display.html) | ESP32-S3-WROOM-1-N8R8 target with a 792x272 dual-SSD1683 e-paper display, microSD over SDSPI, CH340C/UART console, rotary/menu/exit controls, status LED, Wi-Fi, BLE, and expansion I2C/SPI/UART/1-Wire/GPIO/ADC/PWM. |
+| `waveshare_esp32_s3_epaper_3_97` | `waveshare_esp32_s3_epaper_3_97` | [Waveshare ESP32-S3-ePaper-3.97](https://docs.waveshare.com/ESP32-S3-ePaper-3.97) | ESP32-S3-WROOM-1-N16R8 target with an SSD1677 e-paper display that defaults to 800x480 landscape, AXP2101 battery/charger monitoring, QMI8658 six-axis IMU, four-bit SDMMC, native USB CDC, UART, PCF85063 RTC, SHTC3 temperature/humidity sensor, ES8311 speaker/microphone audio, rotary navigation, Wi-Fi, BLE, and expansion I2C/UART. |
 | `cl_32` | `cl_32` | CL-32 | ESP32-S3-WROOM-1-N16R8 target with a 384x168 ST7305 reflective LCD, an ATmega808-backed keyboard and battery monitor, native USB CDC, UART, microSD over SDSPI, PCF85063 RTC, onboard PWM buzzer, Wi-Fi, BLE, and expansion I2C/SPI/UART/GPIO/ADC/PWM/I2S. |
 | `odroid_go` | `odroid_go` | Hardkernel ODROID-GO | Classic ESP32 target with ILI9341 display, SD over VSPI/SDSPI, battery ADC, ESP32 DAC speaker, buttons, ADC D-pad, status LED, display brightness, expansion SPI/UART/GPIO/PWM, and runtime GPIO4/GPIO15. |
 | `freenove_esp32_wrover_v3` | `freenove_esp32_wrover_v3` | Freenove ESP32-WROVER v3.0 (FNK0060) | Classic ESP32 target with 8 MB PSRAM, CH340/UART console, one-bit SDMMC, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, and a 384x288 monochrome PAL composite display on GPIO25. |
 | `ttgo_vga32_v14` | `ttgo_vga32_v14` | LilyGO TTGO VGA32 v1.4 | ESP32-PICO-D4 desktop target with 8 MB external PSRAM, build-selectable 320x200@70Hz, 320x240@60Hz, 640x400@70Hz, or 640x480@60Hz VGA output through the onboard RGB222 resistor DAC, GPIO25 mono DAC audio, a default-attached PS/2 keyboard, v1.4 microSD wiring over HSPI, USB-UART, Wi-Fi, BLE disabled by default, and two input-only expansion GPIOs. |
 | `esp32_s3_devkitc1_n16r8` | `esp32_s3_devkitc1_n16r8` | Espressif ESP32-S3-DevKitC-1-N16R8 | Headless ESP32-S3 target with CDC, UART, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, expansion I2C/SPI/UART/GPIO/ADC/PWM, graphics through attachable display targets, and no primary display or onboard sensors. |
+| `goouuu_esp32_s3cam` | `goouuu_esp32_s3cam` | GOOUUU ESP32-S3CAM | Headless ESP32-S3 camera target with 16 MB flash, 8 MB PSRAM, native USB CDC, CH340/UART console, one-bit SDMMC, an onboard WS2812, Wi-Fi, BLE, and fixed DVP/SCCB camera wiring. Its required `driver.camera-esp32` package exposes OV2640 probing and bounded QVGA/VGA JPEG capture through `service.camera`; `cam-webd` adds a single-client MJPEG stream and JPEG snapshots with optional authentication over the shared HTTP server. |
 | `esp32_devkitc_v4_wrover` | `esp32_devkitc_v4_wrover` | Espressif ESP32-DevKitC V4 with ESP32-WROVER-E | Headless classic ESP32 target with PSRAM, UART, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, expansion I2C/SPI/UART/GPIO/ADC/PWM/I2S, graphics through attachable display targets, and no built-in peripherals. |
 | `devkitc1_epaper_workbench` | `esp32_s3_devkitc1_n16r8` with `SOLAR_OS_BOARD=devkitc1_epaper_workbench` | ESP32-S3 DevKitC-1 E-paper Workbench | Manifest-generated development target with fixed CardKB, 400x300 SSD1683 display, and SDSPI storage attachments. |
 | `t_lora_pager` | `t_lora_pager` | LilyGO T-LoRa-Pager (SX1262) | ESP32-S3-WROOM-1-N16R8 target with a 480x222 ST7796 display, a TCA8418 4x10 matrix keyboard, an SX1262 LoRa radio, PCF85063 RTC, microSD over SDSPI, ES8311 audio, a BQ27220 battery gauge, a BQ25896 charger, a rotary encoder, an XL9555 I2C GPIO controller for integrated power rails, a MIA-M10Q GNSS receiver, an ST25R3916 NFC-A reader, a BHI260AP IMU, a DRV2605 haptic controller, native USB CDC, Wi-Fi, BLE, and expansion I2C/SPI/UART/GPIO/ADC/PWM. SD power and its external pull-up start enabled; GNSS and NFC power start disabled and are enabled with `gnss power on` and `nfc power on`. Use `haptic play EFFECT` for DRV2605 ROM effects 1 through 117. The Pager fixes BQ25896 fast-charge current at 704 mA during attachment; inspect or explicitly change charger settings with `charger`. |
@@ -268,6 +273,7 @@ The current capability flags are:
 | `DISPLAY_BRIGHTNESS` | Display backlight or brightness control is available. |
 | `POINTER` | Board-integrated absolute or relative pointing input. Events carry a source, pointer ID, display target, coordinates, deltas, buttons, and press/move/release action. |
 | `STREAMING_DISPLAY` | The board's primary display has a bounded-cadence raster-frame presenter suitable for animation or games. This is separate from ordinary terminal and GUI drawing. |
+| `CAMERA` | A board-integrated camera interface and fixed pin contract are present. This hardware fact does not by itself imply that a camera driver or capture service is included. |
 | `TEMPERATURE` | Temperature sensor service. |
 | `HUMIDITY` | Humidity sensor service. |
 
@@ -778,6 +784,40 @@ Build the target with:
 pio run -e freenove_esp32_s3_display_4_0
 ```
 
+## QDtech ES3C28P and ES3N28P 2.8-inch ESP32-S3 Displays
+
+The `qdtech_es3c28p` target supports the capacitive-touch ES3C28P SKU, while
+`qdtech_es3n28p` supports the non-touch ES3N28P SKU. SolarOS runs their native
+240x320 ILI9341V panel as a 320x240 landscape primary display at 40 MHz,
+enables the panel's required color inversion, and controls the active-high
+GPIO45 backlight with PWM.
+
+On ES3C28P, the FT6336 controller shares `i2c0` with the ES8311 codec and
+registers as the default attachment `touch0`. GPIO17 is its interrupt and
+GPIO18 is its reset. It emits absolute pointer events rotated into the
+landscape `display0` coordinates. Inspect it with `expansion devices`, `input
+touch`, or `input test touch0`, and store optional logical-range correction
+with `input calibrate touch0 ...`. The ES3N28P target does not enable pointer
+support; GPIO17/GPIO18 remain reserved for its unpopulated touch footprint.
+
+The PlatformIO hardware definition selects the published 80 MHz DIO flash mode
+for the 16 MB external flash and OPI mode for the integrated 8 MB PSRAM.
+
+The fixed devices are the ILI9341V display, four-bit SDMMC card slot, ES8311
+duplex speaker/microphone path, GPIO9 battery ADC, and the GPIO42 WS2812B named
+`pixels0`. The shared `i2c0` bus is exposed on P4 and also controls the audio
+codec. P3 exposes runtime GPIO2, GPIO3, GPIO14, and GPIO21; GPIO2, GPIO3, and
+GPIO14 support ADC. P2 exposes the releasable `uart0` signals on GPIO43 and
+GPIO44. The LCD uses the internal `spi0` bus, including its wired GPIO13 MISO
+signal; it is not an expansion SPI connector.
+
+Build the standalone target with:
+
+```sh
+pio run -e qdtech_es3c28p
+pio run -e qdtech_es3n28p
+```
+
 ## Elecrow CrowPanel ESP32-S3 4.2-inch E-paper
 
 The built-in `elecrow_crowpanel_esp32_s3_4_2_epaper` target covers Elecrow's
@@ -832,6 +872,107 @@ The default OTA layout uses `partitions_8mb.csv`, with two 0x3E0000-byte OTA
 application slots and a 0x20000-byte flash filesystem partition. The serial
 layout uses `partitions_8mb_single.csv`, with one 0x700000-byte factory slot and
 a 0xF0000-byte flash filesystem partition.
+
+## Elecrow CrowPanel ESP32-S3 5.79-inch E-paper
+
+The built-in `elecrow_crowpanel_esp32_s3_5_79_epaper` target covers Elecrow's
+DIS08792E 792x272 monochrome CrowPanel. It uses the same N8R8 module, console,
+microSD, controls, status LED, power gates, and expansion-header wiring as the
+4.2-inch board. The display is different: two cascaded SSD1683 controllers
+drive two 396x272 halves. Their 400-pixel RAM widths create an internal
+eight-pixel address gap, which the SolarOS driver keeps white while presenting
+one contiguous 792x272 graphics surface.
+
+The panel uses GPIO12 SCK, GPIO11 MOSI, GPIO47 reset, GPIO46 D/C, GPIO45 chip
+select, GPIO48 BUSY, and GPIO7 display-power enable. The driver follows
+Elecrow's master/slave RAM addressing and temperature-load sequence. Auto mode
+uses one full cleanup refresh after initialization, then transfers changed
+frames with Elecrow's non-flashing `0xDC` partial-update waveform; unchanged
+frames are skipped. Use `display mode display0 refresh=full` when an explicit
+full cleanup is needed.
+
+The wide panel can also run two independent side-by-side sessions:
+
+```text
+display split display0 --horizontal left0 right0
+session create shell right0
+```
+
+Session 0 moves to `left0` automatically. Use `Ctrl+Alt+Left/Right`, or
+`Ctrl+AltGr+Left/Right` on keyboards without a left Alt key, to move local
+input focus between the two viewports. `display unsplit display0` restores the
+single 792x272 target without discarding session 0 shell state.
+
+Build and flash the target with:
+
+```sh
+pio run -e elecrow_crowpanel_esp32_s3_5_79_epaper
+pio run -e elecrow_crowpanel_esp32_s3_5_79_epaper -t upload --upload-port /dev/ttyUSB0
+```
+
+The onboard CH340 normally enumerates as `/dev/ttyUSB*` on Linux; use the
+actual serial-device path reported by the host when it differs.
+
+The same 8 MB OTA and serial partition layouts documented for the 4.2-inch
+CrowPanel apply to this board.
+
+## Waveshare ESP32-S3-ePaper-3.97
+
+The built-in `waveshare_esp32_s3_epaper_3_97` target covers Waveshare's 3.97-inch
+board with an ESP32-S3-WROOM-1-N16R8 module. SolarOS presents the native
+800x480 monochrome SSD1677 panel with a 480x800 portrait base orientation.
+The display defaults to 800x480 landscape, rotated 90 degrees counterclockwise
+from that portrait orientation (`setterm orientation 270`). A saved orientation
+preference takes precedence over this factory default. The fixed
+devices include four-bit SDMMC storage, a PCF85063 RTC, an SHTC3 temperature and
+humidity sensor, and ES8311 duplex speaker/microphone audio. Native USB provides
+the primary CDC console; GPIO43/GPIO44 remain available as `uart0` on the
+breakout pads.
+
+The SSD1677 runs at the vendor reference clock of 20 MHz. Automatic refresh
+starts with a full cleanup, skips unchanged frames, uses byte-aligned
+dirty partial windows, and performs another full cleanup after 19 partial
+updates. Refreshes use the differential waveform with separate current and
+previous frame data; full cleanups force every pixel to transition.
+The display attachment sets the AXP2101 ALDO3 rail to 3.3 V, enables
+it before controller initialization, and disables it when the panel sleeps.
+This profile follows Waveshare's current AXP2101 reference source and schematic;
+a board revision fitted with a different power-management IC needs a separate
+profile or power callback before it is safe to use.
+Override the refresh policy when testing or clearing ghosting:
+
+```text
+display mode display0 refresh=auto
+display mode display0 refresh=partial
+display mode display0 refresh=full
+```
+
+The onboard controls are mapped as follows:
+
+- GPIO0 BOOT: foreground app exit.
+- GPIO4 rotary up: Up.
+- GPIO6 rotary down: Down.
+- GPIO5 rotary press: Enter.
+
+The exposed SDA/SCL pads share the fixed `i2c0` bus with the onboard RTC,
+environment sensor, audio codec, PMIC, and IMU. The RX/TX pads expose `uart0`.
+The fixed AXP2101 attachment publishes its fuel-gauge data through `battery`
+and its charging state and controls as `charger0`. The board profile applies
+the vendor reference defaults of a 1500 mA VBUS input limit, 200 mA constant
+charge current, and 4.2 V target voltage. Use `battery status` and
+`charger status charger0` to inspect them. The fixed `imu0` attachment polls
+the QMI8658 at the reference repository's low I2C address (`0x6a`) and exposes
+plus/minus 8 g acceleration and 512 degrees-per-second angular velocity ranges
+in SI units.
+Use `imu sample imu0` to read both vectors. Orientation is not advertised
+because this profile enables the raw accelerometer and gyroscope rather than
+the chip's AttitudeEngine.
+
+Build the target with:
+
+```sh
+pio run -e waveshare_esp32_s3_epaper_3_97
+```
 
 ## Headless Boards
 

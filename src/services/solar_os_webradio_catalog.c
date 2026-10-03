@@ -19,8 +19,13 @@
 #define WEBRADIO_NVS_CATALOG_KEY "catalog"
 #define WEBRADIO_CATALOG_MAGIC 0x57524144U
 #define WEBRADIO_CATALOG_VERSION 1U
+#if SOLAR_OS_PLATFORM_IMXRT1062
+#define WEBRADIO_CATALOG_ROOT_DIR "flash/.solar"
+#define WEBRADIO_CATALOG_DIR "flash/.solar/webradio"
+#else
 #define WEBRADIO_CATALOG_ROOT_DIR ".solar"
 #define WEBRADIO_CATALOG_DIR ".solar/webradio"
+#endif
 #define WEBRADIO_CATALOG_FILE "catalog.bin"
 
 typedef struct {
@@ -149,6 +154,10 @@ static bool webradio_catalog_load_file(webradio_catalog_blob_t *blob)
 
 static bool webradio_catalog_load_legacy_nvs(webradio_catalog_blob_t *blob)
 {
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    (void)blob;
+    return false; /* This port never stored a legacy ESP NVS catalog. */
+#else
     nvs_handle_t nvs;
     esp_err_t err = nvs_open(WEBRADIO_NVS_NAMESPACE, NVS_READONLY, &nvs);
     if (err != ESP_OK) {
@@ -159,6 +168,7 @@ static bool webradio_catalog_load_legacy_nvs(webradio_catalog_blob_t *blob)
     nvs_close(nvs);
     return err == ESP_OK && length == sizeof(*blob) &&
         webradio_catalog_blob_valid(blob);
+#endif
 }
 
 static void webradio_catalog_erase_legacy_nvs(void)

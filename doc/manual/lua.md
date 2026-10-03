@@ -32,16 +32,17 @@ Open a topic below, or use its ID with `man` on the device, for example
 | --- | --- |
 | [Storage and files](lua.storage.md) | `solaros.storage` |
 | [Time and scheduling](lua.time.md) | `solaros.time`, `solaros.rtc`, `solaros.schedule` |
-| [Networking](lua.network.md) | `solaros.wifi`, `solaros.mqtt`, `solaros.http`, `solaros.net`, `solaros.ftp`, `solaros.ssh_keys` |
+| [Networking](lua.network.md) | `solaros.wifi`, `solaros.mqtt`, `solaros.http`, `solaros.net`, `solaros.ftp`, `solaros.sftpsync`, `solaros.ssh_keys` |
 | [Bluetooth](lua.ble.md) | `solaros.ble` |
 | [GPIO and peripherals](lua.hardware.md) | `solaros.gpio`, `solaros.onewire`, `solaros.led`, `solaros.adc`, `solaros.pwm`, `solaros.i2c`, `solaros.spi`, `solaros.uart`, `solaros.neopixel`, `solaros.battery`, `solaros.sensors`, `solaros.gnss`, `solaros.nfc` |
 | [Buses and expansion](lua.buses.md) | `solaros.buses`, `solaros.expansion` |
-| [Audio and control](lua.audio.md) | `solaros.audio`, `solaros.synth`, `solaros.dsp`, `solaros.controls`, `solaros.parameters`, `solaros.midi`, `solaros.osc` |
+| [Audio and control](lua.audio.md) | `solaros.audio`, `solaros.speech`, `solaros.synth`, `solaros.dsp`, `solaros.controls`, `solaros.parameters`, `solaros.midi`, `solaros.osc` |
 | [Input and clipboard](lua.input.md) | `solaros.input`, `solaros.hid`, `solaros.clipboard` |
 | [Apps, jobs, and identity](lua.system.md) | `solaros.identity`, `solaros.jobs`, `solaros.sessions`, `solaros.apps` |
 | [Contacts and messages](lua.messaging.md) | `solaros.contacts`, `solaros.messages` |
 | [Text user interfaces](lua.tui.md) | `solaros.tui` |
-| [Graphics](lua.gfx.md) | `solaros.gfx` |
+| [Graphics and raster images](lua.gfx.md) | `solaros.gfx`, `solaros.image` |
+| [Camera, streams, and RTSP](lua.media.md) | `solaros.streams`, `solaros.camera`, `solaros.rtsp` |
 
 ## Top-Level Helpers
 
@@ -62,6 +63,11 @@ change it.
 ## Service availability
 
 Lua mirrors the Python `solaros` module structure:
+
+`solaros.streams` provides local owned handles. `solaros.camera` and
+`solaros.rtsp` are present only when their native services are compiled; see
+[Camera, streams, and RTSP](lua.media.md). Image decode and native presentation
+remain gated by `media.image`.
 
 The Lua runtime package requires PSRAM. Hardware and network tables are present
 only when the board/flavor includes the corresponding service package. For
