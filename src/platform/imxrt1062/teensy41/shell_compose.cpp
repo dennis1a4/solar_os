@@ -8,6 +8,7 @@ extern "C" {
 #include "solar_os_shell_io.h"
 #include "solar_os_shell_parse.h"
 #include "solar_os_memory.h"
+#include "solar_os_less.h"
 bool sk_console_poll_cancel(bool);
 }
 namespace {
@@ -37,7 +38,7 @@ bool synchronous(const char *name) {
 }
 bool pipe_source(int argc,char **argv) {
     static const char *const names[]={"echo","cat","ls","grep","head","wc"};
-    static const char *const snapshots[]={"date","time","rtc","pwd","version","board","mem","uptime","status","top","df","port"};
+    static const char *const snapshots[]={"date","time","rtc","pwd","version","board","mem","uptime","status","top","df","port","commands"};
     return member(argv[0],names) || (argc==1 && member(argv[0],snapshots));
 }
 bool slice(const char *line,const skshell::Step &step,char text[192],char **argv,int &argc) {
@@ -100,8 +101,8 @@ extern "C" void sk_shell_cmd_filter(solar_os_context_t *ctx,int argc,char **argv
 }
 
 // -1 leaves a single command to the existing dispatcher. All composition runs
-// synchronously and never creates a task. Interactive apps are rejected during
-// preflight; their asynchronous lifecycle cannot be treated as command exit.
+// synchronously and never creates a task. A final less stage hands its input
+// to the foreground launch path; other interactive composition is rejected.
 extern "C" int sk_shell_compose(solar_os_context_t *ctx,const char *line) {
     const auto plan=skshell::plan(line);
     if(!plan.composed && !plan.error)return -1;
@@ -112,11 +113,13 @@ extern "C" int sk_shell_compose(solar_os_context_t *ctx,const char *line) {
         if(!slice(line,plan.steps[i],text,argv,argc)){error(io,"invalid command syntax");return 1;}
         const bool input=i && plan.steps[i-1].next==skshell::Pipe;
         const bool output=plan.steps[i].next==skshell::Pipe;
-        if(!synchronous(argv[0])){error(io,"command is not supported in a chain; run it separately");return 1;}
+        const bool pager=!strcmp(argv[0],"less");
+        if(pager && (!input || argc!=1 || i+1!=plan.count || output || plan.steps[i].next==skshell::Success)){error(io,"less requires pipe input and must end the command line");return 1;}
+        if(!pager && !synchronous(argv[0])){error(io,"command is not supported in a chain; run it separately");return 1;}
         if(plan.steps[i].next==skshell::Success && !status_known(argv[0])) {
             error(io,"command has no exit status for &&; use ; or run it separately");return 1;
         }
-        if(input && strcmp(argv[0],"cat") && !filter(argv[0])){error(io,"pipe consumers: cat, grep, head, wc");return 1;}
+        if(input && strcmp(argv[0],"cat") && !filter(argv[0]) && !pager){error(io,"pipe consumers: cat, grep, head, wc, less");return 1;}
         if(input && !strcmp(argv[0],"cat") && argc!=1){error(io,"pipe input requires cat without a filename");return 1;}
         if(output && !pipe_source(argc,argv)){error(io,"command cannot produce pipe input");return 1;}
         if(filter(argv[0]) && !input){error(io,"filter requires pipe input");return 1;}
@@ -132,7 +135,7 @@ extern "C" int sk_shell_compose(solar_os_context_t *ctx,const char *line) {
         }
         pipe_bytes+=2*pipe_capacity;
     }
-    io->command_cancelled=false;int status=0;bool run=true;unsigned current=0;
+    io->command_cancelled=false;int status=0;bool run=true;bool launched=false;unsigned current=0;
     for(unsigned i=0;i<plan.count;) {
         // A pipeline is one conditional unit. Failure skips its remaining
         // consumers; ; starts a new unit, && checks the previous unit status.
@@ -152,6 +155,10 @@ extern "C" int sk_shell_compose(solar_os_context_t *ctx,const char *line) {
                 const auto result=solar_os_shell_execute_command(ctx,text);
                 status=result==ESP_OK?io->command_status:1;
                 io->command_output_fn=nullptr;io->command_output_user=nullptr;
+                if(ctx->requested_app==&solar_os_less_app && j==last && j>i) {
+                    // Keep exactly this charged buffer until app start or launch failure.
+                    in.data=nullptr;launched=true;status=0;break;
+                }
                 io->command_input=nullptr;io->command_input_size=0;
                 if(io->command_cancelled){status=130;break;}
                 if(out.overflow){error(io,"pipe output exceeds 8192 bytes; consumers were not run");status=1;break;}
@@ -168,8 +175,16 @@ extern "C" int sk_shell_compose(solar_os_context_t *ctx,const char *line) {
         run=plan.steps[last].next!=skshell::Success || status==0;
         i=last+1;
     }
-    if(needs_pipe){for(auto &b:buffers)solar_os_memory_free(b.data);pipe_bytes-=2*pipe_capacity;}
+    if(needs_pipe){for(auto &b:buffers)solar_os_memory_free(b.data);pipe_bytes-=(launched?1:2)*pipe_capacity;}
     io->command_status=status;
-    return 1;
+    return launched?0:1;
+}
+
+extern "C" void sk_shell_pipe_release(solar_os_shell_io_t *io) {
+    if(io && io->command_input) {
+        solar_os_memory_free((void *)io->command_input);
+        io->command_input=nullptr;io->command_input_size=0;
+        pipe_bytes-=pipe_capacity;
+    }
 }
 #endif

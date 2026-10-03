@@ -661,6 +661,26 @@ static esp_err_t less_start_common(solar_os_context_t *ctx, const char *app_name
     less_state.app_name = app_name;
 
     const int argc = solar_os_context_argc(ctx);
+#if SK_SHELL_COMPOSE
+    solar_os_shell_io_t *input_io = solar_os_context_shell_io(ctx);
+    if (argc == 1 && input_io != NULL && input_io->command_input != NULL) {
+        const size_t len = input_io->command_input_size;
+        char *buffer = solar_os_memory_alloc(len + 1,
+            SOLAR_OS_MEMORY_EXTERNAL_SYSTEM, "less.pipe");
+        if (buffer == NULL) {
+            solar_os_context_finish(ctx, 1, "less: not enough PSRAM");
+            return ESP_OK;
+        }
+        memcpy(buffer, input_io->command_input, len);
+        buffer[len] = '\0';
+        less_state.buffer = buffer;
+        less_state.buffer_owned = true;
+        less_state.len = len;
+        strlcpy(less_state.display_name, "[pipe]", sizeof(less_state.display_name));
+        less_render(ctx);
+        return ESP_OK;
+    }
+#endif
     if (argc != 2) {
         char message[LESS_MESSAGE_MAX];
         snprintf(message, sizeof(message), "usage: %s <file>", less_app_name());

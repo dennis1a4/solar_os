@@ -62,6 +62,14 @@ def select_pages(pages, render_text):
             page['markdown'] = '# IO\n\n```text\n' + usage + '\n```\n'
             page['body'] = render_text(page['markdown'])
             page['contract'] = usage
+        if kind == 'app' and name == 'less':
+            usage = ('less FILE\ncommands | less\n'
+                     'Pipe input is limited to 8192 bytes in PSRAM. less must end the command line.\n'
+                     'Arrows or j/k scroll; Space/b page; g/G beginning/end; / searches; n/N repeat; q exits.')
+            page['summary'] = 'Page through a file or bounded pipe output.'
+            page['markdown'] = '# Less\n\n```text\n' + usage + '\n```\n'
+            page['body'] = render_text(page['markdown'])
+            page['contract'] = usage
         if kind == 'app' and name == 'com':
             usage = 'com [--hex] [uart7|uart8|uart3]\nDefault uart7; configured baud, initially 115200, 8N1. Shared COM app; Ctrl+] exits, Ctrl+Z suspends while retaining its UART lease, fg resumes. RX is bounded; suspended sessions may lose data if the UART ring fills. Other consoles cannot steal the lease. --autobaud is unavailable. Hardware loopback/peripheral validation is recorded separately.'
             page['condition'] = 'SK_HW_RESOURCES'

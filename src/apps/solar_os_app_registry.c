@@ -268,7 +268,11 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
     APP_ENTRY("inbox", "universal incoming-message browser", &solar_os_inbox_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "inbox", 1, 1),
 #endif
 #if SOLAR_OS_PACKAGE_APP_LESS
+#if SK_SHELL_COMPOSE
+    APP_ENTRY("less", "file and pipe pager", &solar_os_less_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "less <file> | COMMAND | less", 1, 2),
+#else
     APP_ENTRY("less", "text file pager", &solar_os_less_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "less <file>", 2, 2),
+#endif
 #endif
 #if SOLAR_OS_PACKAGE_APP_MQTT_EXPLORER
     APP_ENTRY("mqttx", "MQTT topic and message explorer", &solar_os_mqtt_explorer_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "mqttx HOST[:PORT] [--auth FILE] [--log NEWFILE]", 2, 6),

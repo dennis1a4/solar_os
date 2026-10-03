@@ -1,3 +1,6 @@
+#if SK_SHELL_COMPOSE
+extern "C" void sk_shell_pipe_release(solar_os_shell_io_t *);
+#endif
 // Included by either the single USB console or the dual-console adapter.
 // Each session retains its app contexts/TUIs while a child runs; frames live
 // in PSRAM, not on the console stack.
@@ -85,6 +88,13 @@ static void service_requests() {
     auto *ctx = current_context();
     const auto *app = solar_os_context_take_launch_request(ctx);
     if (!app) return;
+#if SK_SHELL_COMPOSE
+    // Covers successful starts and every early launch rejection/allocation failure.
+    struct PipeInputCleanup {
+        solar_os_shell_io_t *io;
+        ~PipeInputCleanup() { sk_shell_pipe_release(io); }
+    } pipe_cleanup{solar_os_context_shell_io(ctx)};
+#endif
     if (app->app_class == SOLAR_OS_APP_CLASS_GUI && !solar_os_context_gfx(ctx)) {
         launch_error("This graphical app needs the local LCD console."); return;
     }

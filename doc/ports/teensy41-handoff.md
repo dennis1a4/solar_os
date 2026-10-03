@@ -1,8 +1,18 @@
 # Teensy / SuperKeyboard handover
 
-Updated 2026-10-03. Integration branch: `teensy41-upstream-4.15.18`; GitHub: `dennis1a4/solar_os`.
+Updated 2026-10-03. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
+
+## Pipe pager — 2026-10-03
+
+`commands | less` now opens the interactive pager on USB/LCD. Other supported
+producers and filters can also end in `| less`. Input remains bounded to 8 KiB
+in PSRAM; `less` must end the command line. No temporary files or extra tasks.
+Host sanitizer checks cover exact/overflow input, syntax rejection and buffer
+release. `test_teensy41_less_pipe.py` passed on the installed legacy profile:
+LCD scrolling, USB quit, empty input, cross-console ownership rejection and
+five repeated cycles with exact heap/PSRAM recovery. Static RAM use is unchanged.
 
 ## Upstream 4.15.18 integration — 2026-10-03
 
@@ -86,8 +96,8 @@ The normal `teensy41_display` image requires that wiring change and disables
 Serial1. Both scope and USB-PD demo apps are available on the installed image.
 
 Installed HEX SHA256:
-`0233dfebeb49c759ef6708f96cc38e627a8cf9dbee4b0c3a44f1fa9a59917860`.
-Flash 1,414,040 bytes; RAM1 428,224; RAM2 324,472.
+`7f3ee2664358f4d5c46438f892884904c1ecb8fd38fc8a141ae34d5680962559`.
+Flash 1,414,448 bytes; RAM1 428,224; RAM2 324,472.
 Microsoft keyboard `045e:0750`, powered USB host hub, RA8875 LCD, native SD,
 USB drive, QSPI flash and 8 MiB PSRAM. Audio shield was absent in recent tests.
 See [quick-start and wiring](README.md).

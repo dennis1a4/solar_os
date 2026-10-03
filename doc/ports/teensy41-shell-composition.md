@@ -86,9 +86,16 @@ File `cat` in a pipeline preserves bytes and final-newline state; ordinary
 terminal `cat` retains its existing 4 KiB display limit.
 
 Producers: `echo`, `cat`, `ls`, the filters, and argument-free snapshots from
-`date time rtc pwd version board mem uptime status top df port`.
+`date time rtc pwd version board mem uptime status top df port commands`.
 Consumers: `cat` without arguments, `grep LITERAL`, `head [-n COUNT]`, and
-`wc [-l|-w|-c]`.
+`wc [-l|-w|-c]`, and a final `less` (no filename).
+
+`commands | less` opens captured text in the interactive pager. `less` must end
+the whole command line; following `;`, `&&` commands or another pipe are rejected
+before any producer runs. The launch path retains one 8 KiB pipe buffer until
+app start or failure. The pager copies at most 8 KiB plus a terminator into PSRAM
+and releases it on exit; no temporary files or new tasks are created. Normal
+scrolling/search/quit controls apply, including empty input.
 
 `grep` does case-sensitive literal substring matching, with status 1 for no
 matching lines. An empty match result can still feed the next consumer. `head`

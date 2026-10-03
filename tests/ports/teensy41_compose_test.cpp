@@ -13,6 +13,8 @@ extern "C" {
 #include "solar_os_shell_parse.h"
 #include "solar_os_memory.h"
 int sk_shell_compose(solar_os_context_t *,const char *);
+void sk_shell_pipe_release(solar_os_shell_io_t *);
+extern const solar_os_app_t solar_os_less_app = {};
 void sk_shell_cmd_filter(solar_os_context_t *,int,char **);
 }
 static solar_os_shell_io_t io;
@@ -49,12 +51,18 @@ extern "C" esp_err_t solar_os_shell_execute_command(solar_os_context_t *ctx,cons
             const std::string data=!strcmp(argv[1],"big")?std::string(8193,'x'):!strcmp(argv[1],"exact")?std::string(8192,'x'):"one\ntwo words\nlast";
             solar_os_shell_io_write_len(&io,data.data(),data.size());
         }
-    } else io.command_status=0;
+    } else if(!strcmp(argv[0],"less")) {ctx->requested_app=&solar_os_less_app;} else io.command_status=0;
     return ESP_OK;
 }
 static void run(const char *line) {
     io={};io.kind=SOLAR_OS_SHELL_IO_KIND_PORT;io.terminal_profile=SOLAR_OS_SHELL_TERMINAL_PROFILE_DUMB;output.clear();calls.clear();polls=0;
-    assert(sk_shell_compose(&context,line)==1);
+    context.requested_app=nullptr;
+    const int result=sk_shell_compose(&context,line);
+    if(context.requested_app) {
+        assert(result==0 && io.command_input && allocation_count==1);
+        output.assign(io.command_input,io.command_input_size);
+        sk_shell_pipe_release(&io);
+    } else assert(result==1);
     assert(allocation_count==0 && !io.command_output_fn && !io.command_input);
 }
 int main() {
@@ -64,6 +72,14 @@ int main() {
     for(auto s:{";echo x","echo x;;echo y","echo x&&","echo x|","echo x||echo y","echo x>f","echo 'x","echo x\\"})assert(skshell::plan(s).error);
     assert(skshell::plan("echo x;").count==1);
     assert(skshell::plan("a;b;c;d;e;f;g;h;i").error);
+    run("echo hello|less");assert(output=="hello\n");
+    run("commands|less");assert(calls.size()==2);
+    run("cat exact|less");assert(output.size()==8192);
+    run("cat big|less");assert(calls.size()==1 && !context.requested_app);
+    run("echo hi|less;echo wrong");assert(calls.empty());
+    run("echo hi|less&&echo wrong");assert(calls.empty());
+    run("echo hi|less file");assert(calls.empty());
+    for(int i=0;i<100;++i)run("cat lines|grep words|less");
     run("date;time");assert(calls.size()==2);
     run("ntp&&echo wrong;echo right");assert(calls.size()==2 && output=="right\n");
     run("ntp&&echo wrong&&echo wrong;echo right");assert(calls.size()==2 && output=="right\n");
