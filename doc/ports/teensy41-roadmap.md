@@ -27,6 +27,13 @@ features remain backlog; they do not precede RAMFS in this approved sequence.
 
 ## Current position
 
+**2026-10-03 Python foundation:** resource-managed machine GPIO/bus/ADC/PWM
+subset and os/time helpers are implemented with an installed offline library
+bundle and pinned full upstream source archive on SD. Physical peripheral tests
+remain pending. Future work: MIDI/audio/USB-PD/CAN Python bindings, broader
+standard-module compatibility and additional validated packages. See handoff.
+
+
 **2026-10-03 upstream 4.15.18:** memory improvements, interactive `ltop`,
 WebRadio, SSH key commands, MIDI recording/playback and STUSB4500 software are
 integrated. Existing bus tools are retained. Physical audio/MIDI/PD verification

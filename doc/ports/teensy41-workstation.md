@@ -165,3 +165,17 @@ cleanup, ten reconnects and immediate listener restarts. Dual-console regression
 passed in `/tmp/teensy-workstation-display-regression.json`.
 
 Recovery checkpoint: `../solar_os-baselines/2026-09-29-workstation/`.
+
+## Python hardware and offline libraries — 2026-10-03
+
+The Teensy adapter now exposes resource-managed GPIO, I2C, expansion SPI, UART,
+ADC and PWM through an installed `machine.py` compatibility subset. Native
+handles are released on explicit deinit and VM teardown. Protected board pins
+and peripheral addresses stay reserved. Pure-Python `os` and `time` helpers use
+native file/timing services. Imports search `/flash/lib` and `/sd/lib`; the Python
+heap remains 512 KiB PSRAM. See `lib/teensy41/README.txt` for exact API limits.
+The versioned utility/driver bundle includes its upstream revision, source paths,
+licenses and file hashes. Installation preserves different existing files unless
+explicit replacement is requested. A pinned upstream archive on SD supplies
+additional offline source; it does not imply compatibility of every package.
+MIDI, audio, USB-PD and CAN still need typed Python service bindings.

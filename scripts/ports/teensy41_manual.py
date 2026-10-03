@@ -93,7 +93,7 @@ def select_pages(pages, render_text):
             page['body'] = render_text(page['markdown'])
             page['contract'] = usage
         if kind == 'app' and name == 'python':
-            usage = ('python [-c CODE | /path/script.py [args...]]\nOne MicroPython VM, 512 KiB PSRAM heap. Ctrl+C interrupts; Ctrl+D exits the REPL.\nStandalone text sessions support Ctrl+Z, bg, jobs, fg ID, and job stop ID. See man bg.\ninput() preserves partial lines across detaching. Detached input waits for fg and cannot consume shell keys.\nDetached workers cannot acquire graphics. Existing SolarOS network/gfx bindings remain available; Lua, CAN/DAQ and typed stream bindings are not added by the worker.')
+            usage = ('python [-c CODE | /path/script.py [args...]]\nOne MicroPython VM, 512 KiB PSRAM heap. Ctrl+C interrupts; Ctrl+D exits the REPL.\nStandalone text sessions support Ctrl+Z, bg, jobs, fg ID, and job stop ID. See man bg.\ninput() preserves partial lines across detaching. Detached input waits for fg and cannot consume shell keys.\nDetached workers cannot acquire graphics. Existing SolarOS network/gfx bindings remain available. Imports also search /flash/lib and /sd/lib. The offline machine/os/time compatibility bundle adds resource-managed pins, buses, ADC/PWM and filesystem/timing helpers. See /flash/lib/README.txt for exact limits and examples under /sd/python-examples. MIDI, audio, USB-PD, CAN/DAQ and typed stream Python bindings remain pending.')
             page['summary'] = 'MicroPython REPL, scripts and detachable text processes.'
             page['markdown'] = '# Python\n\n```text\n' + usage + '\n```\n'
             page['body'] = render_text(page['markdown'])

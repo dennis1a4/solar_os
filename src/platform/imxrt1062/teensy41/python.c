@@ -32,6 +32,10 @@ void sk_python_solaros_net_destroy(void);
 void sk_python_gfx_init(solar_os_context_t *);
 void sk_python_gfx_destroy(void);
 #endif
+#if SK_HW_RESOURCES
+void sk_python_hardware_init(solar_os_context_t *);
+void sk_python_hardware_destroy(void);
+#endif
 static solar_os_context_t *context;
 static void *heap;
 static char *source;
@@ -133,6 +137,9 @@ static void python_stop_sync(solar_os_context_t *ctx) {
         sk_python_solaros_net_destroy();
         sk_python_network_close_all();
         #endif
+        #if SK_HW_RESOURCES
+        sk_python_hardware_destroy();
+        #endif
         mp_deinit();
         initialized = false;
     }
@@ -169,6 +176,9 @@ static esp_err_t python_start_sync(solar_os_context_t *ctx) {
     #if SK_GRAPHICS
     sk_python_gfx_init(ctx);
     #endif
+    #if SK_HW_RESOURCES
+    sk_python_hardware_init(ctx);
+    #endif
     const int argc = solar_os_context_argc(ctx);
     const char *path = argc > 1 ? solar_os_context_argv(ctx, 1) : NULL;
     const bool command = path && !strcmp(path, "-c");
@@ -185,6 +195,8 @@ static esp_err_t python_start_sync(solar_os_context_t *ctx) {
     }
     mp_obj_list_append(mp_sys_path, mp_obj_new_str("", 0));
     mp_obj_list_append(mp_sys_path, mp_obj_new_str("/", 1));
+    mp_obj_list_append(mp_sys_path, mp_obj_new_str("/flash/lib", 10));
+    mp_obj_list_append(mp_sys_path, mp_obj_new_str("/sd/lib", 7));
     for (int i = command ? 2 : 1; i < argc; ++i) {
         const char *arg = solar_os_context_argv(ctx, i);
         mp_obj_list_append(mp_sys_argv, mp_obj_new_str(arg, strlen(arg)));

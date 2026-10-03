@@ -1,0 +1,90 @@
+{
+  "format": 1,
+  "bundle": "solaros-teensy-python-1",
+  "upstream": "https://github.com/micropython/micropython-lib",
+  "commit": "4fa59bd6a5916783e8503e9f2339627c8cffa5bf",
+  "files": [
+    {
+      "file": "MICROPYTHON-LIB-LICENSE.txt",
+      "sha256": "a38cf48836aa313254cdcf3de9fb7c24da4a2eab75ead2cc0cecd998336e7800",
+      "source": "LICENSE",
+      "validation": "device smoke test required"
+    },
+    {
+      "file": "bisect.py",
+      "sha256": "b053b85bb99f0dbaddf0fb11d0cc39833785538dd8f6399a874f64ecd9e4b85f",
+      "source": "python-stdlib/bisect/bisect.py",
+      "validation": "host/device API smoke tests; see README for limitations"
+    },
+    {
+      "file": "bmm150.py",
+      "sha256": "22102fbf25c5f3cada35e3884e4f908d0bcc5e9d6eb98cf847a66d5554c045dc",
+      "source": "micropython/drivers/imu/bmm150/bmm150.py",
+      "validation": "import-tested; physical sensor pending"
+    },
+    {
+      "file": "contextlib.py",
+      "sha256": "b16685f9acf71c8a9136a5af1ab4770fde87d48c5a8333582057d1292398ad7b",
+      "source": "solarOS",
+      "validation": "host/device API smoke tests; see README for limitations"
+    },
+    {
+      "file": "functools.py",
+      "sha256": "23b87247519b02f73cb1c31649f3659b4d96eca426cc0fb8df671956dfad0213",
+      "source": "python-stdlib/functools/functools.py",
+      "validation": "host/device API smoke tests; see README for limitations"
+    },
+    {
+      "file": "heapq.py",
+      "sha256": "0b6aee0ba366ee9cc30125e5a99252854ba148912ec2ed2b95e80b6812f8fa04",
+      "source": "python-stdlib/heapq/heapq.py",
+      "validation": "host/device API smoke tests; see README for limitations"
+    },
+    {
+      "file": "itertools.py",
+      "sha256": "e23c23966cf7552a944671d49a71a534f693acb8598be101f94bb667eb86bb85",
+      "source": "python-stdlib/itertools/itertools.py",
+      "validation": "host/device API smoke tests; see README for limitations"
+    },
+    {
+      "file": "lsm9ds1.py",
+      "sha256": "5caa593419d4a9a7cddcb549589b013cb9733eb1ef599062a1ad341237b6ac3a",
+      "source": "micropython/drivers/imu/lsm9ds1/lsm9ds1.py",
+      "validation": "import-tested; physical sensor pending"
+    },
+    {
+      "file": "machine.py",
+      "sha256": "b1c1e710067f75e01b902db0f458ebc40122b9ae84fc126f89f96d52e4078fba",
+      "source": "solarOS",
+      "validation": "host/device API smoke tests; see README for limitations"
+    },
+    {
+      "file": "os.py",
+      "sha256": "88e86e9113f3c88e26dfdad43e82db3b7ba0ac378ead9da4b596b034e9b2d9c7",
+      "source": "solarOS",
+      "validation": "host/device API smoke tests; see README for limitations"
+    },
+    {
+      "file": "time.py",
+      "sha256": "51c57d5fc8964cf36b6cf03bb8bec16fbde1d91622ae121c22654acf48e38f25",
+      "source": "solarOS",
+      "validation": "host/device API smoke tests; see README for limitations"
+    },
+    {
+      "file": "ucontextlib.py",
+      "sha256": "c0600ae6c2e23c0bd73a7c63de2e29229aaf963bc617c515ea1f8ca75c46348f",
+      "source": "micropython/ucontextlib/ucontextlib.py",
+      "validation": "host/device API smoke tests; see README for limitations"
+    },
+    {
+      "file": "README.txt",
+      "source": "solarOS",
+      "sha256": "a432c1f7ddbe4eb5604162c6ac012aae0775d5d9339cd2d200ef506896f7c5ac"
+    }
+  ],
+  "archive": {
+    "file": "micropython-lib-4fa59bd6a591.zip",
+    "sha256": "4e108a708be3808a3745c87dab8af5ffeed39ea43950df6c27d5320b99b109a9",
+    "status": "source archive; packages outside installed set are not validated"
+  }
+}

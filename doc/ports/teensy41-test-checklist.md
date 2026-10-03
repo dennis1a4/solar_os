@@ -410,3 +410,22 @@ These physical checks remain pending even when automated software checks pass.
 - [ ] **UPSTREAM-NTP:** rerun `test_teensy41_compose.py` host UDP NTP fixture.
   On the 4.15.18 integration, command/pipe and PSRAM pressure checks passed, but
   the local NTP reply timed out; network regression remains unverified.
+
+## Python hardware and offline library bundle
+
+- [ ] **PY-HW-I2C:** real sensor on each exposed bus: 100 kHz, 8/16-bit register
+  addressing, repeated START, 32-byte limits, device removal/timeouts and lease
+  conflicts. LSM9DS1/BMM150 sources are bundled; actual measurements unverified.
+- [ ] **PY-HW-SPI:** expansion slot1 modes 0..3 (slot0 CS37 is reserved by the bench LCD), automatic CS, full duplex,
+  clocks through 12 MHz, disconnect and cancellation; drivers requiring held CS
+  over multiple calls need an explicit future API.
+- [ ] **PY-HW-UART:** Serial7/8 cross-port loopback, partial reads/writes, timeouts
+  and dense input under load. Serial3 remains blocked by legacy LCD wiring.
+- [ ] **PY-HW-ADC:** validate scaling and calibration using safe known voltages
+  on an unreserved analog pin (pin14 on this bench). read_u16 scales the native
+  default 10-bit conversion.
+- [ ] **PY-HW-PWM:** measure frequency/duty and deinit state on 28/29 or 36/37;
+  verify paired timer ownership excludes other clients. No waveform test yet.
+- [ ] **PY-LIB-EXTRA:** packages in the full micropython-lib SD archive are source
+  availability only. Validate dependencies and missing native modules before
+  promoting any of them to the installed /flash/lib set.

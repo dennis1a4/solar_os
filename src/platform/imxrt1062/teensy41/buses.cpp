@@ -264,3 +264,11 @@ extern "C" esp_err_t solar_os_bus_uart_autobaud_start(const char *,const char *)
 extern "C" esp_err_t solar_os_bus_uart_autobaud_finish(const char *,const char *,solar_os_bus_uart_autobaud_result_t *) {return ESP_ERR_NOT_SUPPORTED;}
 extern "C" esp_err_t solar_os_bus_uart_autobaud_cancel(const char *,const char *) {return ESP_ERR_NOT_SUPPORTED;}
 #endif
+#if SK_HW_RESOURCES
+int sk_uart_available(unsigned slot,const char *owner) {
+    if(slot>=3 || !owner)return 0;
+    xSemaphoreTake(slot_mutex,portMAX_DELAY);
+    int n=!strcmp(uart_owners[slot],owner)?uarts[slot]->available():0;
+    xSemaphoreGive(slot_mutex);return n;
+}
+#endif

@@ -4,6 +4,40 @@ Updated 2026-10-03. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## Python hardware/offline bundle — 2026-10-03
+
+Implemented native resource-managed handles plus a `machine` compatibility
+subset for GPIO, I2C, expansion SPI, UART, ADC and PWM. The installed `os`/`time`
+helpers cover file/directory operations, UTC seconds and cooperative sleeps/ticks.
+Imports search `/flash/lib` and `/sd/lib`. The VM still uses 512 KiB PSRAM;
+16 bounded native hardware handles cost 576 additional static RAM1 bytes.
+Measured idle heap is 37,572 bytes, with 8,123,928 bytes free PSRAM.
+
+Installed 71,061 bytes of versioned libraries/license/API notes in `/flash/lib`,
+plus examples in `/sd/python-examples`. Eleven Python modules include the port
+compatibility files, heapq/bisect/itertools/functools/context helpers and two
+import-tested IMU drivers (BMM150/LSM9DS1). `manifest.json` records sources and
+hashes. Full official micropython-lib source at commit
+`4fa59bd6a5916783e8503e9f2339627c8cffa5bf` is cached as
+`/sd/python-offline/micropython-lib-4fa59bd6a591.zip` (793,639 bytes), verified
+SHA256 `4e108a708be3808a3745c87dab8af5ffeed39ea43950df6c27d5320b99b109a9`.
+Archive-only packages have not been certified compatible.
+
+Host wrapper and manual tests pass. Device acceptance covers imports, GPIO/UART
+and paired PWM conflicts, reserved pins/I2C address, transfer/handle limits,
+filesystem operations and directory validation, tick wrapping, and repeated,
+exception and Ctrl+C cleanup with exact memory recovery. See
+`test_teensy41_python_hardware.py`. Physical sensor/SPI/ADC/PWM validation is
+pending in the master checklist. `README.txt` in the library directory documents
+all limits. MIDI/audio/USB-PD/CAN Python bindings are still future work; this is
+not complete stock `machine`/standard-library compatibility.
+
+The actual legacy bench uses LCD CS37/reset9/WAIT15: SPI slot0 and slot2 are
+blocked, slot1 CS36 is available, and ADC pin14 is unreserved. PWM claims the
+whole 28/29 or 36/37 timer pair, so only 28/29 is usable with this LCD profile.
+ADC is disabled in profiles with physical scope ADC enabled until ADC controller
+arbitration is added.
+
 ## Pipe pager — 2026-10-03
 
 `commands | less` now opens the interactive pager on USB/LCD. Other supported
@@ -96,8 +130,8 @@ The normal `teensy41_display` image requires that wiring change and disables
 Serial1. Both scope and USB-PD demo apps are available on the installed image.
 
 Installed HEX SHA256:
-`7f3ee2664358f4d5c46438f892884904c1ecb8fd38fc8a141ae34d5680962559`.
-Flash 1,414,448 bytes; RAM1 428,224; RAM2 324,472.
+`517afb232c3a432a98aa896a96dbfa5fd8ce1cc109b13b17ec66eef62657bb9f`.
+Flash 1,418,808 bytes; RAM1 428,800; RAM2 324,472.
 Microsoft keyboard `045e:0750`, powered USB host hub, RA8875 LCD, native SD,
 USB drive, QSPI flash and 8 MiB PSRAM. Audio shield was absent in recent tests.
 See [quick-start and wiring](README.md).

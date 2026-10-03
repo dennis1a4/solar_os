@@ -31,3 +31,9 @@ struct HardwareSerial {
 };
 using HardwareSerialIMXRT=HardwareSerial;
 extern HardwareSerial Serial7,Serial8,Serial3;
+inline int analogRead(unsigned pin){assert(pin<42);return 512;}
+inline void analogWrite(unsigned pin,int value){assert(pin<42);test_values[pin]=value;}
+inline void analogWriteFrequency(unsigned pin,int hz){assert(pin<42 && hz>0);}
+inline uint32_t analogWriteResolution(uint32_t bits){return bits;}
+inline uint32_t millis(){return 1234;}
+inline uint32_t micros(){return 1234567;}

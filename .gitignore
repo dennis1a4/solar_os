@@ -27,3 +27,5 @@ tests/host/ble_multi_peer_test
 tests/host/ble_hid_test
 
 scripts/ports/__pycache__/
+
+lib/**/__pycache__/
