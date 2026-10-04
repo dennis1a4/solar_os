@@ -449,6 +449,8 @@ memory recovery (36,100 internal / 8,123,928 PSRAM bytes free).
   check capture/writer stack high-water marks. Hardware overruns are unmeasured.
 - [ ] **SERIAL-STORAGE — Failure:** full/removed SD, long storage stalls and
   power interruption. Confirm visible error, stop cleanup and filesystem recovery.
-- [ ] **SERIAL-CTS — Future implementation/hardware:** select and reserve suitable
-  RTS/CTS pins, wire an external peer, implement bounded shutdown with CTS held
+- [ ] **SERIAL-CTS — Future implementation/hardware:** use the approved final-PCB
+  CTS header 7 / GPIO37 and RTS header 11 / GPIO25; DTR moves to header 12 /
+  GPIO24. Preserve bench GPIO37 LCD CS. Resolve XBAR CTS polarity and shared
+  I2C2/CS ownership, wire an external peer, implement bounded shutdown with CTS held
   inactive, then verify hardware backpressure. RTS/CTS is not enabled in this version.

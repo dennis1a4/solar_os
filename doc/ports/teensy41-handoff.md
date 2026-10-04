@@ -412,3 +412,19 @@ The first device attempt needed prompt-aware test waiting; another corrected the
 expected singleton-conflict message. Final device checks passed. The final
 firmware additionally invalidates the graphics presenter on text-shell return;
 graphical/Telnet checks ran on that final image.
+
+### Approved final-PCB CTS assignment — 2026-10-03
+
+User approved the RS232 module routing change in
+`PCBPlacement_2026-10-03/modules/RS232`: header 7 / GPIO37 is CTS,
+header 11 / GPIO25 remains RTS, and DTR moves to freed header 12 / GPIO24.
+The motherboard pin mapping stays unchanged; schematic and unrouted module PCB
+pad nets were synchronized and validated. The slot-1 equivalent header 7 maps
+to GPIO36, but no slot-1 module redesign is included in this change.
+
+**Bench exception:** retain the installed `teensy41_telnet_legacy` profile and
+GPIO37 LCD CS. This is a final-PCB assignment, not authorization to claim that
+pin for CTS on the bench. Firmware still supports none/XON-XOFF only. Final
+RTS/CTS integration must resolve XBAR polarity, arbitrate the shared I2C2 bus
+and the CS pin, and pass physical jumper/flow tests. See PCB review notes and
+the master checklist. No firmware rebuild/upload accompanied this change.
