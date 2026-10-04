@@ -104,4 +104,7 @@ continues to use its existing reset path and does not invoke this coordinator.
 see the [handover](teensy41-handoff.md) for its checksum and memory measurements.
 The first suspended-script run found a native file-I/O pause boundary that also
 needed shutdown resumption; the final fixture verifies its three-second finally
-writes/closes successfully. Physical results are recorded separately.
+writes/closes successfully. The user subsequently confirmed that the physical
+On/Off jumper shut down the board and a second jumper action woke it again.
+This confirms basic shutdown/wake, not measured rail timing, forced hold,
+shutdown under recording load or comprehensive peripheral recovery.

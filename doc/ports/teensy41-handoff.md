@@ -32,8 +32,9 @@ and exact memory recovery. The existing Python process device regression also
 passes (pause/bg/fg, native I/O, disconnect, cross-console reattach, input,
 repeated VM cleanup). Shutdown task stack high-water free: 6,320 bytes after
 these tests; real PD and sustained serial drain have not exercised this stack.
-The physical button, forced hold and real PD/rail
-measurements are tracked separately in the master checklist.
+The user confirmed physical On/Off-to-GND shutdown and subsequent wake on
+2026-10-04. Detailed peripheral recovery, shutdown under recording load, forced
+hold and real PD/rail measurements remain in the master checklist.
 
 Installed HEX SHA256:
 `feb87ed27c696eaaad771b8091a46489df77b619225a0f1edb050018c5b0b48a`.

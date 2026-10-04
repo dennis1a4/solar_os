@@ -12,7 +12,7 @@ Do not check off a physical test based on simulation, injected input or a build.
 | USB-storage baseline | Historical, preserved checkpoint | Earlier physical USB/keyboard checks passed here; no SD recovery or Clock |
 | Clock image | Prior validated checkpoint | Includes SD recovery and OBD demo; AmpEn is still pin 40; Clock remote checks passed |
 | Workstation legacy image, stages 1–4 plus RAMFS | Prior checkpoint; sessions/jobs/processes/network diagnostics/hardware ownership device tests, UART8 loopback and basic physical repeat passed | AmpEn40, scope ADC disabled, Serial1 retained; includes scope/pdpower demos |
-| Graceful-shutdown legacy image | Currently installed; software shutdown and Python process regression pass | LCD CS37/reset9/WAIT15, AmpEn40, Serial1 retained; physical On/Off/PD tests below remain pending |
+| Graceful-shutdown legacy image | Currently installed; software shutdown and Python process regression pass | LCD CS37/reset9/WAIT15, AmpEn40, Serial1 retained; basic On/Off shutdown/wake user-confirmed; remaining power tests below |
 | Normal display candidate | Built, not flashed | Telnet plus scope ADC40/AmpEn0; Serial1 UART disabled; USB/LCD retained |
 
 - [ ] **SETUP-1 — Pending pin move:** move AmpEn to pin 0 before installing the
@@ -465,9 +465,12 @@ profile; no GPIO reassignment is needed for the dedicated On/Off pad.
   tests and final-device `--check` acceptance pass, including Python finally,
   refusal timeout, foreground REPL, script/serial cleanup and memory recovery.
   HEX `feb87ed27c696eaaad771b8091a46489df77b619225a0f1edb050018c5b0b48a`.
-- [ ] **OFF-1 — Physical tap/wake:** with idle consoles, briefly jumper On/Off
-  to GND and release. Verify USB disconnect/CPU off; then jumper for about 0.5 s
-  and release to wake. Confirm LCD, USB keyboard, storage and shells recover.
+- [x] **OFF-1 — Physical tap/wake:** user confirmed on 2026-10-04 that briefly
+  jumpering On/Off to GND shut down the Teensy, and a second jumper action woke
+  it again, on the installed graceful-shutdown firmware. User-reported result;
+  electrical timing and rails were not measured.
+- [ ] **OFF-1B — Peripheral recovery:** explicitly verify LCD, USB keyboard,
+  mounted storage and both shells after an On/Off shutdown/wake cycle.
 - [ ] **OFF-2 — Button during Python/logging:** repeat with a cooperative Python
   file writer and a serial/MIDI recording. Inspect closed files after wake;
   compare with `poweroff --check` software acceptance. Repeat with a mounted
