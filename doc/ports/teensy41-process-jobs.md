@@ -86,3 +86,12 @@ handover for logs, installed image checksum and recovery snapshot.
 The final test left the board at its shell with no Python process alive. Test
 fixtures remain in unique `/sd/_process_*`, `/sd/_process_edges_*` and
 `/sd/_solaros_pynet_*` directories; Ethernet remains up after the network test.
+
+## Power-button shutdown
+
+The [On/Off coordinator](teensy41-shutdown.md) resumes suspended workers,
+exposes `solaros.shutdown_requested()`, and gives scripts a two-second grace
+period before one interrupt. Python finalization remains on its own worker;
+its file-I/O return boundary also honors shutdown resumption. Refusing to exit
+leaves power on after the 15-second deadline. Ordinary Ctrl+Z/fg/bg and job-stop
+behavior outside shutdown remains unchanged.

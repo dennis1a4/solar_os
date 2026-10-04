@@ -7,6 +7,7 @@
 extern "C" {
 #endif
 void sk_serial_init(void);
+esp_err_t sk_serial_shutdown(void);
 void sk_serial_settings(const char *bus, char *out, size_t capacity);
 esp_err_t sk_serial_attach(const char *bus, uint32_t baud);
 void sk_serial_detach(const char *bus);

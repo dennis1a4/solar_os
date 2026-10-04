@@ -76,10 +76,16 @@ int main(int argc,char **argv){
     assert(start_log(0,9600,a.c_str(),false)==ESP_OK);
     assert(start_log(1,19200,b.c_str(),false)==ESP_OK);
     incoming[0]={1,2};incoming[1]={3,4};capture_once();
+    assert(sk_serial_shutdown()==ESP_OK && !claimed[0] && !claimed[1]);
+    assert(contents(a.c_str())==std::string("\1\2",2) && contents(b.c_str())==std::string("\3\4",2));
+    assert(sk_serial_shutdown()==ESP_OK && allocated==0);
+    assert(start_log(0,9600,(base+"/retry-a.bin").c_str(),false)==ESP_OK);
+    assert(start_log(1,19200,(base+"/retry-b.bin").c_str(),false)==ESP_OK);
     assert(stop_log(0)==ESP_OK && !claimed[0] && claimed[1]);
     incoming[1]={5};capture_once();assert(stop_log(1)==ESP_OK);
     assert(contents(a.c_str())==std::string("\1\2",2));
-    assert(contents(b.c_str())==std::string("\3\4\5",3));
+    assert(contents(b.c_str())==std::string("\3\4",2));
+    assert(contents((base+"/retry-b.bin").c_str())==std::string("\5",1));
     assert(allocated==0);
     // Partial storage writes latch an error and stop enqueueing.
     auto &c=channels[0];c.file=fopen("/dev/full","wb");assert(c.file);setvbuf(c.file,nullptr,_IONBF,0);

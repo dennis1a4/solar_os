@@ -23,7 +23,12 @@ static int process_pop() {
     int ch=process.input[process.input_tail];process.input_tail=(process.input_tail+1)%sizeof(process.input);return ch;
 }
 extern "C" bool sk_process_poll_cancel() {
-    do {console_yield();} while(process.paused && !process.stopping);
+    do {console_yield();} while(process.paused && !process.stopping && !sk_power_cleaning());
+    static uint32_t shutdown_interrupt_generation;
+    if(sk_power_interrupt_due() && shutdown_interrupt_generation!=sk_power_generation()) {
+        shutdown_interrupt_generation=sk_power_generation();
+        process.interrupt=true;
+    }
 #if SK_GRAPHICS
     if(!process.detached && solar_os_context_graphics_active(&process.frame->context)) {
         extern void sk_python_gfx_key(int);
@@ -49,7 +54,7 @@ static void process_run(void *) {
     const auto result=process.start(ctx);
     process.executing=false;
     if(result!=ESP_OK)solar_os_context_finish(ctx,1,"python: worker start failed");
-    while(!ctx->exit_requested && !process.stopping) {
+    while(!ctx->exit_requested && !process.stopping && !sk_power_cleaning()) {
         if(!process.paused && !process.detached) {
             const int ch=process_pop();
             if(ch>=0){solar_os_event_t e{};e.type=SOLAR_OS_EVENT_CHAR;e.data.ch=ch;process.executing=true;process.event(ctx,&e);process.executing=false;}
@@ -59,6 +64,7 @@ static void process_run(void *) {
     // Cleanup always executes on the VM's own stack, including GC finalizers.
     process.stop(ctx);
     if(!ctx->exit_requested)solar_os_context_finish(ctx,process.stopping?130:0,nullptr);
+    if(sk_power_cleaning())process.stopping=true;
     process.done=true;
     xSemaphoreGiveRecursive(console_gate);
     solar_os_task_delete_internal(nullptr);
@@ -246,6 +252,6 @@ extern "C" void sk_process_io_unlock() {xSemaphoreGiveRecursive(console_gate);}
 extern "C" void sk_process_io_lock() {
     const int saved_errno=errno;
     xSemaphoreTakeRecursive(console_gate,portMAX_DELAY);
-    while(process.paused && !process.stopping)console_yield();
+    while(process.paused && !process.stopping && !sk_power_cleaning())console_yield();
     errno=saved_errno;
 }

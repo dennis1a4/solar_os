@@ -15,6 +15,7 @@ static StaticSemaphore_t guard_storage;
 static SemaphoreHandle_t guard;
 static TaskHandle_t worker;
 static unsigned bus,address;
+static bool configured;
 static volatile bool stopping,done;
 static bool read_register(void *,uint8_t reg,uint8_t *out,size_t n){return sk_i2c_transfer(bus,address,&reg,1,out,n)==ESP_OK;}
 static bool write_register(void *,uint8_t reg,const uint8_t *data,size_t n){
@@ -50,6 +51,7 @@ extern "C" void sk_shell_cmd_pd(solar_os_context_t *ctx,int argc,char **argv){
         if(strlen(argv[2])!=4 || strncmp(argv[2],"i2c",3) || !number(argv[2]+3,0,2,next_bus) || !number(argv[3],0x28,0x2b,next_address) || !number(argv[4],5000,20000,mv) || !number(argv[5],100,5000,ma))goto usage;
         bus=next_bus;address=next_address;
         if(solar_os_resource_claim(SOLAR_OS_RESOURCE_I2C_ADDRESS,bus,address,"usb-pd","STUSB4500")!=ESP_OK){solar_os_shell_io_writeln(io,"pd: address is reserved");return;}
+        configured=true; // Even a partial initialization can change the contract.
         solar_stusb4500_io_t transport{read_register,write_register,nullptr};
         bool ok=solar_stusb4500_init(&controller,&transport,mv,ma);
         if(ok){
@@ -71,5 +73,32 @@ extern "C" void sk_shell_cmd_pd(solar_os_context_t *ctx,int argc,char **argv){
     }
 usage:
     solar_os_shell_io_writeln(io,"usage: pd status|close | pd open i2cN ADDRESS BOARD_MAX_MV BOARD_MAX_MA | pd request MV MA");
+}
+// Called only after console/Python/bus owners have quiesced. A configured but
+// closed/failed monitor cannot prove that an old high-voltage contract ended.
+extern "C" bool sk_pd_shutdown() {
+    if(!configured)return true;
+    if(!worker || xSemaphoreTake(guard,pdMS_TO_TICKS(100))!=pdTRUE)return false;
+    bool requested=false;
+    solar_pd_power_poll(&power,millis());
+    for(unsigned i=0;i<power.source.count;++i)if(power.source.profiles[i].mv==5000) {
+        unsigned ma=power.source.profiles[i].ma;
+        if(ma>power.max_ma)ma=power.max_ma;
+        ma=ma/10*10;
+        requested=solar_pd_power_request(&power,i,ma,millis());break;
+    }
+    xSemaphoreGive(guard);
+    if(!requested)return false;
+    const uint32_t began=millis();
+    while(uint32_t(millis()-began)<3500) {
+        if(xSemaphoreTake(guard,pdMS_TO_TICKS(100))!=pdTRUE)return false;
+        bool ready=power.state==SOLAR_PD_POWER_READY && power.source.contract_valid && power.source.contract.mv==5000;
+        bool waiting=power.state==SOLAR_PD_POWER_WAITING;
+        xSemaphoreGive(guard);
+        if(ready)return true;
+        if(!waiting)return false;
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    return false;
 }
 #endif

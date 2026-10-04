@@ -13,6 +13,8 @@ pages = manual.load_pages(root / "doc/manual", root / "packages/solar_os_package
 selection_spec = importlib.util.spec_from_file_location("teensy_manual_selection", root / "scripts/ports/teensy41_manual.py")
 selection = importlib.util.module_from_spec(selection_spec)
 selection_spec.loader.exec_module(selection)
+# Shutdown help must be available without a downloaded ESP manual.
+manual.EMBEDDED_REFERENCE_TOPICS |= {"command.poweroff"}
 output = manual.render_header(selection.select_pages(pages, manual.markdown_to_terminal_text), root / "doc/manual")
 header = generated / "solar_os_manual_data.h"
 if not header.exists() or header.read_text() != output:

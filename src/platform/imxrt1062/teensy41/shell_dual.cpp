@@ -2,6 +2,7 @@
 #include <arduino_freertos.h>
 #include <semphr.h>
 #include "platform.h"
+#include "power_shutdown.h"
 #if SK_HW_RESOURCES
 #include "serial_terminal.h"
 #endif
@@ -44,6 +45,7 @@ struct Console {
     solar_os_tui_t *tui;
     AppFrame *frame;
     AppFrame *retained[4];
+    uint32_t shutdown_generation,shutdown_reported;
     uint32_t request_id;
     uint8_t request_action;
     bool quiet;
@@ -144,7 +146,7 @@ static bool connected() {
 // console. No second task enters a filesystem operation midway through one.
 static void console_yield() {
 #if SK_CLOCK
-    solar_os_schedule_poll();
+    if(!sk_power_requested())solar_os_schedule_poll();
 #endif
     sk_lcd_flush();
     xSemaphoreGiveRecursive(console_gate);
@@ -162,6 +164,9 @@ extern "C" bool sk_console_poll_cancel(bool escape) {
     auto *command_io=solar_os_context_shell_io(&active().context);
     if(!connected()) {if(command_io)command_io->command_cancelled=true;return true;}
     bool stop=false;
+#if SK_HW_RESOURCES
+    stop=sk_power_requested();
+#endif
     for(int ch;(ch=read_key())>=0;) {
         if(ch==3 || ch==29 || (escape && ch==27))stop=true;
 #if SK_GRAPHICS
@@ -257,6 +262,9 @@ static bool suspend_app();
 #if SK_BACKGROUND_JOBS
 #include "background_jobs.h"
 #include "process_jobs.h"
+#endif
+#if SK_HW_RESOURCES
+#include "shell_shutdown.h"
 #endif
 #include "solar_os_shell_completion_providers.h"
 extern "C" bool solar_os_shell_completion_yield(void *) { console_yield();return !connected(); }
@@ -360,7 +368,7 @@ static void run_console(void *) {
     uint32_t last_byte=0,last_tick=0;
     while(true) {
 #if SK_TELNETD
-        if(sk_console_is_remote()) {
+        if(sk_console_is_remote() && !sk_power_requested()) {
             sk_telnet_poll(!session);
             if(!sk_telnet_connected()) {
                 close_all_apps();
@@ -378,6 +386,14 @@ static void run_console(void *) {
 #endif
 #if SK_BACKGROUND_JOBS
         process_reap_stopped();
+#endif
+#if SK_HW_RESOURCES
+        if(sk_power_requested()) {shutdown_console_poll();console_yield();continue;}
+        if(active().shutdown_reported!=sk_power_generation()) {
+            active().shutdown_reported=sk_power_generation();
+            solar_os_shell_io_printf(solar_os_shell_session_io(session),"\npoweroff: %s\n",sk_power_status());
+            if(!foreground)solar_os_shell_session_prompt(&shell_context,session);
+        }
 #endif
         service_session_request();
         auto *io=solar_os_shell_session_io(session);
@@ -529,6 +545,9 @@ void sk_upstream_shell_run() {
 #if SK_BACKGROUND_JOBS
     background_begin();
     process_begin();
+#endif
+#if SK_HW_RESOURCES
+    sk_power_init();
 #endif
     // Hold gate until task handles are published.
     xSemaphoreTakeRecursive(console_gate,portMAX_DELAY);

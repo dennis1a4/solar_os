@@ -69,12 +69,16 @@ static mp_obj_t fs(size_t n,const mp_obj_t *a) {
     if(rc)mp_raise_OSError(errno);return mp_const_none;
 }
 static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(fs_obj,1,3,fs);
+#include "power_shutdown.h"
+static mp_obj_t shutdown_requested(void) { return mp_obj_new_bool(sk_power_requested()); }
+static MP_DEFINE_CONST_FUN_OBJ_0(shutdown_requested_obj,shutdown_requested);
 static void put(mp_obj_t module,const char *name,const void *value) {mp_obj_dict_store(MP_OBJ_FROM_PTR(((mp_obj_module_t *)MP_OBJ_TO_PTR(module))->globals),MP_OBJ_NEW_QSTR(qstr_from_str(name)),MP_OBJ_FROM_PTR(value));}
 void sk_python_hardware_init(solar_os_context_t *ctx) {
     hw_context=ctx;mp_obj_t module=mp_obj_new_module(qstr_from_str("_solaros_hw"));
     put(module,"open",&hw_open_obj);put(module,"close",&hw_close_obj);put(module,"value",&hw_value_obj);put(module,"transfer",&hw_transfer_obj);
     put(module,"ticks",&ticks_obj);put(module,"delay",&delay_obj);put(module,"epoch",&epoch_obj);put(module,"fs",&fs_obj);
     mp_obj_t root=mp_obj_new_module(qstr_from_str("solaros"));put(root,"hw",MP_OBJ_TO_PTR(module));
+    put(root,"shutdown_requested",&shutdown_requested_obj);
 }
 void sk_python_hardware_destroy(void) {sk_py_hw_reset();hw_context=NULL;}
 #endif

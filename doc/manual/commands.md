@@ -1377,3 +1377,9 @@ Run `commands` to list commands compiled into the current firmware, `man TOPIC`
 for a focused guide, and `help` for the complete manual tree. Commands are
 package-aware, support shell completion where applicable, and use the current
 shell working directory for relative paths.
+
+## Teensy graceful shutdown
+
+| Command | Usage | Description |
+| --- | --- | --- |
+| `poweroff` | `poweroff [--check\|status]` | Stop jobs and sync storage before powering off. `--check` leaves power on after cleanup. Close active or retained apps other than Python/COM first. |

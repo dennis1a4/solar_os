@@ -90,3 +90,8 @@ checks cover fresh/stale observations, source-index mapping, limits, failures,
 timeout and detach. Hardware tests are listed in the master checklist.
 Register references: [ST reference implementation](https://github.com/usb-c/STUSB4500/blob/master/Firmware/Project/Src/USB_PD_core.c)
 and [register definitions](https://github.com/usb-c/STUSB4500/blob/master/Firmware/Project/Inc/USB_PD_defines_STUSB-GEN1S.h).
+
+## Teensy On/Off button
+
+See [graceful shutdown](teensy41-shutdown.md) for the button, `poweroff`, Python
+cleanup, configured-controller 5 V negotiation, and external-rail limitations.

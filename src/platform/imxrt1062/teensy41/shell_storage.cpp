@@ -11,6 +11,7 @@
 #include "solar_os_storage.h"
 #include "flash_storage.h"
 #include "storage_lock.h"
+#include "power_shutdown.h"
 #include "usb_storage.h"
 #include "sd_storage.h"
 #if SK_RAMFS
@@ -309,7 +310,7 @@ extern "C" ssize_t __wrap_read(int fd,void *data,size_t size) { StorageLock lock
 #endif
     int n=f->file.read(data,size); if (n<0) errno=EIO; return n;
 }
-extern "C" ssize_t __wrap_write(int fd,const void *data,size_t size) { StorageLock lock;
+static ssize_t storage_write(int fd,const void *data,size_t size) { StorageLock lock;
     auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
     if (f->access==O_RDONLY) { errno=EBADF; return -1; }
 #if SK_RAMFS
@@ -322,7 +323,7 @@ extern "C" ssize_t __wrap_write(int fd,const void *data,size_t size) { StorageLo
     size_t n=f->file.write(data,size);
     if (n<size) { errno=EIO; if (!n && size) return -1; } return n;
 }
-extern "C" int __wrap_fsync(int fd) { StorageLock lock;
+static int storage_fsync(int fd) { StorageLock lock;
     auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
 #if SK_RAMFS
     if (f->ram) return solar_os_ramfs_ops()->fsync_p(f->ram,f->ram_fd);
@@ -332,7 +333,7 @@ extern "C" int __wrap_fsync(int fd) { StorageLock lock;
 #endif
     if (!f->file.sync()) { errno=EIO; return -1; } return 0;
 }
-extern "C" int __wrap_close(int fd) { StorageLock lock;
+static int storage_close(int fd) { StorageLock lock;
     auto *f=lookup(fd); if (!f) return -1;
     int ret=0;
 #if SK_RAMFS
@@ -348,6 +349,21 @@ extern "C" int __wrap_close(int fd) { StorageLock lock;
     if (!media_ready(f->usb,f->sd)) ret=-1;
     media_release(f->usb,f->sd); f->usb=f->sd=false;
     f->used=false; f->stream=nullptr; return ret;
+}
+// Preserve cleanup errors even when an app ignores fclose()/fsync() results.
+static uint32_t shutdown_error_generation;
+static void shutdown_note_error(bool failed) {
+    if(failed && sk_power_requested())shutdown_error_generation=sk_power_generation();
+}
+extern "C" ssize_t __wrap_write(int fd,const void *data,size_t size) {
+    StorageLock lock;auto n=storage_write(fd,data,size);
+    shutdown_note_error(n<0 || size_t(n)!=size);return n;
+}
+extern "C" int __wrap_fsync(int fd) {
+    StorageLock lock;int n=storage_fsync(fd);shutdown_note_error(n!=0);return n;
+}
+extern "C" int __wrap_close(int fd) {
+    StorageLock lock;int n=storage_close(fd);shutdown_note_error(n!=0);return n;
 }
 extern "C" off_t __wrap_lseek(int fd,off_t offset,int whence) { StorageLock lock;
     auto *f=lookup(fd); if (!f || !media_ready(f->usb,f->sd)) return -1;
@@ -632,5 +648,35 @@ extern "C" esp_err_t solar_os_storage_rename(const char *a,const char *b) { Stor
 extern "C" esp_err_t solar_os_storage_sync_file(FILE *f) { StorageLock lock;
     if (!f) return ESP_ERR_INVALID_ARG;
     return fflush(f)==0 && __wrap_fsync(__wrap_fileno(f))==0 ? ESP_OK : ESP_FAIL;
+}
+// All known application writers have stopped before this barrier. Do not
+// close someone else's live FILE: that would invalidate its libc buffer.
+extern "C" bool sk_storage_shutdown_sync() {
+    StorageLock lock;
+    if(shutdown_error_generation==sk_power_generation())return false;
+    for(auto &f:files)if(f.used)return false;
+    bool ok=true;
+#if SK_SD_RECOVERY
+    if(sk_sd_is_mounted()) {
+        FsFile root;
+        bool synced=root.open(sk_sd_volume(),"/",O_RDONLY) && root.sync();
+        ok=root.close() && synced && ok;
+    }
+#endif
+#if SK_USB_STORAGE
+    if(sk_usb_storage_mounted()) {
+        FsFile root;
+        bool synced=root.open(sk_usb_storage_volume(),"/",O_RDONLY) && root.sync();
+        ok=root.close() && synced && ok;
+    }
+#endif
+#if SK_QSPI_FLASH
+    if(sk_flash_mounted()) {
+        auto *fs=sk_flash_fs();
+        // LittleFS commits each metadata change/closed file synchronously.
+        ok=fs->cfg->sync(fs->cfg)==0 && ok;
+    }
+#endif
+    return ok;
 }
 #endif

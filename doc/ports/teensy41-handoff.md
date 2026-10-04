@@ -1,8 +1,49 @@
 # Teensy / SuperKeyboard handover
 
-Updated 2026-10-03. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
+Updated 2026-10-04. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
+
+## Graceful On/Off shutdown — 2026-10-04
+
+Installed on `teensy41_telnet_legacy`; the dedicated On/Off pad uses no GPIO.
+Bench LCD CS37/reset9/WAIT15, AmpEn40 and Serial1 remain unchanged. A short
+On/Off-to-GND press and `poweroff` use the same cleanup coordinator.
+`poweroff --check` performs real cleanup without cutting power;
+`poweroff status` reports completion/refusal. The embedded `man poweroff`
+reference is available offline.
+
+Python exposes `solaros.shutdown_requested()`, gets a two-second grace period,
+then one interrupt per attempt. Both VM polling and the native file-I/O return
+boundary allow a suspended worker to finish its finally/with cleanup. Jobs and
+scheduler triggers pause; console owners release COM/hardware resources;
+serial logs drain; mounted storage is synced. Other active/retained apps must
+be closed first. A 15-second deadline, storage error or unconfirmed configured
+PD controller leaves power on; no live VM is forcibly deleted. Never-configured
+PD is skipped on the unwired bench. External regulator EN control and emergency
+PD fallback are still hardware work. `reboot` retains its previous reset path.
+
+Host sanitizer tests pass for the coordinator failure/deadline paths, serial
+logger drain/cleanup and existing PD policy/app. Manual tests pass (16 generator,
+11 port). Final-device shutdown acceptance passes for idle/refused requests,
+cooperative Python, a suspended CPU loop with a three-second finally,
+interrupt refusal timeout, foreground REPL, script/serial cleanup, offline help
+and exact memory recovery. The existing Python process device regression also
+passes (pause/bg/fg, native I/O, disconnect, cross-console reattach, input,
+repeated VM cleanup). Shutdown task stack high-water free: 6,320 bytes after
+these tests; real PD and sustained serial drain have not exercised this stack.
+The physical button, forced hold and real PD/rail
+measurements are tracked separately in the master checklist.
+
+Installed HEX SHA256:
+`feb87ed27c696eaaad771b8091a46489df77b619225a0f1edb050018c5b0b48a`.
+Flash 1,430,016 bytes; static RAM1 430,528; RAM2 342,904. The coordinator adds
+8 KiB of internal OCRAM stack. Measured idle heap: 35,844 / 84,192 bytes internal;
+PSRAM 8,123,892 / 8,388,608 bytes. Acceptance evidence:
+`/tmp/teensy-shutdown-device.json`, `/tmp/teensy-shutdown-process-regression.json`,
+`/tmp/teensy-power-button-upload.log`.
+The device test leaves unique `/sd/_shutdown_*` fixtures for inspection.
+See [shutdown implementation and limitations](teensy41-shutdown.md).
 
 ## Serial terminal/logger — 2026-10-03
 

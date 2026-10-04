@@ -194,7 +194,9 @@ static void background_begin() {
 static void background_run(void *) {
     xSemaphoreTakeRecursive(console_gate,portMAX_DELAY);
     while(true) {
-        solar_os_jobs_tick(nullptr,uint32_t(solar_os_time_uptime_ms()));
+        if(sk_power_cleaning()) {
+            for(unsigned i=0;i<4;++i)if(script_jobs[i].file || script_jobs[i].pending || script_jobs[i].console.shell)job_finish(i,ESP_OK);
+        } else if(!sk_power_requested())solar_os_jobs_tick(nullptr,uint32_t(solar_os_time_uptime_ms()));
         background_console=nullptr;console_yield();
     }
 }

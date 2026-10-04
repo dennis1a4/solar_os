@@ -11,6 +11,9 @@ void sk_shell_cmd_midi(solar_os_context_t *,int,char **);
 #endif
 #if SK_HW_RESOURCES
 #include "hardware_commands.h"
+#if SK_LCD_CONSOLE
+void sk_shell_cmd_poweroff(solar_os_context_t *,int,char **);
+#endif
 #endif
 #include "solar_os_shell_gesture_completion.h"
 #include "solar_os_shell_rtspd_completion.h"
@@ -603,6 +606,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"spi", "transfer through owned expansion selects", solar_os_shell_cmd_spi},
     {"uart", "claim and use expansion UARTs", solar_os_shell_cmd_uart},
     {"serial", "background serial recording and status", sk_shell_cmd_serial},
+#if SK_LCD_CONSOLE
+    {"poweroff", "graceful shutdown or cleanup check", sk_shell_cmd_poweroff},
+#endif
     {"expansion", "inspect and lease expansion slots", solar_os_shell_cmd_expansion},
 #endif
 #if SK_NET_DIAGNOSTICS
@@ -5319,6 +5325,11 @@ static void cmd_watch(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
+#if SK_HW_RESOURCES && SK_LCD_CONSOLE
+    for(int i=1;i<argc;++i)if(!strcmp(argv[i],"poweroff")) {
+        solar_os_shell_io_writeln(term,"watch: poweroff must run separately");return;
+    }
+#endif
     if (argc < 2) {
         solar_os_shell_diag_missing(term, "watch", "command",
                                     "watch [-n seconds] <command> [args...]");

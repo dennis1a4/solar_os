@@ -218,6 +218,14 @@ static esp_err_t stop_log(int i){
     }
     int result=fclose(file);release(remaining);Lock state(state_lock);if(result)c.error=ESP_FAIL;return c.error;
 }
+extern "C" esp_err_t sk_serial_shutdown() {
+    esp_err_t result=ESP_OK;
+    for(unsigned i=0;i<3;++i) {
+        bool open;{Lock state(state_lock);open=channels[i].file!=nullptr;}
+        if(open && stop_log(i)!=ESP_OK)result=ESP_FAIL;
+    }
+    return result;
+}
 extern "C" void sk_serial_settings(const char *name,char *out,size_t capacity){
     int i=index_of(name);if(i<0){if(capacity)*out=0;return;}
     Lock state(state_lock);snprintf(out,capacity,"%s flow=%s",settings[i].framing,settings[i].software_flow?"xonxoff":"none");

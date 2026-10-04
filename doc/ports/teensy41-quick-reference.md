@@ -135,3 +135,11 @@ Suggested implementation order:
 This change adds the quick reference, corrects View's Teensy manual selection
 and the old graphics-guide key mapping, and tests documentation coverage. It
 does not implement the proposed universal help key or dispatcher behavior.
+
+## Graceful shutdown
+
+`poweroff --check` stops jobs and syncs files while leaving power on.
+`poweroff status` explains completion/refusal; `poweroff` powers down after
+successful cleanup. A tap of the dedicated Teensy On/Off-to-GND button uses the
+same path. Close apps other than Python/COM first. See
+[shutdown and Python cleanup](teensy41-shutdown.md) before testing physical cutoff.
