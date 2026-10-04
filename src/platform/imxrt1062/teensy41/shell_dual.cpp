@@ -2,6 +2,9 @@
 #include <arduino_freertos.h>
 #include <semphr.h>
 #include "platform.h"
+#if SK_HW_RESOURCES
+#include "serial_terminal.h"
+#endif
 #if SK_TELNETD
 #include "telnet_console.h"
 #endif
@@ -499,6 +502,9 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
     }
 }
 void sk_upstream_shell_run() {
+#if SK_HW_RESOURCES
+    sk_serial_init();
+#endif
 #if SK_PLOT
     extern void sk_plot_streams_begin(); sk_plot_streams_begin();
 #endif

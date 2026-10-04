@@ -602,6 +602,7 @@ static const shell_command_t shell_builtin_commands[] = {
     {"i2c", "bounded I2C probing and transfers", solar_os_shell_cmd_i2c},
     {"spi", "transfer through owned expansion selects", solar_os_shell_cmd_spi},
     {"uart", "claim and use expansion UARTs", solar_os_shell_cmd_uart},
+    {"serial", "background serial recording and status", sk_shell_cmd_serial},
     {"expansion", "inspect and lease expansion slots", solar_os_shell_cmd_expansion},
 #endif
 #if SK_NET_DIAGNOSTICS
@@ -8841,7 +8842,7 @@ static void shell_complete_command(solar_os_context_t *ctx, bool show_matches)
         else if (!strcmp(w->command,"setterm")) kind=SOLAR_OS_COMPLETE_SETTING;
 #if SK_HW_RESOURCES
         else if (!strcmp(w->command,"io") || !strcmp(w->command,"gpio") || !strcmp(w->command,"uart") ||
-                 !strcmp(w->command,"com") || !strcmp(w->command,"i2c") || !strcmp(w->command,"spi") ||
+                 !strcmp(w->command,"com") || !strcmp(w->command,"serial") || !strcmp(w->command,"i2c") || !strcmp(w->command,"spi") ||
                  !strcmp(w->command,"expansion")) kind=SOLAR_OS_COMPLETE_CUSTOM;
 #endif
 #if SK_RAMFS

@@ -46,6 +46,7 @@ bool sk_sd_is_mounted();
 
 #if SK_HW_RESOURCES
 esp_err_t sk_resources_begin();
+esp_err_t sk_uart_claim_format(unsigned slot,const char *owner,uint32_t baud,uint16_t format);
 esp_err_t sk_uart_claim(unsigned slot,const char *owner,uint32_t baud);
 esp_err_t sk_uart_release(unsigned slot,const char *owner);
 void sk_hardware_release(const char *owner);

@@ -22,7 +22,8 @@ extern "C" size_t strlcpy(char *,const char *,size_t);
 struct HardwareSerial {
     unsigned begins=0,ends=0,written=0;bool active=false;int room=16;
     void addMemoryForRead(void *,size_t){}
-    void begin(uint32_t){++begins;active=true;}
+    uint16_t format=0;
+    void begin(uint32_t,uint16_t f=0){++begins;active=true;format=f;}
     void end(){++ends;active=false;}
     int read(){return -1;}
     int available(){return 0;}

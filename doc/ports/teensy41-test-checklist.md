@@ -429,3 +429,26 @@ These physical checks remain pending even when automated software checks pass.
 - [ ] **PY-LIB-EXTRA:** packages in the full micropython-lib SD archive are source
   availability only. Validate dependencies and missing native modules before
   promoting any of them to the installed /flash/lib set.
+
+### Serial terminal/logger follow-up
+
+Host ASan/UBSan tests pass for ring overflow/wrap, binary fidelity, independent
+ports, framing validation, XON/XOFF, partial writes and failure cleanup. Device
+acceptance passes for exact TX logs in CR/LF/CRLF modes, configuration rejection
+while active, COM suspend/close, console disconnect, no-overwrite and repeated
+memory recovery (36,100 internal / 8,123,928 PSRAM bytes free).
+
+- [ ] **SERIAL-RX — External source:** verify binary RX including 00/11/13/ff,
+  text/hex rendering, CR/LF/CRLF TX and long capture against a sender checksum.
+- [ ] **SERIAL-FRAME — Framing:** external peer/logic analyzer verification of
+  7E1/7E2/7O1/7O2 and 8N1/8N2/8E1/8E2/8O1/8O2 at representative baud rates.
+- [ ] **SERIAL-FLOW — XON/XOFF:** peer pause/resume in both directions, already
+  queued TX, log pressure, terminal suspension, stop and error recovery.
+- [ ] **SERIAL-LOAD — Sustained capture:** two UARTs at high baud with SD/USB,
+  network/audio load and PSRAM pressure. Validate dropped-byte accounting and
+  check capture/writer stack high-water marks. Hardware overruns are unmeasured.
+- [ ] **SERIAL-STORAGE — Failure:** full/removed SD, long storage stalls and
+  power interruption. Confirm visible error, stop cleanup and filesystem recovery.
+- [ ] **SERIAL-CTS — Future implementation/hardware:** select and reserve suitable
+  RTS/CTS pins, wire an external peer, implement bounded shutdown with CTS held
+  inactive, then verify hardware backpressure. RTS/CTS is not enabled in this version.

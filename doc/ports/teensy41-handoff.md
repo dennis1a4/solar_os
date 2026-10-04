@@ -4,6 +4,43 @@ Updated 2026-10-03. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## Serial terminal/logger — 2026-10-03
+
+Installed native shared serial capture for `com` and `serial` on the unchanged
+legacy bench profile. `serial record BUS BAUD NEWFILE [--timestamp]` records in
+the background; `serial stop BUS` drains/closes it. COM exit, suspension and
+console disconnect leave an explicit recording running. Raw files preserve RX
+bytes; timestamped logs contain elapsed-millisecond RX/TX hex chunks. Status
+reports bounded queues, software drops and storage errors. Existing files are
+never overwritten.
+
+`serial config BUS BAUD FORMAT [none|xonxoff]` sets an idle port's RAM-only
+framing/flow preferences. Supports 8N1/8N2, 7E1/7E2/7O1/7O2 and
+8E1/8E2/8O1/8O2. COM adds `--baud`, `--enter cr|lf|crlf` and retains `--hex`.
+RTS/CTS, USB-host serial adapters and unsupported framing combinations are not
+implemented. Python/MIDI/raw UART still use their existing framing contracts.
+
+Each log allocates 64 KiB PSRAM; each terminal allocates a separate 4 KiB view
+queue. Two service tasks use 4/6 KiB internal OCRAM stacks. Idle internal heap is
+36,100 bytes, PSRAM 8,123,928 bytes, with exact recovery after repeated acceptance
+cycles. On-board task high-water marks after the test were 3,076 bytes for
+capture and 4,104 for the writer; this is not a sustained-throughput result.
+
+Host sanitizer tests cover binary fidelity, overflow/wrap, simultaneous ports,
+framing validation, XON/XOFF including final XON with a full TX queue, partial
+TX, failed storage, ownership and cleanup. The existing hardware/COM device
+regression also passes.
+Device acceptance verifies CR/LF/CRLF TX logs, configuration, suspend/close,
+disconnect, duplicate-file refusal, and exact memory recovery. The first device
+run exposed the adapter's 128-byte read limit; corrected capture uses bounded
+128-byte reads, now enforced by the host fixture. External framing, RX fidelity,
+flow-control peers and sustained load remain in the master checklist.
+
+See `test_teensy41_serial_terminal.py`, `test_teensy41_serial_terminal_host.sh`
+and [hardware notes](teensy41-hardware-resources.md). The port does not measure
+hardware UART overrun/parity/framing errors; zero software drops is not a
+lossless-capture guarantee.
+
 ## Python hardware/offline bundle — 2026-10-03
 
 Implemented native resource-managed handles plus a `machine` compatibility
@@ -11,7 +48,7 @@ subset for GPIO, I2C, expansion SPI, UART, ADC and PWM. The installed `os`/`time
 helpers cover file/directory operations, UTC seconds and cooperative sleeps/ticks.
 Imports search `/flash/lib` and `/sd/lib`. The VM still uses 512 KiB PSRAM;
 16 bounded native hardware handles cost 576 additional static RAM1 bytes.
-Measured idle heap is 37,572 bytes, with 8,123,928 bytes free PSRAM.
+Before the serial service, measured idle heap was 37,572 bytes, with 8,123,928 bytes free PSRAM.
 
 Installed 71,061 bytes of versioned libraries/license/API notes in `/flash/lib`,
 plus examples in `/sd/python-examples`. Eleven Python modules include the port
@@ -130,8 +167,8 @@ The normal `teensy41_display` image requires that wiring change and disables
 Serial1. Both scope and USB-PD demo apps are available on the installed image.
 
 Installed HEX SHA256:
-`517afb232c3a432a98aa896a96dbfa5fd8ce1cc109b13b17ec66eef62657bb9f`.
-Flash 1,418,808 bytes; RAM1 428,800; RAM2 324,472.
+`348f539ff2eb5f6d26378b06f033a3e1405ec4f13333df8cae92adb9cc519f99`.
+Flash 1,425,392 bytes; RAM1 430,272; RAM2 334,712.
 Microsoft keyboard `045e:0750`, powered USB host hub, RA8875 LCD, native SD,
 USB drive, QSPI flash and 8 MiB PSRAM. Audio shield was absent in recent tests.
 See [quick-start and wiring](README.md).

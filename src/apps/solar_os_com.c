@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#if SK_HW_RESOURCES
+#include "serial_terminal.h"
+#endif
 #include <string.h>
 
 #include "esp_timer.h"
@@ -29,6 +33,8 @@ typedef struct {
     bool hex_view;
     bool port_claimed;
     bool uart_bus;
+    bool managed_uart;
+    unsigned enter_mode;
     char port_name[SOLAR_OS_PORT_NAME_MAX];
     solar_os_port_handle_t port;
     solar_os_shell_io_t fallback_io;
@@ -92,6 +98,10 @@ static void com_render_header(solar_os_context_t *ctx)
             (void)solar_os_shell_io_printf_bold(io, "COM %s\n", com_app.port_name);
         }
     }
+#if SK_HW_RESOURCES
+    if (com_app.managed_uart) { char settings[40]; sk_serial_settings(com_app.port_name, settings, sizeof(settings)); (void)solar_os_shell_io_printf(io, "%s\n", settings); }
+#endif
+    (void)solar_os_shell_io_printf(io, "Enter: %s\n", com_app.enter_mode == 2 ? "CR+LF" : com_app.enter_mode == 1 ? "LF" : "CR");
     (void)solar_os_shell_io_printf(io, "%s exits\n\n", solar_os_shell_io_app_exit_key(io));
     if (com_app.autobaud_pending) {
         (void)solar_os_shell_io_printf(io,
@@ -138,12 +148,15 @@ static esp_err_t com_write_bytes(const uint8_t *data, size_t len)
     }
 
     size_t written = 0;
-    const esp_err_t err = com_app.uart_bus
+    const esp_err_t err =
+#if SK_HW_RESOURCES
+        com_app.managed_uart ? sk_serial_write(com_app.port_name, data, len, &written) :
+#endif
+        com_app.uart_bus
         ? solar_os_bus_uart_write(com_app.port_name, data, len, &written)
         : solar_os_port_write(&com_app.port, data, len, &written);
-    if (err == ESP_OK) {
-        com_app.tx_bytes += written;
-    } else {
+    com_app.tx_bytes += written;
+    if (err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "port write failed: %s", esp_err_to_name(err));
     }
     if (written != len) {
@@ -293,8 +306,9 @@ static void com_send_key(solar_os_context_t *ctx, char ch)
         break;
     case '\n':
     case '\r':
-        data[0] = '\r';
+        data[0] = com_app.enter_mode == 1 ? '\n' : '\r';
         len = 1;
+        if (com_app.enter_mode == 2) { data[1] = '\n'; len = 2; }
         break;
     default:
         if (key >= 0x80) {
@@ -335,7 +349,11 @@ static void com_drain_rx(solar_os_context_t *ctx)
 
     for (size_t chunk = 0; chunk < COM_RX_CHUNKS_PER_TICK; chunk++) {
         size_t read_len = 0;
-        const esp_err_t err = com_app.uart_bus
+        const esp_err_t err =
+#if SK_HW_RESOURCES
+            com_app.managed_uart ? sk_serial_read(com_app.port_name, buffer, sizeof(buffer), &read_len) :
+#endif
+            com_app.uart_bus
             ? solar_os_bus_uart_read(com_app.port_name,
                                      buffer,
                                      sizeof(buffer),
@@ -414,24 +432,39 @@ static esp_err_t com_start(solar_os_context_t *ctx)
     com_app.port = (solar_os_port_handle_t)SOLAR_OS_PORT_HANDLE_INIT;
 
     const int argc = solar_os_context_argc(ctx);
-    if (argc < 1 || argc > 4) {
+    if (argc < 1 || argc > 8) {
         solar_os_context_finish(
-            ctx, 2, "usage: com [--autobaud] [--hex] [port]");
+            ctx, 2, "usage: com [--hex] [--baud N] [--enter cr|lf|crlf] [port]");
         return ESP_OK;
     }
 
     const char *port_name = SOLAR_OS_UART_PORT_NAME;
     bool port_seen = false;
     bool request_autobaud = false;
+    uint32_t baud = 0;
     for (int i = 1; i < argc; i++) {
         const char *arg = solar_os_context_argv(ctx, i);
         if (strcmp(arg, "--autobaud") == 0) {
             request_autobaud = true;
         } else if (strcmp(arg, "--hex") == 0) {
             com_app.hex_view = true;
+        } else if (strcmp(arg, "--baud") == 0 && i + 1 < argc) {
+            const char *value = solar_os_context_argv(ctx, ++i);
+            char *end = NULL;
+            unsigned long parsed = strtoul(value, &end, 10);
+            if (!*value || *end || parsed < 300 || parsed > 1000000) {
+                solar_os_context_finish(ctx, 2, "com: baud must be 300..1000000"); return ESP_OK;
+            }
+            baud = (uint32_t)parsed;
+        } else if (strcmp(arg, "--enter") == 0 && i + 1 < argc) {
+            const char *value = solar_os_context_argv(ctx, ++i);
+            if (!strcmp(value, "cr")) com_app.enter_mode = 0;
+            else if (!strcmp(value, "lf")) com_app.enter_mode = 1;
+            else if (!strcmp(value, "crlf")) com_app.enter_mode = 2;
+            else { solar_os_context_finish(ctx, 2, "com: enter must be cr, lf or crlf"); return ESP_OK; }
         } else if (arg[0] == '-' || port_seen) {
             solar_os_context_finish(
-                ctx, 2, "usage: com [--autobaud] [--hex] [port]");
+                ctx, 2, "usage: com [--hex] [--baud N] [--enter cr|lf|crlf] [port]");
             return ESP_OK;
         } else {
             port_name = arg;
@@ -447,11 +480,16 @@ static esp_err_t com_start(solar_os_context_t *ctx)
     esp_err_t claim_err = ESP_OK;
     if (com_app.uart_bus) {
         strlcpy(com_app.port_name, bus_info.name, sizeof(com_app.port_name));
-        claim_err = solar_os_bus_acquire(com_app.port_name,
-                                         SOLAR_OS_BUS_PROTOCOL_UART,
-                                         COM_PORT_OWNER);
+#if SK_HW_RESOURCES
+        claim_err = request_autobaud ? ESP_ERR_NOT_SUPPORTED : sk_serial_attach(com_app.port_name, baud);
+        com_app.managed_uart = claim_err == ESP_OK;
+#else
+        claim_err = solar_os_bus_acquire(com_app.port_name, SOLAR_OS_BUS_PROTOCOL_UART, COM_PORT_OWNER);
         com_app.bus_leased = claim_err == ESP_OK;
+        if (claim_err == ESP_OK && baud) claim_err = solar_os_uart_bus_set_baud_rate_owned(com_app.port_name, baud, COM_PORT_OWNER);
+#endif
     } else {
+        if (baud) { solar_os_context_finish(ctx, 2, "com: --baud requires a UART bus"); return ESP_OK; }
         solar_os_port_info_t info;
         claim_err = solar_os_port_get_info(port_name, &info);
         if (claim_err == ESP_OK &&
@@ -562,6 +600,9 @@ static void com_stop(solar_os_context_t *ctx)
                  com_app.port_name,
                  com_app.tx_bytes,
                  com_app.rx_bytes);
+#if SK_HW_RESOURCES
+    if (com_app.managed_uart) sk_serial_detach(com_app.port_name);
+#endif
     if (com_app.bus_leased) {
         if (com_app.autobaud_pending) {
             (void)solar_os_bus_uart_autobaud_cancel(com_app.port_name, COM_PORT_OWNER);

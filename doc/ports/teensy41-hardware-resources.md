@@ -102,3 +102,79 @@ Flash 1,407,624 bytes; RAM1 438,752; RAM2 340,848.
 Evidence: `/tmp/teensy-hardware-device.json`; recovery checkpoint:
 `../solar_os-baselines/2026-09-30-hardware/`.
 Next approved stage is PSRAM-backed `ramfs` (original review item 7).
+
+## Native serial terminal and background recording
+
+The Teensy `com` app and `serial` command share a capture service for UART7,
+UART8 and UART3. UART3 still conflicts with the LCD WAIT signal on the bench.
+USB-host serial adapters are not integrated.
+
+```
+serial config uart8 9600 7E2 none
+serial record uart8 9600 /sd/session.bin
+com --enter crlf uart8
+```
+
+Ctrl+] exits COM; Ctrl+Z suspends it. Recording continues independently of COM,
+the console connection and the suspended-session lifecycle. Finish explicitly:
+
+```
+serial status
+serial stop uart8
+```
+
+`com [--hex] [--baud N] [--enter cr|lf|crlf] [BUS]` defaults to UART7,
+configured baud (initially 115200), text display and CR. One terminal may attach
+to each bus; other raw UART, MIDI and Python owners cannot steal it. Starting a
+log on a terminal's bus is allowed when the baud matches. Stopping the log keeps
+an attached terminal open. Exiting the terminal keeps a log open.
+
+`serial config BUS BAUD FORMAT [none|xonxoff]` requires an idle port and changes
+RAM-only settings for COM/serial; it does not change Python/MIDI/raw UART framing.
+Supported formats are 8N1, 8N2, 7E1, 7E2, 7O1, 7O2, 8E1, 8E2, 8O1 and 8O2.
+The number before parity is data bits; N/E/O means none/even/odd; the last number
+is stop bits. Unsupported: 5/6/9 bits, 7N1, mark/space parity, 1.5 stop bits and
+RTS/CTS. Baud is 300..1000000. `com --baud` or `serial record` supplies an explicit
+baud without changing the configured framing/flow setting. An already active
+port cannot be reconfigured.
+
+XON/XOFF is opt-in. Received 0x13 pauses application TX and 0x11 resumes it;
+while paused, terminal writes report an error rather than silently queueing
+unbounded input. These control bytes are omitted from the live display but
+remain in raw RX logs. The service sends XOFF at 75% queue occupancy and XON at
+50%; it uses the log queue while recording, otherwise the display queue. A peer
+must honor these controls. Leave flow set to `none` for arbitrary binary data.
+Already queued UART TX bytes cannot be recalled by a received XOFF. Closing
+retries a final XON for up to 100 scheduler ticks if the TX queue is full; failure
+is reported as a timeout. Low-baud shutdown can briefly delay other UART polling.
+
+`serial record BUS BAUD NEWFILE [--timestamp]` creates a new file exclusively.
+Without the option it stores RX bytes exactly, including zero bytes and line
+endings. With `--timestamp`, each text record contains elapsed milliseconds,
+RX/TX and contiguous hex bytes, for example `123 RX 00ff0d0a`. TX records include
+only bytes actually accepted by the UART driver, including generated flow
+controls. Times mark chunks read by the capture task, not individual wire edges;
+the millisecond counter wraps after approximately 49.7 days. Existing files are
+never replaced. There is no rotation or append mode yet.
+
+Each active log requests 64 KiB of PSRAM from the shared allocator; each terminal
+requests a separate 4 KiB display queue. Three logs are the software maximum
+(two UARTs are usable with the current LCD wiring). Buffers have no internal-RAM
+fallback and are released when no longer needed. The capture and writer tasks
+have fixed 4 KiB and 6 KiB internal OCRAM stacks plus small internal control
+structures. Existing UART RX rings remain 4 KiB per port. No second PSRAM chip
+or permanent PSRAM partition is needed.
+
+Capture polls independently of the writer, which batches up to 1024 bytes per
+port per tick and flushes files approximately once per second. File I/O does not
+hold the capture lock. `serial stop` drains the remaining queue and closes the
+file. Stop before ejecting the destination or powering off. Background logging
+is system-wide: any console may inspect or stop it.
+
+`serial status` reports RX/TX, queue usage, dropped log payload bytes, dropped
+view bytes, stored file bytes, storage-lost bytes and errors. Timestamp overhead
+consumes queue capacity. On a storage error, new log data stops being accepted;
+RX/TX counters can still advance. UART hardware/driver overruns and framing or
+parity errors are not exposed by the current core, so a zero software-drop
+count is not a guarantee of lossless capture. SD latency and concurrent workloads
+still require physical throughput testing.

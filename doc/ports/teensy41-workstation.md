@@ -179,3 +179,15 @@ licenses and file hashes. Installation preserves different existing files unless
 explicit replacement is requested. A pinned upstream archive on SD supplies
 additional offline source; it does not imply compatibility of every package.
 MIDI, audio, USB-PD and CAN still need typed Python service bindings.
+
+### Serial terminal and logging
+
+Use `serial config uart8 115200 8N1 none` to set framing, then
+`serial record uart8 115200 /sd/capture.bin` to start background RX capture.
+`com --enter crlf uart8` attaches a terminal; `com --hex uart8` shows hex.
+Ctrl+] exits COM and Ctrl+Z suspends it; recording continues until
+`serial stop uart8`. `serial status` reports queue use, software drops and errors.
+Add `--timestamp` to `serial record` for elapsed-millisecond RX/TX hex logs.
+Files must be new. Settings include 7/8-bit supported parity/stop combinations
+and optional `xonxoff`; see `man serial` and the hardware-resources document for
+exact limits. RTS/CTS and USB-host serial adapters remain pending.

@@ -27,6 +27,13 @@ features remain backlog; they do not precede RAMFS in this approved sequence.
 
 ## Current position
 
+**2026-10-03 Serial terminal/logger:** installed shared native COM capture with
+background raw/timestamped logging, baud/framing configuration, CR/LF/CRLF,
+text/hex display and optional XON/XOFF. Each recording uses 64 KiB PSRAM and each
+terminal 4 KiB; control tasks have fixed internal stacks. Host and device
+acceptance pass; physical RX/framing/flow and sustained load remain pending.
+RTS/CTS needs pin integration and hardware validation. See the hardware notes.
+
 **2026-10-03 Python foundation:** resource-managed machine GPIO/bus/ADC/PWM
 subset and os/time helpers are implemented with an installed offline library
 bundle and pinned full upstream source archive on SD. Physical peripheral tests

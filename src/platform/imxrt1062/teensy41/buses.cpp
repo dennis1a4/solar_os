@@ -192,6 +192,12 @@ static int uart_index(const char *name) {
 }
 const char *sk_slot_owner(unsigned slot) {return slot<3?owners[slot]:"invalid";}
 esp_err_t sk_uart_claim(unsigned slot,const char *owner,uint32_t baud) {
+    return sk_uart_claim_format(slot,owner,baud,0);
+}
+esp_err_t sk_uart_claim_format(unsigned slot,const char *owner,uint32_t baud,uint16_t format) {
+    // Only formats supported by the Teensy 4 byte-oriented driver.
+    uint16_t base=format & ~uint16_t(0x100);
+    if(base!=0 && base!=2 && base!=3 && base!=6 && base!=7)return ESP_ERR_INVALID_ARG;
     if(slot>=3 || !owner || !*owner || strlen(owner)>=sizeof(uart_owners[0]) || baud<300 || baud>1000000)return ESP_ERR_INVALID_ARG;
     xSemaphoreTake(slot_mutex,portMAX_DELAY);
     if(uart_owners[slot][0]) {xSemaphoreGive(slot_mutex);return ESP_ERR_INVALID_STATE;}
@@ -201,7 +207,7 @@ esp_err_t sk_uart_claim(unsigned slot,const char *owner,uint32_t baud) {
         {SOLAR_OS_RESOURCE_GPIO_PIN,p.tx,-1,"UART TX"},
         {SOLAR_OS_RESOURCE_UART_PORT,p.uart,-1,"UART"}};
     esp_err_t e=solar_os_resource_claim_bundle(req,3,owner,nullptr);
-    if(e==ESP_OK) {strlcpy(uart_owners[slot],owner,sizeof(uart_owners[0]));uart_baud[slot]=baud;uarts[slot]->addMemoryForRead(uart_rx_extra[slot],sizeof(uart_rx_extra[slot]));uarts[slot]->begin(baud);}
+    if(e==ESP_OK) {strlcpy(uart_owners[slot],owner,sizeof(uart_owners[0]));uart_baud[slot]=baud;uarts[slot]->addMemoryForRead(uart_rx_extra[slot],sizeof(uart_rx_extra[slot]));uarts[slot]->begin(baud,format);}
     xSemaphoreGive(slot_mutex);return e;
 }
 esp_err_t sk_uart_release(unsigned slot,const char *owner) {
@@ -259,7 +265,7 @@ extern "C" bool solar_os_uart_get_bus_status(const char *name,solar_os_uart_stat
     out->port_claimed=uart_owners[i][0];strlcpy(out->port_owner,uart_owners[i],sizeof(out->port_owner));
     xSemaphoreGive(slot_mutex);return true;
 }
-extern "C" const char *solar_os_uart_mode_name(solar_os_uart_mode_t) {return "8N1 raw";}
+extern "C" const char *solar_os_uart_mode_name(solar_os_uart_mode_t) {return "raw";}
 extern "C" esp_err_t solar_os_bus_uart_autobaud_start(const char *,const char *) {return ESP_ERR_NOT_SUPPORTED;}
 extern "C" esp_err_t solar_os_bus_uart_autobaud_finish(const char *,const char *,solar_os_bus_uart_autobaud_result_t *) {return ESP_ERR_NOT_SUPPORTED;}
 extern "C" esp_err_t solar_os_bus_uart_autobaud_cancel(const char *,const char *) {return ESP_ERR_NOT_SUPPORTED;}

@@ -219,12 +219,13 @@ extern "C" bool sk_hardware_complete(const solar_os_completion_request_t *r,sola
         if(!strcmp(tokens[0],"gpio"))values="list mode read write release";
         else if(!strcmp(tokens[0],"io"))values="pins claims buses release";
         else if(!strcmp(tokens[0],"uart"))values="list open close read write";
-        else if(!strcmp(tokens[0],"com"))values="uart7 uart8 uart3 --hex";
+        else if(!strcmp(tokens[0],"com"))values="uart7 uart8 uart3 --hex --baud --enter";
+        else if(!strcmp(tokens[0],"serial"))values="status config record stop";
         else if(!strcmp(tokens[0],"expansion"))values="list claim release";
         else if(!strcmp(tokens[0],"i2c"))values="list scan xfer";
         else if(!strcmp(tokens[0],"spi"))values="list xfer";
     } else if(r->argument==2) {
-        if(!strcmp(tokens[0],"uart") || !strcmp(tokens[0],"com"))values="uart7 uart8 uart3";
+        if(!strcmp(tokens[0],"uart") || !strcmp(tokens[0],"serial") || !strcmp(tokens[0],"com"))values="uart7 uart8 uart3";
         else if(!strcmp(tokens[0],"i2c"))values="i2c0 i2c1 i2c2";
         else if(!strcmp(tokens[0],"spi") || !strcmp(tokens[0],"expansion"))values="slot0 slot1 slot2";
         else if(!strcmp(tokens[0],"gpio")) {

@@ -1157,6 +1157,10 @@ available for the compiled board.
 | `link` | `link stream remove <port>` | Remove an unclaimed Link stream port. |
 | `pocsag` | `pocsag status` | Show detailed status for the POCSAG background receiver. |
 | `pocsag` | `pocsag send <radio> <frequency-hz> <baud> <ric> <message> [alpha\|numeric] [normal\|inverted] [function]` | Encode and transmit one POCSAG page. |
+| `serial` | `serial config BUS BAUD FORMAT [none\|xonxoff]` | Teensy: configure a closed serial port; e.g. 9600 7E2. |
+| `serial` | `serial status` | Teensy: show serial capture counters and errors. |
+| `serial` | `serial record BUS BAUD NEWFILE [--timestamp]` | Teensy: start background UART recording; raw RX or timestamped RX/TX hex. |
+| `serial` | `serial stop BUS` | Teensy: drain, close and release a background recording. |
 | `uart` | `uart [status [bus]]` | Show the default `uart0` or a selected named UART bus. |
 | `uart` | `uart baud [bus] [rate]` | Show or set a named UART bus baud rate. |
 | `uart` | `uart mode [bus] [raw\|line]` | Show or set a named UART bus service mode. |

@@ -19,6 +19,12 @@ int main() {
     assert(sk_buses_begin()==ESP_OK);const size_t baseline=solar_os_resource_claim_count();
     assert(claimed(37,"primary-display") && claimed(9,"primary-display") && claimed(15,"primary-display"));
     assert(claimed(0,"console") && claimed(40,"board") && claimed(13,"spi0") && claimed(49,"qspi"));
+    assert(sk_uart_claim_format(1,"format-test",9600,0x102)==ESP_OK);
+    assert(Serial8.format==0x102);
+    assert(sk_uart_release(1,"format-test")==ESP_OK);
+    assert(sk_uart_claim(1,"format-test",115200)==ESP_OK && Serial8.format==0);
+    assert(sk_uart_release(1,"format-test")==ESP_OK);
+    assert(sk_uart_claim_format(1,"format-test",9600,0x200)==ESP_ERR_INVALID_ARG);
     // GPIO reservation collisions must reject before any UART pin or driver changes.
     assert(solar_os_resource_claim(SOLAR_OS_RESOURCE_GPIO_PIN,28,-1,"gpio:usb","GPIO")==ESP_OK);
     assert(sk_uart_claim(0,"hw:usb",115200)==ESP_ERR_INVALID_STATE);assert(Serial7.begins==0);
