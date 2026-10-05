@@ -33,9 +33,15 @@
 #include "solar_os_tui_widgets.h"
 #include "solar_os_webradio_catalog.h"
 
+#if SOLAR_OS_PLATFORM_IMXRT1062
+// minimp3 scratch plus the Teensy HTTP callback chain exceeds 20 KiB.
+// Allocated in PSRAM only while playing; retain margin for TLS/cleanup.
+#define WEBRADIO_TASK_STACK 32768U
+#else
 #define WEBRADIO_TASK_STACK 20480U
+#endif
 #define WEBRADIO_TASK_PRIORITY (tskIDLE_PRIORITY + 2U)
-#if !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+#if !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM && !SOLAR_OS_PLATFORM_IMXRT1062
 SOLAR_OS_TASK_REQUIRE_FOREGROUND_STACK(WEBRADIO_TASK_STACK);
 #endif
 #define WEBRADIO_HTTP_TIMEOUT_MS 10000U
@@ -1187,6 +1193,10 @@ done:
         webradio_set_playback_state(WEBRADIO_PLAYBACK_IDLE, NULL);
     }
     webradio.task_done = true;
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    SOLAR_OS_LOGI(TAG, "radio task stack_min_free=%u bytes",
+                  (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t)));
+#endif
     for (;;) {
         vTaskSuspend(NULL);
     }

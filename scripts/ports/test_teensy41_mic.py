@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Record the nearby speaker's test tone, retrieve WAV and measure 440 Hz energy.
-Leaves uniquely named recordings on SD. Host WAV/log may contain ambient audio.
+Uses unique SD/flash recordings; removes device fixtures on success.
+Host WAV/log may contain ambient audio.
 """
 import argparse, base64, io, json, re, time, uuid, wave
 from pathlib import Path
@@ -12,8 +13,11 @@ from test_teensy41_shell import ANSI, PROMPT
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--log', type=Path, required=True)
 p.add_argument('--wav', type=Path, required=True)
+p.add_argument('--storage', choices=['sd','flash'], default='sd')
+p.add_argument('--ram', action='store_true', help='Capture in temporary RAMFS to isolate storage stalls')
 a=p.parse_args()
-root='/_solaros_mic_'+uuid.uuid4().hex[:10]
+ram_mount='/am'+uuid.uuid4().hex[:6] if a.ram else None
+root=(ram_mount if ram_mount else '/'+a.storage)+'/_solaros_mic_'+uuid.uuid4().hex[:10]
 r=dict(path=root+'.wav', passed=False, commands=[])
 try:
     ports=[p.device for p in list_ports.comports() if (p.vid,p.pid)==(0x16c0,0x0483)]
@@ -34,6 +38,7 @@ try:
         def cmd(s, expected=None): return exchange((s+'\r').encode(),expected=expected)
         def py(s, record=True): return exchange((s+'\r').encode(),suffix='>>> ',record=record)
         cmd(''); cmd('audio status','SGTL5000=ready')
+        if ram_mount:cmd('ramfs mount '+ram_mount+' 1m')
         tone_result = cmd('audio mictest '+root+'.wav','Mic test: OK, 352800 bytes, 4000 ms')
         tone_count = re.search(r'Mic test tone: started=1 blocks=(\d+)', tone_result)
         assert tone_count and 340 <= int(tone_count[1]) <= 350, tone_result
@@ -58,6 +63,12 @@ try:
             result.extend(block)
             assert len(result)<=352844
         py('f.close()'); exchange(b'\x04')
+        assert 'playback=0 capture=0 bytes' in cmd('audio status')
+        for path in [root+'.wav',root+'_cancel.wav',root+'_short.wav']:
+            cmd('rm '+path)
+            assert 'No such file or directory' in cmd('ls '+path)
+        if ram_mount:cmd('ramfs unmount '+ram_mount)
+        r['fixtures_removed']=True
         r['status']=cmd('audio status'); r['memory']=cmd('mem'); r['uptime']=cmd('uptime')
     a.wav.write_bytes(result)
     with wave.open(io.BytesIO(result),'rb') as f:

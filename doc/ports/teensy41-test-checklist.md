@@ -30,8 +30,24 @@ Do not check off a physical test based on simulation, injected input or a build.
   paths, zero idle ring bytes, exact memory recovery and fixture cleanup pass.
   Free internal heap 373,180 bytes; PSRAM unchanged.
 - [ ] **AUDIO-RAM-2:** Live codec capture/playback, cancel/restart, synth and
-  concurrent storage/network load: verify ring bytes return to zero, heaps
-  recover, and no dropped samples or audio glitches. Current codec is missing.
+  concurrent storage/network load: one-second recording and MP3/WAV/synth
+  repeat/cleanup tests now pass with codec connected. Longer SD captures overrun;
+  flash capture takes excessive wall time. Acoustic tone detection failed with
+  dominant 60 Hz hum. Continue load/quality checks; see newest handoff evidence.
+
+- [x] **AUDIO-LIVE-1:** Generated MP3/WAV playback, resampling, cancellation,
+  20 repeats and synth eight-voice/filter/20-restart checks pass with zero
+  reported underruns and exact heap recovery.
+- [ ] **AUDIO-LIVE-2:** Resolve SD 10/30-second recording overruns and flash
+  excess recording wall time (30-second WAV took 46.79 seconds). Re-test under
+  load and inspect continuity; zero queue overruns alone is insufficient.
+- [ ] **AUDIO-LIVE-3:** User audible speaker check and microphone placement/
+  wiring: RAM capture works, but 60 Hz hum dominates and 440 Hz test tone was
+  not clearly detected. Deferred at user's request while away.
+- [ ] **RADIO-RECOVERY:** Press Program to load built 32 KiB WebRadio PSRAM
+  stack correction after actual HTTP decode overflowed the former 20 KiB stack.
+  Upload is waiting; then re-run HTTP/HTTPS radio, monitor capture, buffer
+  counters, measured stack headroom and memory cleanup.
 
 ## Firmware and wiring first
 

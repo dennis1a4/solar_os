@@ -140,3 +140,19 @@ MP3/WAV/resampling/cancellation host tests pass. The device procedure is
 it removes its unique SD fixtures after success and distinguishes missing-codec
 checks from live recording/playback. Analog sound and loaded audio coexistence
 remain hardware acceptance items when the codec is reconnected.
+
+## Concurrent diagnostic capture
+
+`audio monitor NEWFILE.wav` captures four seconds of microphone input while
+leaving existing playback running. Use a second console for WebRadio/Synth
+(e.g. launch playback on the LCD, then issue monitor on USB). It refuses an
+active or retained recorder and never overwrites a file. Microphone capture
+blocks competing audio app starts until completion; tone/off/mictest remain
+blocked while a playback app owns audio. Capture allocation and codec failures
+leave playback intact. Stop with Ctrl+C; the partial WAV is finalized.
+
+For short acoustic checks, a temporary RAMFS avoids storage writes during
+capture; a 512 KiB mount has room for the 352,844-byte four-second mono WAV.
+Copy the recording to persistent storage after playback/capture stops. This
+is a bounded diagnostic, not an implementation of continuous full-duplex
+recording or a background PSRAM storage queue.

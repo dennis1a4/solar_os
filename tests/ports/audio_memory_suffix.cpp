@@ -49,6 +49,10 @@ int main() {
         assert(sk_audio_synth_write(stereo,128,&stop)==ESP_ERR_TIMEOUT);stop=false;
         sk_audio_output_finish(false);check_empty();
         sk_audio_output_start(20);
+        monitor_capture=true;
+        assert(sk_audio_capture_start()==ESP_OK && pcm && live==49152);
+        sk_audio_capture_stop();assert(pcm && live==16384);
+        monitor_capture=false;
         assert(sk_audio_capture_start()==ESP_OK && !pcm && live==32768);
         assert(sk_audio_capture_start()==ESP_OK && live==32768);
         input_pending=true;update_audio();

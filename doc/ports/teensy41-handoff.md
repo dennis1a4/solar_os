@@ -4,6 +4,68 @@ Updated 2026-10-05. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## Live audio acceptance and WebRadio recovery — 2026-10-05
+
+User reconnected SGTL5000, microphone and a nearby speaker, with USB host/drive/
+keyboard disconnected. Codec became ready after reboot. The following actual
+hardware tests passed on legacy bench wiring:
+
+- Five one-second WAV playback/recording cycles: zero idle rings, exact heap
+  recovery (373,180 internal / 8,123,868 PSRAM bytes).
+- Generated stereo MP3, mono 48 kHz MP3 and mono 22.05 kHz WAV playback;
+  resampling, cancellation, errors and 20 repeats: zero playback underruns.
+- Synth waveforms, pulse/hold, eight voices with filter/second oscillator,
+  cancellation and 20 restarts: zero reported underruns/missed deadlines/errors.
+- Four-second microphone capture into RAMFS, cancellation/finalized WAV header
+  and overwrite protection. Acoustic tone detection FAILED: dominant 60 Hz hum,
+  only 1.83 dB increase in 430–450 Hz energy, no clipping. User was away and
+  requested deferring the audible speaker check; do not claim acoustic quality.
+
+Storage reliability findings (same 32 KiB capture queue):
+
+| Destination | Requested | Wall time | Result |
+| --- | ---: | ---: | --- |
+| SD | 4 s | 4.19 s | Complete; no overruns |
+| SD | 10 s | 1.26 s | Failed at 0.58 s of samples; 44 overruns |
+| SD | 30 s | 21.12 s | Failed at 20.45 s of samples; 43 overruns |
+| Flash | 4 s | 6.62 s | Full WAV; no queue overruns, excess elapsed time |
+| Flash | 10 s | 15.54 s | Full WAV; no queue overruns, excess elapsed time |
+| Flash | 30 s | 46.79 s | Full WAV; no queue overruns, excess elapsed time |
+
+These are NOT passes for continuous recording. Flash elapsed time includes
+open/header/final sync, so it does not locate the delay precisely. The driver
+also masks interrupts during page programs; zero queue overruns cannot prove
+no samples were lost before queue insertion. SD needs a larger, independently
+drained staging queue or another verified latency fix. Flash needs interrupt/
+write-latency investigation. USB recording remains untested with host unplugged.
+
+Added `audio monitor NEWFILE.wav`: four seconds of microphone capture without
+stopping existing playback, for use on a second console and preferably RAMFS.
+Capture busy/retained-recorder protection, buffer preservation and manuals pass
+host tests. Installed monitor image SHA256:
+`cc447ce64c508bb3d5f0968aaed3e9285dd9c62614e83ddae9078239d8da16f7`.
+
+Actual WebRadio decoding from a controlled local HTTP MP3 stream then triggered
+`STACK OVERFLOW: webradio_`, halting the board before its monitor capture. The
+Teensy worker now requests 32 KiB PSRAM instead of 20 KiB and logs its minimum
+stack headroom; ESP configuration is unchanged. Corrected candidate builds:
+RAM1 431,104, RAM2 187,256, flash 1,472,616 bytes; HEX SHA256:
+`5ff456c046b218317097f87765dcd75791b9f259804ac690630e1889b1afb092`.
+**Candidate upload is waiting for the physical Program button: USB soft reboot
+failed on the halted board. Stack correction and WebRadio acoustic/counter tests
+are NOT device-validated yet.** Upload log `/tmp/teensy-radio-stack-upload.log`.
+
+Resume: press Program, wait for upload completion, repeat controlled HTTP radio
+and HTTPS station tests, inspect headroom/underruns and monitor WAV, then synth
+USB-disconnect cleanup. Defer physical speaker/mic quality checks until user is
+present. Remove only retained failed fixture `/sd/_solaros_mic_f588b304d9.wav`;
+other successful SD/flash fixtures were removed, RAMFS disappears on reboot.
+
+Evidence: `/tmp/teensy-audio-rings-live.json`, `/tmp/teensy-audio-play-live.json`,
+`/tmp/teensy-synth-live.json`, `/tmp/teensy-mic-ram-live.json` and `.wav`,
+`/tmp/teensy-audio-storage-live.json`, `/tmp/teensy-radio-local-live.json`.
+Reusable procedures are in scripts/ports/README.md. No saved stations changed.
+
 ## On-demand audio rings — 2026-10-05
 
 Implemented and installed on unchanged `teensy41_telnet_legacy` bench wiring.

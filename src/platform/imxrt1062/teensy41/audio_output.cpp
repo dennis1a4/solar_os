@@ -24,9 +24,11 @@ static volatile bool consuming, tone_on;
 static bool ready;
 // Console gate serializes diagnostics with app admission across all consoles.
 static bool diagnostic_busy;
+static bool monitor_capture;
 extern "C" bool sk_audio_diagnostic_busy() { return diagnostic_busy; }
 #if SK_LCD_CONSOLE
 extern "C" bool sk_console_audio_busy();
+extern "C" bool sk_console_recorder_busy();
 #endif
 static bool diagnostic_allowed() {
 #if SK_LCD_CONSOLE
@@ -124,7 +126,7 @@ static AudioConnection mic_connection(input, 0, capture, 0);
 extern "C" esp_err_t sk_audio_capture_start() {
     if (!ready) return ESP_ERR_NOT_FOUND;
     sk_audio_capture_stop();
-    sk_audio_output_finish(false);
+    if (!monitor_capture) sk_audio_output_finish(false);
     if (!sk_i2c_lock(0)) return ESP_ERR_TIMEOUT;
     bool ok = codec.inputSelect(AUDIO_INPUT_MIC) && codec.micGain(20);
     sk_i2c_unlock(0);
@@ -335,6 +337,21 @@ extern "C" void sk_audio_output_status() {
 extern "C" void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char **argv) {
     if (argc == 1 || (argc == 2 && !strcmp(argv[1], "status"))) {
         sk_audio_output_status();
+    } else if (argc == 3 && !strcmp(argv[1], "monitor")) {
+        auto *io = solar_os_context_shell_io(ctx);
+        bool busy = diagnostic_busy || capture_enabled;
+#if SK_LCD_CONSOLE
+        busy = busy || sk_console_recorder_busy();
+#endif
+        if (busy) { solar_os_shell_io_writeln(io, "Audio capture busy"); return; }
+        char path[160];
+        if (solar_os_shell_resolve_path(ctx, argv[2], path, sizeof(path)) != ESP_OK) return;
+        diagnostic_busy = monitor_capture = true;
+        solar_os_audio_wav_info_t info{};
+        const esp_err_t err = solar_os_audio_record_wav(path, 4000, nullptr, &info);
+        monitor_capture = diagnostic_busy = false;
+        solar_os_shell_io_printf(io, "Audio monitor: %s, %lu bytes, %lu ms\n",
+            esp_err_to_name(err), (unsigned long)info.data_bytes, (unsigned long)info.duration_ms);
     } else if (!diagnostic_allowed()) {
         solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), "Audio busy; stop the audio app first");
     } else if (argc == 2 && !strcmp(argv[1], "tone")) {
@@ -362,7 +379,7 @@ extern "C" void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char
     } else if (argc == 2 && !strcmp(argv[1], "off")) {
         sk_audio_player_tone(false);
     } else {
-        solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), "usage: audio [status|tone|off|mictest new.wav]");
+        solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), "usage: audio [status|tone|off|mictest new.wav|monitor new.wav]");
     }
 }
 #endif

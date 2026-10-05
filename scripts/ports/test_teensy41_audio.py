@@ -2,7 +2,7 @@
 """Upload generated quiet tones through Python, then exercise Teensy aplay.
 
 Requires the audio firmware, fitted PSRAM, mounted Teensy SD and wired shield.
-Creates and retains one unique SD test directory. Never formats a card.
+Creates one unique SD test directory and removes it on success. Never formats a card.
 """
 import argparse
 import base64
@@ -27,7 +27,7 @@ def main():
     names = ['stereo.mp3', 'mono48.mp3', 'mono22.wav']
     files = {name: (args.fixtures / name).read_bytes() for name in names}
     assert all(0 < len(data) < 100000 for data in files.values()), 'Use the generated one-second tones'
-    root = '/_solaros_audio_' + uuid.uuid4().hex[:10]
+    root = '/sd/_solaros_audio_' + uuid.uuid4().hex[:10]
     report = dict(directory=root, passed=False, commands=[])
     try:
         ports = [p.device for p in list_ports.comports() if (p.vid, p.pid) == (0x16c0, 0x0483)]
@@ -95,7 +95,10 @@ def main():
                 cmd(f'aplay -v 10 {root}/{names[i % len(names)]}', 'ret=OK')
             after = re.search(r'Internal heap:.*', cmd('mem'))[0]
             assert before == after, (before, after)
-            report.update(passed=True, memory=after, uptime=cmd('uptime'), repeats=args.repeat)
+            assert 'playback=0 capture=0 bytes' in cmd('audio status')
+            cmd('rm -r '+root)
+            assert 'No such file or directory' in cmd('ls '+root)
+            report.update(passed=True, fixture_removed=True, memory=after, uptime=cmd('uptime'), repeats=args.repeat)
             print(f'PASS: audio streaming, cancellation, errors and {args.repeat} cycles. Files: {root}', flush=True)
     except Exception as exc:
         report['error'] = str(exc)

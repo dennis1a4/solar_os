@@ -108,6 +108,19 @@ static bool console_has_audio(const Console &c) {
     return false;
 }
 #if SK_AUDIO_PLAYER
+extern "C" bool sk_console_recorder_busy() {
+    auto has_recorder=[](const Console &c) {
+        for(auto *f=c.frame;f;f=f->parent)if(!strcmp(f->app->name,"arecord"))return true;
+        for(auto *head:c.retained)
+            for(auto *f=head;f;f=f->parent)if(!strcmp(f->app->name,"arecord"))return true;
+        return false;
+    };
+    for(auto &c:consoles)if(has_recorder(c))return true;
+#if SK_TELNETD
+    if(has_recorder(remote_console))return true;
+#endif
+    return false;
+}
 // Called by shell diagnostics while holding console_gate, including retained apps.
 extern "C" bool sk_console_audio_busy() {
     for(auto &c:consoles)if(console_has_audio(c))return true;

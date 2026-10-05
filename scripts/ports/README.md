@@ -676,3 +676,21 @@ interrupt handoff and cross-console ownership. Device check:
 `python3 scripts/ports/test_teensy41_audio_memory.py --log /tmp/teensy-audio-rings-device.json`.
 It uses unique SD fixtures and removes them on success. With no codec, it reports
 missing-codec/idle-memory coverage only; live capture/playback requires SGTL5000.
+
+### Live audio acceptance
+
+With SGTL5000 connected at boot and the USB serial monitor closed:
+- `test_teensy41_audio.py --fixtures DIR --log LOG` plays generated fixtures
+  from `test_teensy41_audio_host.sh`, tests cancellation/restarts, and cleans SD.
+- `test_teensy41_mic.py --ram --log LOG --wav WAV` captures the diagnostic tone
+  in temporary RAMFS, downloads it, tests cancellation/header protection, then
+  measures acoustic tone energy. Without `--ram`, `--storage sd|flash` selects
+  persistent media; an acoustic failure is separate from successful transport.
+- `test_teensy41_audio_storage.py --log LOG` characterizes 4/10/30-second SD/flash
+  recordings, queue overruns, elapsed time and memory cleanup.
+- `test_teensy41_radio_live.py --fixture MP3 --log LOG --wav WAV` serves a generated
+  128 kb/s MP3 over local HTTP, plays it on the LCD console and captures four
+  seconds of microphone input in RAMFS. `--url URL` instead tests an actual
+  station without changing the saved catalog. Inspect counters and the recording;
+  arbitrary music silence alone cannot establish a dropout. Host WAVs can contain
+  ambient microphone audio. Successful temporary fixtures are removed.
