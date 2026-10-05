@@ -667,3 +667,12 @@ stack reclamation tests. `test_teensy41_compose_host.sh` also exercises OCRAM
 allocation/alignment/reallocation and PSRAM reserve policy. The device Telnet
 suite now verifies listener stack allocation, exact OCRAM recovery on stop,
 self-stop, and stopping during remote Python. See the handoff memory audit.
+
+### On-demand audio ring checks
+
+`python3 tests/ports/test_teensy41_audio_memory.py` exercises the actual audio
+ring implementation under sanitizers, including failure/overflow/cancellation,
+interrupt handoff and cross-console ownership. Device check:
+`python3 scripts/ports/test_teensy41_audio_memory.py --log /tmp/teensy-audio-rings-device.json`.
+It uses unique SD fixtures and removes them on success. With no codec, it reports
+missing-codec/idle-memory coverage only; live capture/playback requires SGTL5000.

@@ -50,7 +50,7 @@ entry. The native graphical app remains unchanged for other platforms.
 App state allocates from PSRAM and is released on exit. The small voice engine,
 synchronization state and worker PCM scratch use fixed internal storage. Code
 and constants run from cached program flash. The worker uses the existing
-foreground worker stack reservation; the app declares an 8 KiB stack requirement.
+foreground worker stack allocated on demand; the app declares an 8 KiB stack requirement.
 
 The synth output producer never reads terminal input. It caps queued audio at
 four 128-frame blocks (about 12 ms), plus downstream I2S buffering and render/input
@@ -103,3 +103,40 @@ Logs: `/tmp/teensy-synth.json`, `/tmp/teensy-synth-disconnect.json`,
 Firmware and logs are retained under `solar_os-baselines/2026-09-27-synth`
 alongside the repository. Listening at the headphones has not been checked during
 this session; the user was away from the computer.
+
+## On-demand audio rings — 2026-10-05
+
+The shared playback ring (16 KiB) and microphone capture ring (32 KiB) now
+allocate only on start, using internal-preferred memory (OCRAM first, guarded
+DTCM fallback). Allocation failure returns NO_MEM. The AudioStream interrupt
+is disabled while publishing/detaching pointers and resetting queue state;
+allocation/free happens outside that interrupt-disabled section. The producer
+must finish before cleanup, as enforced by the existing audio app ownership and
+worker stop/join paths. Audio library blocks and DMA storage remain unchanged.
+
+`audio status` shows allocated playback/capture ring bytes. Normal completion,
+cancellation and error cleanup return the rings. Tones/clock alarms generate
+samples directly into AudioStream blocks and do not allocate either ring.
+Diagnostic tone/off/mictest commands refuse while an audio app is active or
+retained on any console; microphone diagnostics also block competing audio app
+launches while their synchronous capture operation yields to other consoles.
+
+Ring capacities and recording duration are unchanged. At 44.1 kHz, the ring's
+usable 31 stereo blocks cover about 90 ms; 127 mono capture blocks cover about
+369 ms. A future 256 KiB PSRAM mono queue would cover about 2.97 seconds of
+storage stalls, but would require a separate draining stage so capture keeps
+running during a blocking storage write. Enlarging a temporary queue does not
+increase the recording duration limit. Current WAV recording streams to storage
+at 88,200 bytes/s and retains the one-hour limit (about 318 MB plus header).
+No additional PSRAM queue is implemented by this change.
+
+Host checks: `python3 tests/ports/test_teensy41_audio_memory.py` covers actual
+ring/ISR code, 100 lifecycle cycles, allocation/configuration failure, failed
+restart, drain/cancellation/timeout, capture overflow, sample integrity, and
+interrupt injection at pointer handoff. It also checks actual cross-console
+app admission for active/retained/remote ownership. ASan/UBSan and existing
+MP3/WAV/resampling/cancellation host tests pass. The device procedure is
+`scripts/ports/test_teensy41_audio_memory.py --log /tmp/teensy-audio-rings-device.json`;
+it removes its unique SD fixtures after success and distinguishes missing-codec
+checks from live recording/playback. Analog sound and loaded audio coexistence
+remain hardware acceptance items when the codec is reconnected.

@@ -21,6 +21,18 @@ Do not check off a physical test based on simulation, injected input or a build.
   reports missing. Successful full SSH session test with a compatible test host
   key remains unverified in this memory revision; existing trust was preserved.
 
+## On-demand audio rings
+
+- [x] **AUDIO-RAM-1:** Actual-code host sanitizer tests pass for 100 cycles,
+  allocation/configuration failures, overflow, cancellation, drain timeout,
+  pointer handoff interrupts and retained/remote audio ownership guards.
+- [x] **AUDIO-RAM-3:** Installed final legacy firmware: missing-codec failure
+  paths, zero idle ring bytes, exact memory recovery and fixture cleanup pass.
+  Free internal heap 373,180 bytes; PSRAM unchanged.
+- [ ] **AUDIO-RAM-2:** Live codec capture/playback, cancel/restart, synth and
+  concurrent storage/network load: verify ring bytes return to zero, heaps
+  recover, and no dropped samples or audio glitches. Current codec is missing.
+
 ## Firmware and wiring first
 
 | Image | State | Relevant wiring / coverage |

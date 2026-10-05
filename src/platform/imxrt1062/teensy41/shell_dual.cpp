@@ -226,8 +226,14 @@ static bool audio_app(const solar_os_app_t *app) {
     return app && (!strcmp(app->name,"webradio") || !strcmp(app->name,"synth") || !strcmp(app->name,"aplay") || !strcmp(app->name,"arecord"));
 }
 static bool console_has_audio(const Console &c);
+#if SK_AUDIO_PLAYER
+extern "C" bool sk_audio_diagnostic_busy();
+#endif
 static bool sk_app_allowed(const solar_os_app_t *app) {
     if(!audio_app(app)) return true;
+#if SK_AUDIO_PLAYER
+    if(sk_audio_diagnostic_busy())return false;
+#endif
     for(auto &console:consoles) {
         // Check retained parent apps too through the foreground reservation:
         // audio apps never launch children in this port.

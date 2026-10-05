@@ -4,6 +4,39 @@ Updated 2026-10-05. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## On-demand audio rings — 2026-10-05
+
+Implemented and installed on unchanged `teensy41_telnet_legacy` bench wiring.
+The 16 KiB playback and 32 KiB microphone rings allocate from internal memory
+on start and release after stop/error cleanup. AudioStream interrupt exclusion
+protects pointer publication/detachment; allocator operations run outside it.
+DMA/library buffers remain unchanged. Standalone tones and clock alarms do not
+allocate rings. `audio status` reports each ring's allocated bytes.
+
+Diagnostic commands cannot reset a buffer owned by an active/retained audio app
+on USB, LCD or Telnet. Microphone diagnostics block competing audio app starts
+while yielding to other consoles. Actual-code host tests cover these ownership
+rules and 100 buffer lifecycle cycles with allocator/configuration failure,
+cancellation, timeouts, overflow, sample checks and injected interrupts at
+handoff. Sanitizers, existing audio-file tests and 15 manual tests pass.
+
+Final device test passes missing-codec error paths, five playback/recording
+attempts, zero idle ring bytes and exact memory recovery; its unique SD fixtures
+were removed. Codec still reports missing: live capture/playback, synth, analog
+sound and loaded coexistence are not claimed. See the master test checklist.
+
+Final free internal heap: **373,180 / 421,528 bytes** (about 364.4 KiB free),
+including OCRAM 336,888 / 336,888 and DTCM 36,292 / 84,640. This is 48 KiB more
+idle heap than the prior memory revision; PSRAM stays 8,123,868 / 8,388,608.
+Build RAM1 431,104 bytes; RAM2 187,256 bytes; program flash 1,471,928 bytes.
+HEX SHA256: `010e0f9dd73e61148462de83bbc652941b14e43a8274d92a58f9655101bbfc1c`.
+Logs: `/tmp/teensy-audio-rings-device.json`, `/tmp/teensy-audio-rings-build.log`,
+`/tmp/teensy-audio-rings-upload.log`. Details: [audio lifecycle](teensy41-synth.md).
+
+Recording duration and buffer capacities are unchanged: WAV streams to storage
+with the existing one-hour limit. A future larger PSRAM queue would absorb
+longer storage stalls, not automatically extend that duration limit.
+
 ## More available internal RAM — 2026-10-05
 
 Installed on the unchanged `teensy41_telnet_legacy` bench wiring. Telnet's
@@ -49,7 +82,7 @@ Other idle allocations audited, retained for now:
 
 | Reservation | Internal RAM | Reason / next work |
 | --- | ---: | --- |
-| Audio playback and microphone rings | 48 KiB | Interrupt users need coordinated start/stop before freeing buffers |
+| Audio playback and microphone rings | 48 KiB | Subsequently made on-demand; see the newer audio section above |
 | Additional UART RX buffers | 12 KiB | Preserve receive timing; consider allocating per opened port |
 | Serial capture/writer stacks | 10 KiB | Need coordinated service stop and log draining |
 | Ethernet/network event stacks | 14 KiB | Shared by all network clients; not Telnet-specific |

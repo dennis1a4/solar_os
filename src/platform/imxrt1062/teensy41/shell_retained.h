@@ -107,6 +107,16 @@ static bool console_has_audio(const Console &c) {
         for(auto *f=head;f;f=f->parent)if(audio_app(f->app))return true;
     return false;
 }
+#if SK_AUDIO_PLAYER
+// Called by shell diagnostics while holding console_gate, including retained apps.
+extern "C" bool sk_console_audio_busy() {
+    for(auto &c:consoles)if(console_has_audio(c))return true;
+#if SK_TELNETD
+    if(console_has_audio(remote_console))return true;
+#endif
+    return false;
+}
+#endif
 static unsigned console_entries(Console **entries) {
     entries[0]=&consoles[0];entries[1]=&consoles[1];
 #if SK_TELNETD

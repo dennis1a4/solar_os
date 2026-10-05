@@ -9,16 +9,31 @@ extern "C" {
 #include "solar_os_shell_io.h"
 #include "solar_os_audio.h"
 #include "solar_os_shell.h"
+#include "solar_os_memory.h"
 }
 
 // One foreground producer, AudioStream ISR consumer. DMA only sees the Audio
-// library's internal blocks; this ring is in OCRAM and never allocated in PSRAM.
+// library's internal blocks. Allocate CPU rings on demand in internal RAM;
+// detach them with the AudioStream interrupt disabled, then free outside it.
 static constexpr unsigned slots = 32;
-DMAMEM static int16_t pcm[slots][AUDIO_BLOCK_SAMPLES * 2];
+using PlaybackBlock = int16_t[AUDIO_BLOCK_SAMPLES * 2];
+static PlaybackBlock *pcm;
 static volatile unsigned head, tail;
 static volatile uint32_t played, underruns;
 static volatile bool consuming, tone_on;
 static bool ready;
+// Console gate serializes diagnostics with app admission across all consoles.
+static bool diagnostic_busy;
+extern "C" bool sk_audio_diagnostic_busy() { return diagnostic_busy; }
+#if SK_LCD_CONSOLE
+extern "C" bool sk_console_audio_busy();
+#endif
+static bool diagnostic_allowed() {
+#if SK_LCD_CONSOLE
+    if (sk_console_audio_busy()) return false;
+#endif
+    return !diagnostic_busy;
+}
 #if SK_CLOCK
 static volatile bool clock_tone_on;
 static volatile uint32_t clock_tone_until;
@@ -79,7 +94,8 @@ static AudioOutputI2S output;
 static AudioConnection left(source, 0, output, 0), right(source, 1, output, 1);
 static AudioControlSGTL5000 codec;
 static constexpr unsigned capture_slots = 128;
-DMAMEM static int16_t captured[capture_slots][AUDIO_BLOCK_SAMPLES];
+using CaptureBlock = int16_t[AUDIO_BLOCK_SAMPLES];
+static CaptureBlock *captured;
 static volatile unsigned capture_head, capture_tail;
 static volatile bool capture_enabled;
 static bool capture_test, test_tone_started;
@@ -107,12 +123,17 @@ static MicCapture capture;
 static AudioConnection mic_connection(input, 0, capture, 0);
 extern "C" esp_err_t sk_audio_capture_start() {
     if (!ready) return ESP_ERR_NOT_FOUND;
+    sk_audio_capture_stop();
     sk_audio_output_finish(false);
     if (!sk_i2c_lock(0)) return ESP_ERR_TIMEOUT;
     bool ok = codec.inputSelect(AUDIO_INPUT_MIC) && codec.micGain(20);
     sk_i2c_unlock(0);
     if (!ok) return ESP_FAIL;
+    auto *buffer = static_cast<CaptureBlock *>(solar_os_memory_alloc(
+        capture_slots * sizeof(CaptureBlock), SOLAR_OS_MEMORY_INTERNAL_PREFERRED, "audio.capture"));
+    if (!buffer) return ESP_ERR_NO_MEM;
     AudioNoInterrupts();
+    captured = buffer;
     test_tone_started = false;
     capture_head = capture_tail = 0;
     capture_drops = capture_blocks = 0;
@@ -122,6 +143,7 @@ extern "C" esp_err_t sk_audio_capture_start() {
 }
 extern "C" esp_err_t sk_audio_capture_read(int16_t *mono, size_t capacity, size_t *frames) {
     *frames = 0;
+    if (!captured || !capture_enabled) return ESP_ERR_INVALID_STATE;
     uint32_t started = millis();
     while (capture_head == capture_tail) {
         if (sk_audio_cancelled()) return ESP_ERR_TIMEOUT;
@@ -145,7 +167,11 @@ extern "C" uint32_t sk_audio_capture_stop() {
     AudioNoInterrupts();
     capture_enabled = false;
     if (capture_test) tone_on = false;
+    auto *buffer = captured;
+    captured = nullptr;
+    capture_head = capture_tail = 0;
     AudioInterrupts();
+    solar_os_memory_free(buffer);
     return capture_drops;
 }
 
@@ -178,7 +204,8 @@ extern "C" bool sk_audio_cancelled() {
     return stop;
 #endif
 }
-extern "C" esp_err_t sk_audio_output_start(uint8_t volume) {
+// Test/alarm tones are generated directly into AudioStream blocks, without a ring.
+static esp_err_t configure_output(uint8_t volume) {
     if (!ready) return ESP_ERR_NOT_FOUND;
     sk_audio_output_finish(false);
     if (!sk_i2c_lock(0)) return ESP_ERR_TIMEOUT;
@@ -187,7 +214,19 @@ extern "C" esp_err_t sk_audio_output_start(uint8_t volume) {
     played = underruns = tone_blocks = 0;
     return configured ? ESP_OK : ESP_FAIL;
 }
+extern "C" esp_err_t sk_audio_output_start(uint8_t volume) {
+    const esp_err_t err = configure_output(volume);
+    if (err != ESP_OK) return err;
+    auto *buffer = static_cast<PlaybackBlock *>(solar_os_memory_alloc(
+        slots * sizeof(PlaybackBlock), SOLAR_OS_MEMORY_INTERNAL_PREFERRED, "audio.playback"));
+    if (!buffer) return ESP_ERR_NO_MEM;
+    AudioNoInterrupts();
+    pcm = buffer;
+    AudioInterrupts();
+    return ESP_OK;
+}
 extern "C" esp_err_t sk_audio_output_write(const int16_t *data, size_t frames) {
+    if (!pcm) return ESP_ERR_INVALID_STATE;
     while (frames) {
         uint32_t started = millis();
         while ((head + 1) % slots == tail) {
@@ -221,6 +260,7 @@ extern "C" uint32_t sk_audio_output_underruns() { return underruns; }
 // Limit queued audio to four blocks (~12 ms), instead of the player's 90 ms.
 extern "C" esp_err_t sk_audio_synth_write(const int16_t *data, size_t frames,
                                           const volatile bool *stop) {
+    if (!pcm) return ESP_ERR_INVALID_STATE;
     while (frames) {
         uint32_t started = millis();
         while ((head + slots - tail) % slots >= 4) {
@@ -268,12 +308,17 @@ extern "C" esp_err_t sk_audio_output_finish(bool drain) {
     AudioNoInterrupts();
     consuming = tone_on = false;
     head = tail = partial = 0;
+    auto *buffer = pcm;
+    pcm = nullptr;
     AudioInterrupts();
+    solar_os_memory_free(buffer);
     return result;
 }
 void sk_audio_player_tone(bool on) {
+    if (!diagnostic_allowed()) { sk_console_print("Audio busy; stop the audio app first\r\n"); return; }
     if (!ready) { sk_console_print("Audio unavailable\r\n"); return; }
-    if (sk_audio_output_start(20) != ESP_OK) return;
+    if (!on) { sk_audio_output_finish(false); return; }
+    if (configure_output(20) != ESP_OK) return;
     tone_until = millis() + 1000;
     __DMB();
     tone_on = on;
@@ -281,12 +326,17 @@ void sk_audio_player_tone(bool on) {
 extern "C" void sk_audio_output_status() {
     sk_console_printf("Audio: SGTL5000=%s rate=44100 stereo blocks=%lu underruns=%lu\r\n",
         ready ? "ready" : "missing", (unsigned long)played, (unsigned long)underruns);
+    sk_console_printf("Audio rings: playback=%u capture=%u bytes (internal RAM)\r\n",
+        pcm ? unsigned(slots * sizeof(PlaybackBlock)) : 0,
+        captured ? unsigned(capture_slots * sizeof(CaptureBlock)) : 0);
     sk_console_printf("Capture: mic gain=20dB blocks=%lu overruns=%lu\r\n",
         (unsigned long)capture_blocks, (unsigned long)capture_drops);
 }
 extern "C" void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char **argv) {
     if (argc == 1 || (argc == 2 && !strcmp(argv[1], "status"))) {
         sk_audio_output_status();
+    } else if (!diagnostic_allowed()) {
+        solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), "Audio busy; stop the audio app first");
     } else if (argc == 2 && !strcmp(argv[1], "tone")) {
         sk_audio_player_tone(true);
         solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), ready ?
@@ -296,13 +346,15 @@ extern "C" void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char
         auto *io = solar_os_context_shell_io(ctx);
         if (solar_os_shell_resolve_path(ctx, argv[2], path, sizeof(path)) != ESP_OK) return;
         solar_os_shell_io_writeln(io, "Recording 4 seconds; a one-second tone follows one second of silence.");
-        esp_err_t err = sk_audio_output_start(30);
+        diagnostic_busy = true;
+        esp_err_t err = configure_output(30);
         solar_os_audio_wav_info_t info{};
         if (err == ESP_OK) {
             capture_test = true;
             err = solar_os_audio_record_wav(path, 4000, nullptr, &info);
             capture_test = false;
         }
+        diagnostic_busy = false;
         solar_os_shell_io_printf(io, "Mic test: %s, %lu bytes, %lu ms\n", esp_err_to_name(err),
             (unsigned long)info.data_bytes, (unsigned long)info.duration_ms);
         solar_os_shell_io_printf(io, "Mic test tone: started=%u blocks=%lu\n",
