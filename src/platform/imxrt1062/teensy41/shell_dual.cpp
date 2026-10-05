@@ -313,6 +313,13 @@ static bool emit_key(char ch, void *) {
 
 static bool initialize_console() {
     session=solar_os_shell_session_create(); if(!session)return false;
+#if SK_SETTINGS
+    unsigned history_id = active().local ? 1 : 2;
+#if SK_TELNETD
+    if (sk_console_is_remote()) history_id = 3;
+#endif
+    solar_os_shell_history_store(session, history_id);
+#endif
     extern solar_os_gfx_t *sk_lcd_gfx();
     solar_os_context_init(&shell_context,nullptr,active().local ? sk_lcd_gfx() : nullptr);
     auto *io=solar_os_shell_session_io(session);
@@ -355,6 +362,19 @@ static bool initialize_console() {
 #endif
     return true;
 }
+#if SK_SETTINGS
+extern "C" bool sk_console_history_flush() {
+    if (!console_gate) return true;
+    if (xSemaphoreTakeRecursive(console_gate,pdMS_TO_TICKS(1000))!=pdTRUE) return false;
+    bool ok=true;
+    for (auto &c:consoles) if (!solar_os_shell_history_flush(c.shell,true)) ok=false;
+#if SK_TELNETD
+    if (!solar_os_shell_history_flush(remote_console.shell,true)) ok=false;
+#endif
+    xSemaphoreGiveRecursive(console_gate);
+    return ok;
+}
+#endif
 static void run_console(void *) {
     xSemaphoreTakeRecursive(console_gate,portMAX_DELAY);
 #if SK_TELNETD
@@ -394,6 +414,9 @@ static void run_console(void *) {
             solar_os_shell_io_printf(solar_os_shell_session_io(session),"\npoweroff: %s\n",sk_power_status());
             if(!foreground)solar_os_shell_session_prompt(&shell_context,session);
         }
+#endif
+#if SK_SETTINGS
+        solar_os_shell_history_flush(session, false);
 #endif
         service_session_request();
         auto *io=solar_os_shell_session_io(session);

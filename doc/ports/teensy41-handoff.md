@@ -1,8 +1,54 @@
 # Teensy / SuperKeyboard handover
 
-Updated 2026-10-04. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
+Updated 2026-10-05. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
+
+## Flash history, SSH repair and boot networking — 2026-10-05
+
+Installed on `teensy41_telnet_legacy` with unchanged bench pin assignments.
+The shell now saves 12 commands per LCD/USB/Telnet console under
+`/flash/.shell/history-{lcd,usb,telnet}`. It reuses existing PSRAM history buffers,
+adds 12 bytes of metadata per session, batches writes every 30 seconds while
+console polling runs, and flushes on orderly reboot/shutdown and Telnet teardown.
+Temporary-file close plus LittleFS replacement preserves the previous saved
+history on failure. USB reconnect retains unsaved RAM history. Script-only
+sessions do not persist. Up/Down recall survives restart. The upstream
+`/.shell/history` path was on the unwritable virtual root.
+
+History ASan/UBSan tests pass, including write/close/replace failure retention,
+bounded/malformed loads and timer wrap. Device USB/LCD timed saves, isolation,
+reboot recall and `poweroff --check` pass. Telnet-specific physical acceptance
+remains separately listed. See [history details](teensy41-shell-composition.md).
+
+SSH's config path likewise incorrectly resolved to `/.ssh`; it now uses
+`/flash/.ssh`, matching sshkey's key location. Further testing found that calling
+the entropy HAL initializer on every request could discard completed random
+samples because its stopped-oscillator test also matches that state. The
+Ethernet owner now initializes the generator once (and after clock disable),
+preserves completed samples, and uses the driver's recovery path for latched
+errors. Crypto initialization is checked explicitly; persistent entropy failures
+remain bounded errors with diagnostics, never a weak-randomness fallback.
+The entropy host regression covers completed-sample preservation, error recovery,
+request bounds and peripheral-clock restart. Full device SSH regression passes:
+password login, bidirectional/bulk I/O, editing keys, wrong-password and changed
+host-key rejection, cancellation, remote close and repeated cleanup. Warm free
+memory stays at 35,796 internal / 8,123,868 PSRAM across repeated connections.
+The isolated server ran on the user's PC with temporary test credentials; the
+real `dennis` account was not used.
+
+Networking is enabled at boot through the existing startup mechanism:
+`setterm startup flash`, with `network up` in `/flash/.shell/startup`. Neither
+flash nor SD previously had a startup file. Reboot verified DHCP at
+192.168.1.197 without manually starting networking. No network listener was
+added to startup. A startup manager UI remains a possible future convenience.
+
+Installed HEX SHA256:
+`b3916b35b4aa95551a818b40eb6b6a3182208f1285c6a16cb402f00f69f369b6`.
+Flash 1,432,568; RAM1 430,560; RAM2 342,904 bytes. Idle free memory before SSH:
+35,812 internal / 8,123,868 PSRAM. Evidence: `/tmp/teensy-history-ssh-build.log`,
+`/tmp/teensy-history-upload.log`, `/tmp/teensy-history-device.json`,
+`/tmp/teensy-history-ssh-device.json`.
 
 ## Num Lock USB request ordering fix — 2026-10-04
 
@@ -22,7 +68,7 @@ reconnect and existing keyboard lifecycle/keypad behavior. On-device startup
 reaches `numlock=on auto=on`. User confirmed the physical LED, manual toggle,
 unplug/replug auto-enable, letters and keypad numbers all work on the bench keyboard.
 
-Current installed HEX SHA256:
+Num Lock correction HEX SHA256:
 `b167e0c8d1868ec03a8b53d92ee4ce09223c1fbc67df4a0b757be8c82e82ea09`.
 Flash 1,431,616 bytes; RAM1 430,560; RAM2 342,904. Measured free memory:
 35,812 internal / 8,123,892 PSRAM bytes. Evidence:

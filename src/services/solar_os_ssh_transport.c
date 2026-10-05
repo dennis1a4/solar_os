@@ -31,7 +31,12 @@
 #endif
 
 #define SOLAR_OS_SSH_TRANSPORT_SOCKET_WAIT_MS 100
+#if SOLAR_OS_PLATFORM_IMXRT1062
+// The Teensy root is virtual; keep hosts/known_hosts beside sshkey's keys.
+#define SOLAR_OS_SSH_TRANSPORT_DIR "flash/.ssh"
+#else
 #define SOLAR_OS_SSH_TRANSPORT_DIR ".ssh"
+#endif
 #define SOLAR_OS_SSH_TRANSPORT_KNOWN_HOSTS "known_hosts"
 #define SOLAR_OS_SSH_TRANSPORT_HOSTS "hosts"
 
@@ -774,6 +779,17 @@ esp_err_t solar_os_ssh_transport_open(const solar_os_ssh_transport_config_t *con
         return ESP_FAIL;
     }
     transport->libssh2_ready = true;
+#if SOLAR_OS_SSH_PORT_TRANSPORT
+    extern int sk_ssh_crypto_check(void);
+    const int crypto_status = sk_ssh_crypto_check();
+    if (crypto_status != 0) {
+        char message[80];
+        snprintf(message, sizeof(message), "SSH crypto initialization failed (%d)", crypto_status);
+        transport_send_error(config, message);
+        solar_os_ssh_transport_close(transport, NULL);
+        return ESP_FAIL;
+    }
+#endif
 
     esp_err_t ret = transport_connect_socket(config, &transport->socket_fd);
     if (ret != ESP_OK || transport_should_stop(config)) {

@@ -5,12 +5,20 @@
 #include <sys/select.h>
 extern "C" {
 #include "solar_os_memory.h"
+#include "solar_os_log.h"
 #include "solar_os_task.h"
 #include "solar_os_net_transport.h"
 #include "solar_os_identity.h"
 #include "mbedtls/entropy.h"
+#include "psa/crypto.h"
 }
 
+extern "C" int sk_ssh_crypto_check() {
+    const psa_status_t status=psa_crypto_init();
+    if(status!=PSA_SUCCESS)return status;
+    unsigned char probe[16];
+    return psa_generate_random(probe,sizeof(probe));
+}
 extern "C" void *sk_crypto_calloc(size_t n,size_t size) {
     return solar_os_memory_calloc(n,size,SOLAR_OS_MEMORY_TRANSIENT,"crypto");
 }
@@ -21,9 +29,17 @@ extern "C" int mbedtls_hardware_poll(void *,unsigned char *out,size_t size,size_
     while (*written<size) {
         sk_net_request q{}; sk_net_reply r;
         q.op=SK_NET_ENTROPY; q.length=min(size-*written,size_t(SK_NET_CHUNK));
-        if (sk_net_call(&q,&r)) return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+        int error=sk_net_call(&q,&r);
+        if (error) {
+            SOLAR_OS_LOGW("entropy","RPC error=%d collected=%u requested=%u",error,(unsigned)*written,(unsigned)size);
+            return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+        }
         if (!r.value) {
-            if (millis()-started>1000) return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+            if (millis()-started>1000) {
+                SOLAR_OS_LOGW("entropy","timeout collected=%u requested=%u MCTL=%08lx SDCTL=%08lx FRQ=%08lx CLK=%08lx",(unsigned)*written,(unsigned)size,
+                    (unsigned long)TRNG_MCTL,(unsigned long)TRNG_SDCTL,(unsigned long)TRNG_FRQCNT,(unsigned long)CCM_CCGR6);
+                return MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
+            }
             vTaskDelay(1); continue;
         }
         memcpy(out+*written,r.data,r.value); *written+=r.value;

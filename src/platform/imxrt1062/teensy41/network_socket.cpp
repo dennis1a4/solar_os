@@ -21,6 +21,7 @@ extern "C" size_t qnethernet_hal_fill_entropy(void *,size_t);
 #include <cerrno>
 #include <cstring>
 #include "network_socket.h"
+#include "qnethernet/entropy/entropy.h"
 using namespace qindesign::network;
 #if SK_NET_DIAGNOSTICS
 struct PingProbe {
@@ -186,10 +187,21 @@ extern "C" void sk_net_transport_poll(int ready) {
 #if SK_SSH || SK_NET_DIAGNOSTICS
     case SK_NET_ENTROPY: {
         // Keys can be generated before network up (or after network down).
-        // The HAL initializes only a stopped TRNG. Keep this in the Ethernet
-        // owner task and initialize before reading clock-gated registers.
-        qnethernet_hal_init_entropy();
-        if (TRNG_MCTL & TRNG_MCTL_ERR) { r.error=EIO; break; }
+        // Initialize once, or after the peripheral clock was disabled. Calling
+        // the HAL initializer on every poll can discard a completed sample:
+        // its stopped-oscillator test is also true when entropy is ready.
+        static bool entropy_initialized=false;
+        if (!entropy_initialized || !(CCM_CCGR6 & CCM_CCGR6_TRNG(CCM_CCGR_ON))) {
+            qindesign::entropy::trng_init();
+            entropy_initialized=true;
+        }
+        if (TRNG_MCTL & TRNG_MCTL_ERR) {
+            // The HAL clears the latched TRNG error and restarts generation.
+            // A zero-length read performs recovery without returning entropy
+            // from the failed sample. Let the caller retry within its deadline.
+            qnethernet_hal_fill_entropy(nullptr,0);
+            break;
+        }
         size_t n=qnethernet_hal_entropy_available();
         if (q.length<0 || q.length>SK_NET_CHUNK) { r.error=EINVAL; break; }
         if (n>size_t(q.length)) n=q.length;

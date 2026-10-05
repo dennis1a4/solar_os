@@ -590,3 +590,16 @@ exclusive USB and idle consoles. It creates/removes `/syntax-test` in RAMFS;
 that mount name must be unused. Checks token colors, selection, multiline edits,
 resume, shell color restoration, LCD text and stable editor cleanup. See
 [syntax limits](../../doc/ports/teensy41-syntax.md).
+
+### Flash command history
+
+`bash scripts/ports/test_teensy41_history_host.sh` checks batching, bounded
+history, console isolation and atomic-save failure behavior with ASan/UBSan.
+`python3 scripts/ports/test_teensy41_history.py --log /tmp/history.json` requires
+idle USB and LCD consoles, adds harmless echo commands, waits one save interval,
+reboots once and runs a shutdown dry-run without cutting power.
+
+`bash scripts/ports/test_teensy41_entropy_host.sh` checks the actual entropy RPC
+case with simulated peripheral states, including preservation of a ready sample
+whose oscillator has stopped. The SSH device test accepts `--debug-log PATH`
+for test-server negotiation diagnostics.

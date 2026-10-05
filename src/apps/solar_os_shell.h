@@ -67,3 +67,9 @@ esp_err_t solar_os_shell_run_background_script(const char *path);
 /* Run one command without a terminal. Foreground application launches are rejected. */
 esp_err_t solar_os_shell_run_background_command(const char *command);
 esp_err_t solar_os_shell_set_cwd(solar_os_context_t *ctx, const char *path);
+
+#if SK_SETTINGS && SK_LCD_CONSOLE
+/* Console owner calls these with its console lock held. IDs: LCD=1, USB=2, Telnet=3. */
+void solar_os_shell_history_store(solar_os_shell_session_t *, unsigned id);
+bool solar_os_shell_history_flush(solar_os_shell_session_t *, bool force);
+#endif

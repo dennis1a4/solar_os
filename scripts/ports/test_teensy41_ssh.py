@@ -19,7 +19,9 @@ p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--board-ip',default='192.168.1.197')
 p.add_argument('--log',type=Path,required=True)
 p.add_argument('--smoke',action='store_true')
+p.add_argument('--debug-log',type=Path)
 a=p.parse_args()
+if a.debug_log: paramiko.util.log_to_file(str(a.debug_log))
 with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as route:
     route.connect((a.board_ip,9)); host=route.getsockname()[0]
 password=uuid.uuid4().hex

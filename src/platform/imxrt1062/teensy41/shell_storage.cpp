@@ -505,6 +505,16 @@ extern "C" esp_err_t sk_settings_replace(const char *source, const char *dest) {
     return flash_result(lfs_rename(sk_flash_fs(),a.path,b.path))==0 ? ESP_OK : ESP_FAIL;
 }
 #endif
+#if SK_SETTINGS && SK_LCD_CONSOLE
+extern "C" int sk_history_replace(const char *source, const char *dest) { StorageLock lock;
+    Route a,b;
+    constexpr const char *prefix="/flash/.shell/history-";
+    if (!route_path(source,a) || !route_path(dest,b) || !a.flash || !b.flash ||
+        strncmp(source,prefix,strlen(prefix)) || strncmp(dest,prefix,strlen(prefix)))
+        return ESP_ERR_INVALID_ARG;
+    return flash_result(lfs_rename(sk_flash_fs(),a.path,b.path))==0 ? ESP_OK : ESP_FAIL;
+}
+#endif
 extern "C" bool solar_os_storage_flash_is_mounted() { StorageLock lock;
 #if SK_QSPI_FLASH
     return sk_flash_mounted();

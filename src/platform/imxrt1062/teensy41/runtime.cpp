@@ -22,7 +22,13 @@ extern "C" const char *esp_err_to_name(esp_err_t error) {
     default: return "UNKNOWN";
     }
 }
+#if SK_SETTINGS && SK_LCD_CONSOLE
+extern "C" bool sk_console_history_flush();
+#endif
 extern "C" void esp_restart() {
+#if SK_SETTINGS && SK_LCD_CONSOLE
+    sk_console_history_flush();
+#endif
     SCB_AIRCR = 0x05FA0004;
     asm volatile("dsb" ::: "memory");
     while (true) {}

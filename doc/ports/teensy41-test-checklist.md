@@ -497,3 +497,25 @@ profile; no GPIO reassignment is needed for the dedicated On/Off pad.
   auto-enable, letters and keypad digits all work on the bench keyboard.
 - [ ] **KEY-NUM-OTHER — Additional keyboards:** repeat the LED/manual toggle/
   reconnect/keypad check with another keyboard when available.
+
+## Flash shell history — 2026-10-04
+
+- [x] **HIST-HOST:** ASan/UBSan: batching, save/open/close/replace failures,
+  retained old file, bounded load, incomplete records, console isolation and
+  timer wrap.
+- [x] **HIST-DEVICE:** timed LCD/USB flash saves, separate histories, USB/LCD
+  Up-arrow recall after reboot, and `poweroff --check` save complete.
+- [ ] **HIST-TELNET:** verify recall on a fresh remote connection on hardware;
+  the shared persistence implementation and separate path pass host tests.
+- [x] **NET-BOOT:** saved `network up` in `/flash/.shell/startup` and selected
+  `setterm startup flash`; post-reboot status reports DHCP bound without issuing
+  a network start command manually.
+
+## SSH configuration/entropy repair — 2026-10-05
+
+- [x] **SSH-CONFIG:** client config uses `/flash/.ssh`, matching sshkey.
+- [x] **SSH-ENTROPY-HOST:** ASan/UBSan completed-sample preservation, error
+  recovery, request bounds and restart after peripheral clock disable.
+- [x] **SSH-REGRESSION:** isolated-server password login, bulk/bidirectional I/O,
+  editing keys, wrong-password and changed-host-key rejection, cancellation,
+  remote close and repeated cleanup pass. Warm memory is unchanged across repeats.

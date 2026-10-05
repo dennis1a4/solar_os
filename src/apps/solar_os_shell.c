@@ -241,6 +241,11 @@ struct solar_os_shell_session {
     size_t input_view_offset;
     char history[SHELL_HISTORY_LEN][SHELL_INPUT_MAX];
     char history_draft[SHELL_INPUT_MAX];
+#if SK_SETTINGS && SK_LCD_CONSOLE
+    unsigned history_store;
+    bool history_dirty;
+    uint32_t history_saved_ms;
+#endif
     char cwd[SHELL_PATH_MAX];
     size_t history_count;
     int history_index;
@@ -4577,6 +4582,9 @@ static bool shell_history_add_ram(solar_os_shell_session_t *session, const char 
     return true;
 }
 
+#if SK_SETTINGS && SK_LCD_CONSOLE
+#include "shell_history.h"
+#else
 static void shell_history_save(solar_os_shell_session_t *session)
 {
     char path[SHELL_PATH_MAX];
@@ -4650,12 +4658,18 @@ static void shell_history_load(solar_os_shell_session_t *session)
     }
 }
 
+#endif
+
 static void shell_history_add(solar_os_context_t *ctx, const char *line)
 {
     solar_os_shell_session_t *session = shell_session(ctx);
 
     if (shell_history_add_ram(session, line)) {
+#if SK_SETTINGS && SK_LCD_CONSOLE
+        if (session->history_store) session->history_dirty = true;
+#else
         shell_history_save(session);
+#endif
     }
 }
 
@@ -9755,6 +9769,9 @@ solar_os_shell_session_t *solar_os_shell_session_create(void)
 
 void solar_os_shell_session_destroy(solar_os_shell_session_t *session)
 {
+#if SK_SETTINGS && SK_LCD_CONSOLE
+    solar_os_shell_history_flush(session, true);
+#endif
 #if SOLAR_OS_PACKAGE_JOB_SPEECHD
     solar_os_shell_speech_file_session_destroyed(session);
 #endif
@@ -10519,14 +10536,22 @@ esp_err_t solar_os_shell_session_start(solar_os_context_t *ctx,
     solar_os_context_set_shell_io(ctx, io);
 
     memset(session->input, 0, sizeof(session->input));
-    memset(session->history, 0, sizeof(session->history));
     memset(session->history_draft, 0, sizeof(session->history_draft));
     session->input_len = 0;
     session->input_cursor = 0;
     session->input_row = 0;
     session->input_col = 0;
     session->input_view_offset = 0;
-    session->history_count = 0;
+#if SK_SETTINGS && SK_LCD_CONSOLE
+    // A serial reconnect restarts this same session: retain unsaved history.
+    bool keep_history = session->history_dirty;
+    if (!keep_history) {
+#endif
+        memset(session->history, 0, sizeof(session->history));
+        session->history_count = 0;
+#if SK_SETTINGS && SK_LCD_CONSOLE
+    }
+#endif
     session->history_index = -1;
     session->history_browsing = false;
     session->previous_key_was_tab = false;
@@ -10548,6 +10573,9 @@ esp_err_t solar_os_shell_session_start(solar_os_context_t *ctx,
     if (!preserve_terminal) {
         shell_reset_cwd(session);
     }
+#if SK_SETTINGS && SK_LCD_CONSOLE
+    if (!keep_history)
+#endif
     shell_history_load(session);
     shell_alias_ensure_file();
 

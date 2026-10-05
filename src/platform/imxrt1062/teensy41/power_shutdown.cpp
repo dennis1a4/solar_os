@@ -9,6 +9,9 @@ extern "C" {
 int sk_shutdown_preflight(void);
 bool sk_shutdown_ready(void);
 bool sk_storage_shutdown_sync(void);
+#if SK_SETTINGS
+bool sk_console_history_flush(void);
+#endif
 #if SK_POWER
 bool sk_pd_shutdown(void);
 #endif
@@ -50,7 +53,11 @@ static void shutdown_step() {
             if(sk_serial_shutdown()!=ESP_OK)finish("serial log error; power remains on");
             else {
                 status="syncing storage";
-                if(!sk_storage_shutdown_sync())finish("storage busy or sync failed; power remains on");
+                if(
+#if SK_SETTINGS
+                   !sk_console_history_flush() ||
+#endif
+                   !sk_storage_shutdown_sync())finish("storage busy or sync failed; power remains on");
 #if SK_POWER
                 else if(!sk_pd_shutdown())finish("cannot confirm USB-PD 5 V; power remains on");
 #endif

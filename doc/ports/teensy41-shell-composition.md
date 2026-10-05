@@ -139,3 +139,33 @@ by exactly 16,384 bytes from the previous installed image. Evidence logs:
 
 Telnet-specific pipeline stress and simultaneous audio-load testing were not
 performed in this acceptance run. Do not substitute the newer wiring profile.
+
+## Persistent command history — 2026-10-04
+
+The legacy bench profile saves the last 12 entered command lines per interactive
+console (191 characters maximum per line). Use Up/Down at the prompt to recall
+commands across reconnects and reboots. Consecutive duplicates are omitted.
+The files are `/flash/.shell/history-lcd`, `history-usb`, and `history-telnet`.
+Script-created shell sessions do not read or overwrite interactive history.
+These paths explicitly target flash: the previous upstream default resolved to
+`/.shell`, which cannot be created on the Teensy's virtual root.
+
+Dirty histories are saved at most once per 30 seconds during console polling;
+foreground commands that block that polling can delay the save. Orderly reboot,
+graceful shutdown, and Telnet session destruction request an immediate save.
+USB reconnect preserves any unsaved history already in RAM. Failed saves retain
+the dirty flag for retry while the session exists; graceful shutdown refuses
+poweroff on failure. Reboot still resets if saving fails. Unplugging power can
+lose the latest unsaved commands.
+
+Each save closes a temporary file successfully before LittleFS atomically
+replaces the previous file. A file contains at most 2,304 bytes, with at most one
+equally bounded temporary file per console. The existing PSRAM history buffers
+are reused; metadata adds 12 bytes per shell session. Loading rejects incomplete
+records and bounds scanning. History contains command text in plaintext; SSH
+password-prompt input is handled by SSH and is not shell history.
+
+Validation scripts: `test_teensy41_history_host.sh` exercises real history code
+under ASan/UBSan, including write/close/replace failures, timer wrap, bounded
+retention, malformed records and isolation. `test_teensy41_history.py` checks
+timed flash saves, USB/LCD isolation, reboot recall and shutdown dry-run.
