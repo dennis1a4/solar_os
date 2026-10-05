@@ -5,6 +5,22 @@ below contain procedures and historical evidence; the roadmap tracks development
 Unchecked items are outstanding, not failed unless explicitly described as such.
 Do not check off a physical test based on simulation, injected input or a build.
 
+## On-demand internal memory
+
+- [x] **RAM-1:** Host OCRAM routing, alignment, allocation failure, DMA refusal,
+  task creation failure and 100 repeated safe task-reap cycles pass.
+- [x] **RAM-2:** Device Telnet start/stop, self-stop and stop during remote Python
+  return OCRAM to baseline; full reconnect/authentication regression passes.
+- [x] **RAM-3:** Python background/suspend/resume/cross-console/cancellation
+  regression passes with unchanged memory after repeated operations.
+- [x] **RAM-5:** Final firmware graceful shutdown regression passes: idle,
+  blocked app, Python cleanup/refusal, serial draining and exact memory recovery.
+- [x] **RAM-6:** Five foreground SSH connection failures on final firmware
+  reclaim memory exactly; generated process/shutdown fixtures removed.
+- [ ] **RAM-4:** Audio load regression with codec connected; current codec
+  reports missing. Successful full SSH session test with a compatible test host
+  key remains unverified in this memory revision; existing trust was preserved.
+
 ## Firmware and wiring first
 
 | Image | State | Relevant wiring / coverage |

@@ -67,11 +67,13 @@ extern "C" void solar_os_identity_get_hostname(char *out,size_t size) { strlcpy(
 
 // One foreground worker, with internal OCRAM stack. Retain a terminated worker
 // suspended until its owner reaps it, avoiding reuse before FreeRTOS cleanup.
-DMAMEM static StackType_t worker_stack[7168];
+static constexpr uint32_t worker_stack_limit=7168*sizeof(StackType_t);
+static StackType_t *worker_stack;
 static StaticTask_t worker_tcb;
 static TaskHandle_t worker;
 #if SK_BACKGROUND_JOBS
-DMAMEM static StackType_t process_stack[10240];
+static constexpr uint32_t process_stack_limit=10240*sizeof(StackType_t);
+static StackType_t *process_stack;
 static StaticTask_t process_tcb;
 static TaskHandle_t process_worker;
 #endif
@@ -106,7 +108,7 @@ extern "C" void solar_os_task_delete_external(TaskHandle_t task) {
     configASSERT(false);
 }
 static void reap() {
-    if (worker && eTaskGetState(worker)==eSuspended) { vTaskDelete(worker); worker=nullptr; }
+    if (worker && eTaskGetState(worker)==eSuspended) { vTaskDelete(worker); worker=nullptr; solar_os_memory_free(worker_stack); worker_stack=nullptr; }
 }
 extern "C" bool solar_os_task_admit(const char *,uint32_t bytes,solar_os_task_role_t role,bool external) {
     if(external){
@@ -116,9 +118,9 @@ extern "C" bool solar_os_task_admit(const char *,uint32_t bytes,solar_os_task_ro
         return available && memory.external.free>bytes+4096;
     }
 #if SK_BACKGROUND_JOBS
-    if(role==SOLAR_OS_TASK_ROLE_BACKGROUND)return !external && bytes<=sizeof(process_stack) && !process_worker;
+    if(role==SOLAR_OS_TASK_ROLE_BACKGROUND)return !external && bytes<=process_stack_limit && !process_worker;
 #endif
-    return !bytes || (!external && bytes<=sizeof(worker_stack) &&
+    return !bytes || (!external && bytes<=worker_stack_limit &&
         (!worker || eTaskGetState(worker)==eSuspended));
 }
 extern "C" BaseType_t solar_os_task_create_pinned_internal(TaskFunction_t fn,const char *name,
@@ -126,17 +128,23 @@ extern "C" BaseType_t solar_os_task_create_pinned_internal(TaskFunction_t fn,con
     reap();
 #if SK_BACKGROUND_JOBS
     if(role==SOLAR_OS_TASK_ROLE_BACKGROUND) {
-        if(process_worker || !out || !bytes || bytes>sizeof(process_stack))return pdFAIL;
+        if(process_worker || !out || !bytes || bytes>process_stack_limit)return pdFAIL;
+        process_stack=static_cast<StackType_t *>(solar_os_memory_alloc(bytes,SOLAR_OS_MEMORY_INTERNAL_PREFERRED,"python.stack"));
+        if(!process_stack)return pdFAIL;
         process_worker=xTaskCreateStatic(fn,name,bytes/sizeof(StackType_t),arg,1,process_stack,&process_tcb);
+        if(!process_worker){solar_os_memory_free(process_stack);process_stack=nullptr;}
         *out=process_worker;return process_worker?pdPASS:pdFAIL;
     }
 #endif
-    if (worker || !bytes || bytes>sizeof(worker_stack) || !out) return pdFAIL;
+    if (worker || !bytes || bytes>worker_stack_limit || !out) return pdFAIL;
     // App priorities originate on ESP. On this single-core port the USB
     // console and Ethernet owner run at priority 2: foreground workers must
     // stay below them so a CPU/storage-bound operation can still be cancelled.
     const UBaseType_t worker_priority = min(priority, UBaseType_t(1));
+    worker_stack=static_cast<StackType_t *>(solar_os_memory_alloc(bytes,SOLAR_OS_MEMORY_INTERNAL_PREFERRED,"foreground.stack"));
+    if(!worker_stack)return pdFAIL;
     worker=xTaskCreateStatic(fn,name,bytes/sizeof(StackType_t),arg,worker_priority,worker_stack,&worker_tcb);
+    if(!worker){solar_os_memory_free(worker_stack);worker_stack=nullptr;}
     *out=worker; return worker ? pdPASS : pdFAIL;
 }
 extern "C" void solar_os_task_delete_internal(TaskHandle_t task) {
@@ -151,7 +159,7 @@ extern "C" bool solar_os_task_wait_done(TaskHandle_t task,volatile bool *done,ui
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 #if SK_BACKGROUND_JOBS
-    if(task==process_worker){vTaskDelete(process_worker);process_worker=nullptr;return true;}
+    if(task==process_worker){vTaskDelete(process_worker);process_worker=nullptr;solar_os_memory_free(process_stack);process_stack=nullptr;return true;}
 #endif
     for(auto &entry:external_tasks)if(entry.task==task)return true;
     reap(); return true;

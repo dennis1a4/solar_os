@@ -4,6 +4,62 @@ Updated 2026-10-05. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## More available internal RAM — 2026-10-05
+
+Installed on the unchanged `teensy41_telnet_legacy` bench wiring. Telnet's
+40 KiB stack, the foreground worker's maximum 28 KiB stack, and Python's
+40 KiB background stack now allocate when needed and free after their tasks
+finish and suspend. Another task deletes/reaps them; a running stack is never
+freed. Telnet client `exit` retains the listener; `telnetd stop` releases its
+stack after cleanup. `telnetd status` shows stack bytes and pending cleanup.
+
+The allocator now exposes the previously unused linker-defined OCRAM tail,
+excluding static/DMA buffers and unwind tables. Internal-preferred allocations
+use OCRAM first, with guarded DTCM fallback. Critical allocations prefer DTCM.
+Ordinary libc malloc remains DTCM-only; this is not automatic swapping.
+`mem` reports combined internal free memory plus separate DTCM/OCRAM figures.
+Generic OCRAM allocations are not DMA-coherent buffers. Existing PSRAM policy
+and reserve are unchanged; these stacks remain in internal RAM.
+
+Measured cold idle free internal memory increased from 36,324 to 324,028 bytes
+(about 35.5 to 316.4 KiB). This combines 108 KiB of removed static stacks and
+previously unused OCRAM. PSRAM remains 8,123,868 bytes free. RAM1 is 430,080 bytes,
+RAM2 236,408 bytes (110,592 fewer static bytes); program flash is 1,470,144 bytes.
+Installed HEX SHA256:
+`a3cc816e6b40fcdb65906d06415499d7180fb15cf9bdce95c78db7736c5e0cb9`.
+
+Host allocator and task-lifetime tests cover allocation/task-creation failure,
+alignment, repeated cycles, safe deletion, exact recovery and DMA refusal.
+Device Telnet regression covers authentication, reconnects, self-stop, stopping
+remote Python and exact OCRAM recovery. Python process regression covers
+suspend/resume, cross-console use, repeated cancellation and memory recovery.
+Graceful shutdown regression also passes, including blocked shutdown, Python
+finally handlers, refusal timeout and script/serial cleanup with memory recovery.
+Logs: `/tmp/teensy-lazy-telnet.json`, `/tmp/teensy-lazy-process.json`,
+`/tmp/teensy-lazy-shutdown.json`.
+The full SSH test's random key conflicted with existing host trust and was
+correctly rejected; known_hosts was preserved. Five repeated SSH connection
+failures on the final firmware returned both heaps exactly to baseline
+(324,012 internal / 8,123,868 PSRAM bytes); Telnet reports zero stack bytes.
+Evidence: `/tmp/teensy-lazy-final.json`. Generated process/shutdown fixtures were
+removed. Synth regression could not run
+because the codec reported missing; analog audio is not validated by this work.
+
+Other idle allocations audited, retained for now:
+
+| Reservation | Internal RAM | Reason / next work |
+| --- | ---: | --- |
+| Audio playback and microphone rings | 48 KiB | Interrupt users need coordinated start/stop before freeing buffers |
+| Additional UART RX buffers | 12 KiB | Preserve receive timing; consider allocating per opened port |
+| Serial capture/writer stacks | 10 KiB | Need coordinated service stop and log draining |
+| Ethernet/network event stacks | 14 KiB | Shared by all network clients; not Telnet-specific |
+| lwIP pools and buffers | About 50 KiB | Shared networking infrastructure; separate sizing audit needed |
+
+Local console stacks and USB sector buffers remain available for console and
+storage operation. Small Telnet metadata/TCB/buffers remain static. PSRAM still
+contains existing app catalogs/job metadata; this change does not partition or
+consume additional PSRAM. Allocation is on demand under the existing policies.
+
 ## Complete offline Teensy manual — 2026-10-05
 
 The manual selection now covers 27 apps and 67 shell commands, including Synth.

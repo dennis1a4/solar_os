@@ -658,3 +658,12 @@ The pager navigation regression compiles the actual row traversal functions and
 checks forward/backward symmetry over widths 1–100, wrapped words, tabs, long
 tokens, blank lines and CRLF. This guards the end-of-page/backward-scroll fix
 exposed by the full manual acceptance test.
+
+### On-demand task RAM checks
+
+Run `python3 tests/ports/test_teensy41_task_memory.py` from the repository root
+for actual worker-code allocation failure, task creation rollback and safe
+stack reclamation tests. `test_teensy41_compose_host.sh` also exercises OCRAM
+allocation/alignment/reallocation and PSRAM reserve policy. The device Telnet
+suite now verifies listener stack allocation, exact OCRAM recovery on stop,
+self-stop, and stopping during remote Python. See the handoff memory audit.

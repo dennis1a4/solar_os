@@ -54,13 +54,18 @@ shell lifecycle. The full upstream job is unchanged. On Teensy, control is via
   A stalled output peer is disconnected after two seconds of backpressure.
   Input buffering is bounded and applies TCP backpressure rather than dropping
   ordinary shell bytes. Incomplete negotiation counts toward the login deadline.
-- Third console has a reserved 40 KiB OCRAM task stack and uses the existing
+- Third console allocates a 40 KiB internal task stack at `telnetd start` and uses the existing
   recursive console gate. Filesystem/app calls remain serialized across consoles;
   synchronous apps yield through the existing cancellation hooks.
 - Remote shell state is allocated on successful login and freed on disconnect.
   The entire app/child chain is stopped without resuming parents; app reservations
-  are released. Reconnect starts a fresh shell/cwd. The listener/task itself stays
-  available for future clients, even after stop, using reserved static memory.
+  are released. Reconnect starts a fresh shell/cwd. A client disconnect retains the
+  enabled server's task/stack for future clients. `telnetd stop` closes the listener,
+  lets the console unwind its apps, and suspends that task. A local console then
+  deletes the suspended task and frees its stack; self-stop never frees the stack
+  it is executing on. `telnetd status` shows zero stack bytes once cleanup completes.
+  A start during unfinished cleanup is refused; allocation/task-creation failures
+  roll back the new listener. There is no Telnet task/stack at boot while stopped.
 - Text apps use the remote terminal. Graphical apps require the local LCD.
   Audio ownership also distinguishes remote, USB and LCD sessions. Remote NAWS
   geometry never overwrites saved USB terminal dimensions.
@@ -132,3 +137,16 @@ After the user's successful connection, USB serial confirmed the server stopped
 with no client. Ethernet was stopped and SD/USB storage safely ejected. User
 files were preserved. The board is ready to unplug; networking and Telnet must
 be explicitly started next time. See the [handoff](teensy41-handoff.md).
+
+### On-demand RAM acceptance — 2026-10-05
+
+The shared internal allocator now exposes the linker-delimited unused OCRAM tail;
+Telnet's stack uses this pool (with the same guarded DTCM fallback policy as other
+internal-preferred allocations). In the measured legacy build, OCRAM free space
+falls from 287,736 to 246,744 bytes while listening: 40,960 stack bytes plus 32
+bytes of allocator overhead. Stop restores all 287,736 bytes. The full device
+suite passes authentication, retained apps, Python cancellation, ten reconnects,
+network down/up, three stop/start cycles, self-stop from Telnet, and stopping the
+daemon while remote Python is running. Both Telnet and Python stacks recover.
+Evidence: `/tmp/teensy-lazy-telnet.json`. Status may briefly report cleanup pending;
+a disconnected client alone does not disable the server.

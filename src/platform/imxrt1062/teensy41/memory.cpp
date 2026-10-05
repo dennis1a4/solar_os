@@ -4,6 +4,7 @@
 #include <malloc.h>
 #include <limits.h>
 #include "platform.h"
+#include "memory_regions.h"
 extern "C" {
 #include "solar_os_memory.h"
 extern uint8_t external_psram_size;
@@ -12,6 +13,7 @@ extern uint8_t external_psram_size;
 extern uint8_t *_g_heap_start, *_g_heap_max, *_g_current_heap_end;
 extern unsigned long _estack;
 extern uint8_t _extram_start[], _extram_end[];
+extern uint8_t _heap_start[], _heap_end[];
 }
 
 static StaticSemaphore_t mutex_storage;
@@ -19,6 +21,7 @@ static SemaphoreHandle_t mutex;
 static solar_os_memory_status_t statistics;
 struct alignas(max_align_t) Header { size_t size; size_t external_charge; };
 static size_t external_charged;
+static smalloc_pool ocram_pool;
 // Conservative charge includes pinned smalloc's two metadata headers and
 // rounding. Keep admission O(1): scanning all PSRAM on every allocation stalls
 // consoles and audio. All external allocations in this port use this wrapper.
@@ -34,13 +37,39 @@ void sk_memory_begin() {
     configASSERT(reinterpret_cast<uintptr_t>(_g_heap_max) <=
                  reinterpret_cast<uintptr_t>(&_estack) - 8192);
     mutex = xSemaphoreCreateMutexStatic(&mutex_storage);
+    // FreeRTOS/newlib uses DTCM. The linker leaves the unused OCRAM tail
+    // unclaimed; expose it without overlapping DMA/static buffers or newlib.
+    const uintptr_t begin=(uintptr_t(_heap_start)+31U)&~uintptr_t(31U);
+    const uintptr_t end=uintptr_t(_heap_end)&~uintptr_t(31U);
+    configASSERT(uintptr_t(_g_heap_max)<=begin || uintptr_t(_g_heap_start)>=end);
+    configASSERT(begin>=0x20200000U && end<=0x20280000U && end>begin);
+    const int initialized=sm_set_pool(&ocram_pool,reinterpret_cast<void *>(begin),end-begin,1,nullptr);
+    configASSERT(initialized);
+    (void)initialized;
     statistics.internal_reserve = SOLAR_OS_MEMORY_INTERNAL_RESERVE_BYTES;
     statistics.internal_fallback_max = SOLAR_OS_MEMORY_INTERNAL_FALLBACK_MAX_BYTES;
 }
-static size_t internal_free() {
+static size_t dtcm_free() {
     const auto info = mallinfo();
     return (reinterpret_cast<uintptr_t>(_g_heap_max) -
             reinterpret_cast<uintptr_t>(_g_current_heap_end)) + info.fordblks;
+}
+static size_t ocram_free() {
+    // The pinned smalloc implementation dereferences total/free unconditionally.
+    size_t used=0,user=0,available=0;
+    sm_malloc_stats_pool(&ocram_pool,&used,&user,&available,nullptr);
+    return available;
+}
+static bool is_ocram(const void *ptr) {
+    const uintptr_t address=uintptr_t(ptr),begin=uintptr_t(ocram_pool.pool);
+    return address>=begin && address<begin+ocram_pool.pool_size;
+}
+static size_t internal_free() { return dtcm_free()+ocram_free(); }
+extern "C" void sk_memory_internal_regions(size_t *df,size_t *dt,size_t *of,size_t *ot) {
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    *df=dtcm_free();*dt=uintptr_t(_g_heap_max)-uintptr_t(_g_heap_start);
+    *of=ocram_free();*ot=ocram_pool.pool_size;
+    xSemaphoreGive(mutex);
 }
 extern "C" bool solar_os_memory_is_external(const void *ptr) {
     const uintptr_t address = reinterpret_cast<uintptr_t>(ptr);
@@ -68,14 +97,20 @@ extern "C" void *solar_os_memory_alloc(size_t size, solar_os_memory_class_t kind
         }
     }
     const bool may_fallback = !external || size <= statistics.internal_fallback_max;
-    // A generic malloc buffer is not a DMA allocation on cache-enabled M7.
+    // Generic OCRAM allocations are CPU memory, not cache-coherent DMA buffers.
     if (!header && kind != SOLAR_OS_MEMORY_EXTERNAL_REQUIRED && kind != SOLAR_OS_MEMORY_EXTERNAL_SYSTEM &&
-        kind != SOLAR_OS_MEMORY_DMA && may_fallback &&
-        (kind == SOLAR_OS_MEMORY_INTERNAL_CRITICAL ||
-         internal_free() > size + sizeof(Header) + statistics.internal_reserve)) {
-        header = static_cast<Header *>(malloc(size + sizeof(Header)));
-        if(header)header->external_charge=0;
-        if (header && external) ++stats.fallbacks;
+        kind != SOLAR_OS_MEMORY_DMA && may_fallback) {
+        if (kind == SOLAR_OS_MEMORY_INTERNAL_CRITICAL) {
+            header=static_cast<Header *>(malloc(size+sizeof(Header)));
+        }
+        if (!header) header=static_cast<Header *>(sm_malloc_pool(&ocram_pool,size+sizeof(Header)));
+        if (!header && kind != SOLAR_OS_MEMORY_INTERNAL_CRITICAL &&
+            dtcm_free()>size+sizeof(Header)+statistics.internal_reserve)
+            header=static_cast<Header *>(malloc(size+sizeof(Header)));
+        if (header) {
+            header->external_charge=0;
+            if (external) ++stats.fallbacks;
+        }
     }
     if (header) {
         header->size = size;
@@ -95,6 +130,7 @@ extern "C" void solar_os_memory_free(void *ptr) {
     auto *header = static_cast<Header *>(ptr) - 1;
     xSemaphoreTake(mutex, portMAX_DELAY);
     if (solar_os_memory_is_external(header)) {external_charged-=header->external_charge;sm_free_pool(&extmem_smalloc_pool, header);}
+    else if (is_ocram(header)) sm_free_pool(&ocram_pool,header);
     else free(header);
     xSemaphoreGive(mutex);
 }
@@ -120,7 +156,7 @@ extern "C" void solar_os_memory_get_status(solar_os_memory_status_t *status) {
     if (!status) return;
     xSemaphoreTake(mutex, portMAX_DELAY);
     statistics.internal.total = reinterpret_cast<uintptr_t>(_g_heap_max) -
-                                reinterpret_cast<uintptr_t>(_g_heap_start);
+                                reinterpret_cast<uintptr_t>(_g_heap_start) + ocram_pool.pool_size;
     statistics.internal.free = internal_free();
     statistics.external.total = size_t(external_psram_size) * 1024 * 1024;
     if (external_psram_size) {

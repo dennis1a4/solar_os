@@ -33,8 +33,9 @@ it. Reap that completed process before starting another Python VM.
 ## Execution and I/O
 
 - One VM at a time, preserving the existing singleton interpreter contract.
-- A dedicated 40 KiB internal OCRAM worker stack is admitted through the SolarOS
-  task API, separate from the existing foreground worker. The VM heap remains
+- An on-demand 40 KiB internal worker stack (OCRAM first) is admitted through the SolarOS
+  task API, separate from the existing foreground worker. It is freed only after
+  worker completion and suspension, before its TCB can be reused. The VM heap remains
   512 KiB in PSRAM. Admission/allocation failures reject startup.
 - A private shell context preserves the working directory and arguments. The
   worker keeps its VM, native stack, open files and partial input across pause.

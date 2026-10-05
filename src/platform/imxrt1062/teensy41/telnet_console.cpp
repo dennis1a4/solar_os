@@ -25,6 +25,7 @@ struct Telnet {
 };
 DMAMEM static Telnet telnet;
 extern "C" void sk_telnet_init(void) { memset(&telnet,0,sizeof(telnet)); }
+extern "C" bool sk_telnet_enabled(void) { return telnet.enabled; }
 extern "C" bool sk_telnet_connected(void) { return telnet.fd && telnet.authenticated; }
 extern "C" void sk_telnet_disconnect(void) {
     int fd=telnet.fd;
@@ -130,6 +131,8 @@ extern "C" void solar_os_shell_cmd_telnetd(solar_os_context_t *ctx,int argc,char
             telnet.enabled?"running":"stopped",telnet.port,
             sk_telnet_connected()?"authenticated":telnet.fd?"login":"none",
             (unsigned long)telnet.connections,(unsigned long)telnet.failures);
+        solar_os_shell_io_printf(io,"console stack: %u bytes%s\n",(unsigned)sk_telnet_console_bytes(),
+            !telnet.enabled && sk_telnet_console_bytes()?" (cleanup pending)":"");
         return;
     }
     if(argc==2 && !strcmp(argv[1],"stop")) {
@@ -151,6 +154,11 @@ extern "C" void solar_os_shell_cmd_telnetd(solar_os_context_t *ctx,int argc,char
         }
         sk_net_request q{}; sk_net_reply r{}; q.op=SK_NET_LISTEN_START; q.port=port;
         int err=sk_net_call(&q,&r);
+        if(!err && !sk_telnet_console_start()) {
+            q.op=SK_NET_LISTEN_STOP;(void)sk_net_call(&q,&r);
+            solar_os_shell_io_writeln(io,"telnetd: no console memory, or previous session still stopping");
+            memset(secret,0,sizeof(secret));return;
+        }
         if(err)solar_os_shell_io_printf(io,"telnetd start failed (%d); check network up and port availability.\n",err);
         else { memcpy(telnet.password,secret,sizeof(secret)); telnet.port=port; telnet.enabled=true;
             solar_os_shell_io_printf(io,"telnetd listening on port %u; password required.\n",telnet.port); }

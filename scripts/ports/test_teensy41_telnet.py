@@ -117,6 +117,9 @@ def main():
         m = re.search(r'Internal heap: (\d+) free / (\d+) bytes; PSRAM: (\d+) free / (\d+)', out)
         require(m is not None, out)
         report['memory'][name] = list(map(int, m.groups()))
+        regions = re.search(r'OCRAM: (\d+) free / (\d+) bytes', out)
+        require(regions is not None, out)
+        report.setdefault('ocram', {})[name] = list(map(int, regions.groups()))
 
     def get_ip():
         out = c.poll('network status', lambda s: 'link=up' in s and 'address=0.0.0.0' not in s, timeout=25)
@@ -153,7 +156,12 @@ def main():
         created = True
         usb.write(b'\x04')
         c.command('')
+        c.poll('telnetd status', lambda s: 'console stack: 0 bytes' in s)
+        memory('stopped_baseline')
         require('listening' in c.command(f'telnetd start {fixture} {args.port}'), 'Server failed to start')
+        memory('listening')
+        require(report['ocram']['stopped_baseline'][0] - report['ocram']['listening'][0] >= 40960,
+                'Telnet stack was not allocated from OCRAM')
         remote = Telnet(host, args.port)
         remote.read(lambda s: 'Password: ' in s)
         remote.send(b'wrong-password\r\n')
@@ -270,7 +278,29 @@ def main():
             remote.close()
         passed('three immediate stop/start cycles with real clients')
         time.sleep(1)
+        c.poll('telnetd status', lambda s: 'console stack: 0 bytes' in s)
         memory('stopped')
+        require(report['ocram']['stopped'][0] == report['ocram']['stopped_baseline'][0],
+                'Telnet/Python stack memory did not return after stop')
+        # Self-stop must unwind before a local console can delete its stack.
+        require('listening' in c.command(f'telnetd start {fixture} {args.port}'), 'Self-stop setup failed')
+        remote = login(); remote.send(b'telnetd stop\r\n')
+        remote.read(lambda s: False, allow_eof=True); remote.close()
+        c.poll('telnetd status', lambda s: 'console stack: 0 bytes' in s)
+        memory('self_stopped')
+        require(report['ocram']['self_stopped'][0] == report['ocram']['stopped_baseline'][0],
+                'Self-stop leaked its stack')
+        # Stop the daemon with a running Python app; both stacks must unwind.
+        require('listening' in c.command(f'telnetd start {fixture} {args.port}'), 'Python-stop setup failed')
+        remote = login(); remote.send(b'python\r\n')
+        remote.read(lambda s: s.endswith('>>> '))
+        remote.send(b"exec('while True: pass')\r\n"); time.sleep(.5)
+        c.command('telnetd stop'); remote.close()
+        c.poll('telnetd status', lambda s: 'console stack: 0 bytes' in s)
+        time.sleep(1); memory('python_stopped')
+        require(report['ocram']['python_stopped'][0] == report['ocram']['stopped_baseline'][0],
+                'Stopping remote Python did not recover both stacks')
+        passed('on-demand OCRAM stack recovery, self-stop and stop during Python')
         require('/sd mounted' in c.command('sd status'), 'SD unavailable')
         require('/usb,' in c.command('usb status'), 'USB drive unavailable')
         require('keyboard=connected' in c.command('lcd'), 'Keyboard absent')

@@ -1,3 +1,4 @@
+#include "memory_regions.h"
 #if SK_UPSTREAM_SHELL
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,6 +67,9 @@ void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv) {
         "Internal heap: %u free / %u bytes; PSRAM: %u free / %u bytes\n",
         (unsigned)status.internal.free, (unsigned)status.internal.total,
         (unsigned)status.external.free, (unsigned)status.external.total);
+    size_t df,dt,of,ot;sk_memory_internal_regions(&df,&dt,&of,&ot);
+    solar_os_shell_io_printf(io,"  DTCM: %u free / %u; OCRAM: %u free / %u bytes\n",
+        (unsigned)df,(unsigned)dt,(unsigned)of,(unsigned)ot);
     solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), "PSRAM reserve: 128 KiB for system work; pipe buffers: 64 KiB total limit");
 }
 void solar_os_shell_cmd_uptime(solar_os_context_t *ctx, int argc, char **argv) {

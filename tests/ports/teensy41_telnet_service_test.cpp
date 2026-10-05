@@ -13,6 +13,9 @@ extern "C" {
 #include <string>
 #include <unistd.h>
 static uint32_t now;
+static bool console_failure;
+extern "C" bool sk_telnet_console_start(void) { return !console_failure; }
+extern "C" size_t sk_telnet_console_bytes(void) { return sk_telnet_enabled()?40960:0; }
 static bool listening, queued, live, backpressure;
 static std::deque<uint8_t> rx;
 static std::string tx, output;
@@ -54,6 +57,8 @@ int main() {
     FILE *f=fdopen(fd,"w"); fputs("host-test-secret\n",f); fclose(f);
     sk_telnet_init(); cmd("start",path,"0"); assert(!listening);
     cmd("start","/missing"); assert(!listening);
+    console_failure=true;cmd("start",path);assert(!listening && !sk_telnet_enabled());
+    console_failure=false;
     cmd("start",path); assert(listening && output.find("listening")!=std::string::npos);
     accept(); incoming("wrong\r\n"); assert(!live && !sk_telnet_connected() && tx.find("Authentication failed")!=std::string::npos);
     accept(); incoming("host-test-secreX\bt\r\n"); assert(sk_telnet_connected());

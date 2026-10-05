@@ -88,7 +88,8 @@ static SemaphoreHandle_t console_gate;
 static Console *audio_owner;
 #if SK_TELNETD
 DMAMEM static Console remote_console;
-DMAMEM static StackType_t remote_stack[10240];
+static constexpr unsigned remote_stack_words=10240;
+static StackType_t *remote_stack;
 static StaticTask_t remote_tcb;
 static TaskHandle_t remote_task;
 #endif
@@ -375,6 +376,27 @@ extern "C" bool sk_console_history_flush() {
     return ok;
 }
 #endif
+#if SK_TELNETD
+static void run_console(void *);
+// Called only under console_gate. Never delete the task from its own stack.
+static void remote_reap() {
+    if(remote_task && !sk_telnet_enabled() && eTaskGetState(remote_task)==eSuspended) {
+        vTaskDelete(remote_task);remote_task=nullptr;
+        solar_os_memory_free(remote_stack);remote_stack=nullptr;
+    }
+}
+extern "C" size_t sk_telnet_console_bytes() { return remote_stack ? remote_stack_words*sizeof(StackType_t) : 0; }
+extern "C" bool sk_telnet_console_start() {
+    remote_reap();
+    if(remote_task)return false; // A previous session may still be unwinding.
+    remote_stack=static_cast<StackType_t *>(solar_os_memory_alloc(
+        remote_stack_words*sizeof(StackType_t),SOLAR_OS_MEMORY_INTERNAL_PREFERRED,"telnet.stack"));
+    if(!remote_stack)return false;
+    remote_task=xTaskCreateStatic(run_console,"telnet-console",remote_stack_words,nullptr,2,remote_stack,&remote_tcb);
+    if(!remote_task){solar_os_memory_free(remote_stack);remote_stack=nullptr;return false;}
+    return true;
+}
+#endif
 static void run_console(void *) {
     xSemaphoreTakeRecursive(console_gate,portMAX_DELAY);
 #if SK_TELNETD
@@ -388,6 +410,7 @@ static void run_console(void *) {
     uint32_t last_byte=0,last_tick=0;
     while(true) {
 #if SK_TELNETD
+        if(!sk_console_is_remote())remote_reap();
         if(sk_console_is_remote() && !sk_power_requested()) {
             sk_telnet_poll(!session);
             if(!sk_telnet_connected()) {
@@ -395,6 +418,12 @@ static void run_console(void *) {
                 if(session) { solar_os_shell_session_destroy(session); session=nullptr; }
                 memset(&shell_context,0,sizeof(shell_context)); active_tui=nullptr;
                 online=false; solar_os_vt100_input_reset(&input);
+                if(!sk_telnet_enabled()) {
+                    // All app cleanup completed. Release the lifecycle gate,
+                    // suspend, then let a local console delete/free this task.
+                    xSemaphoreGiveRecursive(console_gate);
+                    for(;;)vTaskSuspend(nullptr);
+                }
                 console_yield(); continue;
             }
             if(!session && !initialize_console()) { sk_telnet_disconnect(); console_yield(); continue; }
@@ -579,10 +608,6 @@ void sk_upstream_shell_run() {
 #if SK_BACKGROUND_JOBS
     background_task=xTaskCreateStatic(background_run,"script-jobs",4096,nullptr,1,background_stack,&background_tcb);
     configASSERT(background_task);
-#endif
-#if SK_TELNETD
-    remote_task=xTaskCreateStatic(run_console,"telnet-console",10240,nullptr,2,remote_stack,&remote_tcb);
-    configASSERT(remote_task);
 #endif
     xSemaphoreGiveRecursive(console_gate);
     run_console(nullptr);

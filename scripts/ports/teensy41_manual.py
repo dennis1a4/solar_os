@@ -175,7 +175,7 @@ OVERRIDES = {
         'Every compiled app/command has an embedded page. Full IDs such as app.help and command.help disambiguate topics. Pages open in less: arrows or j/k scroll, Space/b pages, / searches, n/N repeats, q exits. help opens the topic browser. No manual download is needed.'),
     'mem': ('Show internal heap and PSRAM.',
         'mem\n'
-        'Prints free and total bytes and allocation limits. Ordinary PSRAM allocations leave a 128 KiB system reserve. Pipe buffers have a 64 KiB global limit and are freed when the chain finishes. No automatic migration or swapping.'),
+        'Internal heap combines DTCM and OCRAM; the next line shows each region separately. It excludes static data/code and reserved stacks. On-demand Telnet, foreground and Python stacks return memory after task cleanup. Normal libc malloc still uses DTCM; SolarOS internal-preferred allocations use OCRAM first. Ordinary PSRAM allocations leave a 128 KiB system reserve. Pipe buffers have a 64 KiB global limit and are freed when the chain finishes. No automatic migration or swapping.'),
     'midi': ('Record and replay USB/UART MIDI.',
         'midi status\n'
         'midi record usb|slotN NEWFILE.smr\n'
@@ -340,7 +340,7 @@ OVERRIDES = {
         'telnetd start /absolute/password-file [PORT]\n'
         'telnetd status\n'
         'telnetd stop\n'
-        'Default port 23; off until started. Requires Ethernet. Password file: one line of 1-63 printable ASCII characters. One remote shell; client window size is negotiated. exit disconnects the remote shell. Telnet carries passwords/data unencrypted; use it only on a trusted network.'),
+        'Default port 23; off until started. Its 40 KiB internal stack is allocated at start and released after stop finishes session cleanup. status shows stack bytes; cleanup may be pending briefly. exit disconnects a client but keeps the server and stack available. Requires Ethernet. Password file: one line of 1-63 printable ASCII characters. One remote shell; client window size is negotiated. exit disconnects the remote shell. Telnet carries passwords/data unencrypted; use it only on a trusted network.'),
     'time': ('Show or set the local clock time.',
         'time [HH:MM[:SS]]\n'
         'Uses setterm timezone. Setting the time preserves the local date and writes the corresponding UTC RTC value. date; time prints both. rtc reports UTC; ntp can synchronize the RTC over Ethernet.'),

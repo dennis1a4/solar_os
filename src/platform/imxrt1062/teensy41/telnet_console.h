@@ -6,6 +6,10 @@ extern "C" {
 void sk_telnet_init(void);
 void sk_telnet_poll(bool allow_accept);
 bool sk_telnet_connected(void);
+bool sk_telnet_enabled(void);
+// Caller holds the console gate; startup failure leaves no task allocation.
+bool sk_telnet_console_start(void);
+size_t sk_telnet_console_bytes(void);
 int sk_telnet_read(void);
 bool sk_telnet_write(const uint8_t *, size_t);
 void sk_telnet_disconnect(void);
