@@ -12,6 +12,8 @@ esp_err_t sk_audio_output_write(const int16_t *stereo, size_t frames);
 esp_err_t sk_audio_output_finish(bool drain);
 void sk_audio_output_status(void);
 esp_err_t sk_audio_capture_start(void);
+esp_err_t sk_audio_capture_start_buffered(void);
+bool sk_audio_capture_active(void);
 esp_err_t sk_audio_capture_read(int16_t *mono, size_t capacity, size_t *frames);
 uint32_t sk_audio_capture_stop(void);
 #ifdef __cplusplus

@@ -686,8 +686,11 @@ With SGTL5000 connected at boot and the USB serial monitor closed:
   in temporary RAMFS, downloads it, tests cancellation/header protection, then
   measures acoustic tone energy. Without `--ram`, `--storage sd|flash` selects
   persistent media; an acoustic failure is separate from successful transport.
-- `test_teensy41_audio_storage.py --log LOG` characterizes 4/10/30-second SD/flash
-  recordings, queue overruns, elapsed time and memory cleanup.
+- `test_teensy41_audio_storage.py --log LOG` verifies 4/30/180-second SD
+  recordings, exact WAV headers/length, zero overruns, elapsed time, cancellation,
+  overwrite protection, invalid destinations and exact heap recovery. It removes
+  unique fixtures and does not retain ambient audio. Use `--seconds 30 600` for a
+  longer run; `--storage flash --seconds 4` is an opt-in characterization only.
 - `test_teensy41_radio_live.py --fixture MP3 --log LOG --wav WAV` serves a generated
   128 kb/s MP3 over local HTTP, plays it on the LCD console and captures four
   seconds of microphone input in RAMFS. `--url URL` instead tests an actual

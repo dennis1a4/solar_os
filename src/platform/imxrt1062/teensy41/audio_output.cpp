@@ -102,6 +102,38 @@ static volatile unsigned capture_head, capture_tail;
 static volatile bool capture_enabled;
 static bool capture_test, test_tone_started;
 static volatile uint32_t capture_drops, capture_blocks;
+// SD writes and the console gate can stall the foreground. A priority-3 feeder
+// only copies PCM; it never touches files, codecs, consoles or allocation APIs.
+// DMA and the AudioStream ISR continue to use internal memory exclusively.
+static constexpr unsigned spool_slots = 1024; // 256 KiB, ~2.97 seconds
+static CaptureBlock *spool;
+static volatile unsigned spool_head, spool_tail, spool_peak;
+static StaticTask_t feeder_tcb;
+static StackType_t *feeder_stack;
+static TaskHandle_t feeder;
+static volatile bool feeder_stop;
+static uint32_t feeder_stack_free;
+static void capture_feed_once() {
+    while (capture_head != capture_tail) {
+        const unsigned h = spool_head, next = (h + 1) % spool_slots;
+        if (next == spool_tail) break; // Internal ring absorbs the last ~0.37 s.
+        const unsigned t = capture_tail;
+        memcpy(spool[h], captured[t], sizeof(CaptureBlock));
+        __DMB();
+        capture_tail = (t + 1) % capture_slots;
+        spool_head = next;
+        const unsigned used = (next + spool_slots - spool_tail) % spool_slots;
+        if (used > spool_peak) spool_peak = used;
+    }
+}
+static void capture_feeder(void *) {
+    while (!feeder_stop) {
+        capture_feed_once();
+        vTaskDelay(1);
+    }
+    for (;;) vTaskSuspend(nullptr);
+}
+extern "C" bool sk_audio_capture_active() { return capture_enabled; }
 class MicCapture : public AudioStream {
     audio_block_t *inputs[1];
 public:
@@ -123,7 +155,7 @@ public:
 static AudioInputI2S input;
 static MicCapture capture;
 static AudioConnection mic_connection(input, 0, capture, 0);
-extern "C" esp_err_t sk_audio_capture_start() {
+static esp_err_t capture_start(bool buffered) {
     if (!ready) return ESP_ERR_NOT_FOUND;
     sk_audio_capture_stop();
     if (!monitor_capture) sk_audio_output_finish(false);
@@ -134,6 +166,19 @@ extern "C" esp_err_t sk_audio_capture_start() {
     auto *buffer = static_cast<CaptureBlock *>(solar_os_memory_alloc(
         capture_slots * sizeof(CaptureBlock), SOLAR_OS_MEMORY_INTERNAL_PREFERRED, "audio.capture"));
     if (!buffer) return ESP_ERR_NO_MEM;
+    spool_head = spool_tail = spool_peak = 0;
+    feeder_stack_free = 0;
+    if (buffered) {
+        spool = static_cast<CaptureBlock *>(solar_os_memory_alloc(
+            spool_slots * sizeof(CaptureBlock), SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "audio.spool"));
+        feeder_stack = static_cast<StackType_t *>(solar_os_memory_alloc(
+            2048, SOLAR_OS_MEMORY_INTERNAL_PREFERRED, "audio.feeder"));
+        if (!spool || !feeder_stack) {
+            solar_os_memory_free(buffer);
+            sk_audio_capture_stop();
+            return ESP_ERR_NO_MEM;
+        }
+    }
     AudioNoInterrupts();
     captured = buffer;
     test_tone_started = false;
@@ -141,13 +186,27 @@ extern "C" esp_err_t sk_audio_capture_start() {
     capture_drops = capture_blocks = 0;
     capture_enabled = true;
     AudioInterrupts();
+    if (buffered) {
+        feeder_stop = false;
+        feeder = xTaskCreateStatic(capture_feeder, "audio-capture", 2048 / sizeof(StackType_t),
+                                  nullptr, 3, feeder_stack, &feeder_tcb);
+        if (!feeder) { sk_audio_capture_stop(); return ESP_ERR_NO_MEM; }
+    }
     return ESP_OK;
 }
+extern "C" esp_err_t sk_audio_capture_start() { return capture_start(false); }
+extern "C" esp_err_t sk_audio_capture_start_buffered() { return capture_start(true); }
 extern "C" esp_err_t sk_audio_capture_read(int16_t *mono, size_t capacity, size_t *frames) {
     *frames = 0;
     if (!captured || !capture_enabled) return ESP_ERR_INVALID_STATE;
     uint32_t started = millis();
-    while (capture_head == capture_tail) {
+    // Buffered recordings aggregate 4 KiB writes, rather than one SD operation
+    // per 128-sample interrupt. No console lock is needed by the feeder.
+    if (capacity < AUDIO_BLOCK_SAMPLES) return ESP_ERR_INVALID_ARG;
+    const unsigned need = min(capacity / AUDIO_BLOCK_SAMPLES, size_t(spool_slots - 1));
+    while (spool ? ((spool_head + spool_slots - spool_tail) % spool_slots < need)
+                 : capture_head == capture_tail) {
+        if (capture_drops) return ESP_FAIL;
         if (sk_audio_cancelled()) return ESP_ERR_TIMEOUT;
         if (millis() - started > 1000) return ESP_FAIL;
         vTaskDelay(1);
@@ -157,11 +216,20 @@ extern "C" esp_err_t sk_audio_capture_read(int16_t *mono, size_t capacity, size_
         __DMB(); tone_on = true; test_tone_started = true;
     }
     if (capture_drops) return ESP_FAIL;
-    while (capture_head != capture_tail && *frames + AUDIO_BLOCK_SAMPLES <= capacity) {
-        unsigned t = capture_tail;
-        memcpy(mono + *frames, captured[t], sizeof(captured[t]));
-        __DMB(); capture_tail = (t + 1) % capture_slots;
-        *frames += AUDIO_BLOCK_SAMPLES;
+    if (spool) {
+        while (spool_head != spool_tail && *frames + AUDIO_BLOCK_SAMPLES <= capacity) {
+            const unsigned t = spool_tail;
+            memcpy(mono + *frames, spool[t], sizeof(CaptureBlock));
+            __DMB(); spool_tail = (t + 1) % spool_slots;
+            *frames += AUDIO_BLOCK_SAMPLES;
+        }
+    } else {
+        while (capture_head != capture_tail && *frames + AUDIO_BLOCK_SAMPLES <= capacity) {
+            const unsigned t = capture_tail;
+            memcpy(mono + *frames, captured[t], sizeof(CaptureBlock));
+            __DMB(); capture_tail = (t + 1) % capture_slots;
+            *frames += AUDIO_BLOCK_SAMPLES;
+        }
     }
     return ESP_OK;
 }
@@ -169,11 +237,21 @@ extern "C" uint32_t sk_audio_capture_stop() {
     AudioNoInterrupts();
     capture_enabled = false;
     if (capture_test) tone_on = false;
+    AudioInterrupts();
+    // Stop production first, then join the feeder before detaching either ring.
+    // It never takes a lock held by the foreground, so this cannot deadlock.
+    feeder_stop = true;
+    if (feeder) {
+        while (eTaskGetState(feeder) != eSuspended) vTaskDelay(1);
+        feeder_stack_free = uxTaskGetStackHighWaterMark(feeder) * sizeof(StackType_t);
+        vTaskDelete(feeder); feeder = nullptr;
+    }
     auto *buffer = captured;
     captured = nullptr;
     capture_head = capture_tail = 0;
-    AudioInterrupts();
     solar_os_memory_free(buffer);
+    solar_os_memory_free(spool); spool = nullptr;
+    solar_os_memory_free(feeder_stack); feeder_stack = nullptr;
     return capture_drops;
 }
 
@@ -331,6 +409,9 @@ extern "C" void sk_audio_output_status() {
     sk_console_printf("Audio rings: playback=%u capture=%u bytes (internal RAM)\r\n",
         pcm ? unsigned(slots * sizeof(PlaybackBlock)) : 0,
         captured ? unsigned(capture_slots * sizeof(CaptureBlock)) : 0);
+    sk_console_printf("SD capture buffer: allocated=%u peak=%u bytes; feeder stack free=%lu bytes\r\n",
+        spool ? unsigned(spool_slots * sizeof(CaptureBlock)) : 0,
+        unsigned(spool_peak * sizeof(CaptureBlock)), (unsigned long)feeder_stack_free);
     sk_console_printf("Capture: mic gain=20dB blocks=%lu overruns=%lu\r\n",
         (unsigned long)capture_blocks, (unsigned long)capture_drops);
 }

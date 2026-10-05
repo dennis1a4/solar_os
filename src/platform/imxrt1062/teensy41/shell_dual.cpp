@@ -228,6 +228,7 @@ static bool audio_app(const solar_os_app_t *app) {
 static bool console_has_audio(const Console &c);
 #if SK_AUDIO_PLAYER
 extern "C" bool sk_audio_diagnostic_busy();
+extern "C" bool sk_audio_capture_active();
 #endif
 static bool sk_app_allowed(const solar_os_app_t *app) {
     if(!audio_app(app)) return true;
@@ -451,7 +452,12 @@ static void run_console(void *) {
         }
 #endif
 #if SK_SETTINGS
-        solar_os_shell_history_flush(session, false);
+        // QSPI flash programming masks AudioStream updates. Defer routine
+        // history persistence until capture stops; shutdown still force-flushes.
+#if SK_AUDIO_PLAYER
+        if (!sk_audio_capture_active())
+#endif
+            solar_os_shell_history_flush(session, false);
 #endif
         service_session_request();
         auto *io=solar_os_shell_session_io(session);

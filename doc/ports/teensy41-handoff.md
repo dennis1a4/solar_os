@@ -4,6 +4,46 @@ Updated 2026-10-05. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## Longer SD microphone recordings — 2026-10-05
+
+Installed on the unchanged `teensy41_telnet_legacy` bench profile. `/sd/`
+recordings now use an on-demand 256 KiB PSRAM queue fed by a priority-3 task
+with a 2 KiB internal stack. The ISR/DMA side stays internal (32 KiB ring);
+foreground storage writes aggregate 4 KiB. Routine history flash saves defer
+until capture stops. RAMFS/flash/USB retain their original capture path.
+
+Live SD acceptance: 4, 30 and 180 seconds completed with exact WAV lengths,
+valid headers, no overruns and wall times 4.251, 30.227 and 180.221 seconds.
+The 180-second WAV contained 15,876,000 audio bytes. Queue occupancy peaked
+at 44,800 bytes, beyond the old 32 KiB ring; feeder stack headroom was 1,940
+bytes. Ctrl+C finalized a partial WAV in 82 ms. Existing files were protected,
+invalid destinations failed cleanly, and exact idle heap recovered after each
+run: 372,924 internal / 8,123,868 PSRAM bytes. Device fixtures were removed.
+Evidence: `/tmp/teensy-sd-long-live.json`.
+
+Final firmware also passed a five-minute run: 26,460,000 PCM bytes, exact
+header/length, 300.222 seconds wall time, zero overruns, 44,288-byte peak
+queue and 1,940-byte feeder stack headroom. Cancellation, overwrite/error
+checks and exact heap recovery passed again. All SD fixtures removed;
+`/tmp/teensy-sd-five-minute-live.json` contains results, without ambient audio.
+Five final one-second playback/recording cycles and tone cleanup also passed:
+`/tmp/teensy-sd-final-memory-live.json`. Firmware and acceptance logs are retained
+beside the repository in `solar_os-baselines/2026-10-05-sd-recording/`.
+
+Host ASan/UBSan tests verify repeated ~1.49-second writer stalls, every sample
+across queue wraps, all allocation/task admission rollback paths, bounded
+queue overflow, cancellation, capture errors and final-sync errors. All 15
+manual checks pass. Existing one-hour recording limit remains; neither a full
+hour nor arbitrary card/load combinations are validated. Long flash recording
+is intentionally outside this change. Hum/acoustic quality and live HTTPS
+WebRadio remain separate open items.
+
+Installed HEX SHA256:
+`6f2e2a22b381142f106e2dbfb5fb306dc5a2c57f28349f3f948334274bbde890`.
+Build: RAM1 431,360, RAM2 187,256, flash 1,473,936 bytes. Capture queues and
+feeder stack release on stop; small static task metadata adds 256 idle bytes.
+See [audio notes](teensy41-synth.md#longer-sd-recording--2026-10-05).
+
 ## Live audio acceptance and WebRadio recovery — 2026-10-05
 
 User reconnected SGTL5000, microphone and a nearby speaker, with USB host/drive/
@@ -21,7 +61,7 @@ hardware tests passed on legacy bench wiring:
   only 1.83 dB increase in 430–450 Hz energy, no clipping. User was away and
   requested deferring the audible speaker check; do not claim acoustic quality.
 
-Storage reliability findings (same 32 KiB capture queue):
+Earlier storage reliability findings, before the SD buffering fix above (32 KiB capture queue):
 
 | Destination | Requested | Wall time | Result |
 | --- | ---: | ---: | --- |
@@ -35,8 +75,8 @@ Storage reliability findings (same 32 KiB capture queue):
 These are NOT passes for continuous recording. Flash elapsed time includes
 open/header/final sync, so it does not locate the delay precisely. The driver
 also masks interrupts during page programs; zero queue overruns cannot prove
-no samples were lost before queue insertion. SD needs a larger, independently
-drained staging queue or another verified latency fix. Flash needs interrupt/
+no samples were lost before queue insertion. The SD failures are addressed by
+the independently drained staging queue described above. Flash needs interrupt/
 write-latency investigation. USB recording remains untested with host unplugged.
 
 Added `audio monitor NEWFILE.wav`: four seconds of microphone capture without

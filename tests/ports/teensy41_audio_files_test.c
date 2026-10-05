@@ -30,14 +30,17 @@ esp_err_t sk_audio_output_write(const int16_t *pcm, size_t frames) {
 }
 esp_err_t sk_audio_output_finish(bool drain) { (void)drain; started = false; return ESP_OK; }
 static unsigned capture_count;
+static bool capture_failure, sync_failure;
 esp_err_t sk_audio_capture_start(void) { capture_count=0; return ESP_OK; }
+esp_err_t sk_audio_capture_start_buffered(void) { return sk_audio_capture_start(); }
 esp_err_t sk_audio_capture_read(int16_t *data, size_t capacity, size_t *frames) {
+    if (capture_failure && capture_count >= 1024) { *frames=0; return ESP_FAIL; }
     *frames = capacity < 512 ? capacity : 512;
     for (size_t i=0; i<*frames; ++i) data[i] = (++capture_count % 100 < 50) ? 1000 : -1000;
     return ESP_OK;
 }
 uint32_t sk_audio_capture_stop(void) { return 0; }
-esp_err_t solar_os_storage_sync_file(FILE *f) { return fflush(f) == 0 ? ESP_OK : ESP_FAIL; }
+esp_err_t solar_os_storage_sync_file(FILE *f) { return fflush(f) == 0 && !sync_failure ? ESP_OK : ESP_FAIL; }
 int main(int argc, char **argv) {
     assert(argc == 4);
     solar_os_audio_wav_info_t info;
@@ -91,5 +94,23 @@ int main(int argc, char **argv) {
     assert(info.channels == 1 && info.sample_rate == 44100 && info.data_bytes == 8820);
     assert(solar_os_audio_record_wav(recording, 100, NULL, &info) == ESP_ERR_INVALID_STATE);
     assert(!live);
+    assert(remove(recording) == 0);
+    capture_failure = true;
+    assert(solar_os_audio_record_wav(recording, 100, NULL, &info) == ESP_FAIL);
+    assert(info.data_bytes == 2048 && !live);
+    assert(solar_os_audio_get_wav_info(recording, &info) == ESP_OK && info.data_bytes == 2048);
+    assert(remove(recording) == 0);capture_failure = false;
+    sync_failure = true;
+    assert(solar_os_audio_record_wav(recording, 100, NULL, &info) == ESP_FAIL);
+    assert(!live);sync_failure = false;
+    assert(solar_os_audio_get_wav_info(recording, &info) == ESP_OK && info.data_bytes == 8820);
+    assert(remove(recording) == 0);
+    stop = true;
+    assert(solar_os_audio_record_wav(recording, 100, NULL, &info) == ESP_ERR_TIMEOUT);
+    assert(info.data_bytes == 0 && !live);stop = false;
+    assert(remove(recording) == 0);
+    fail_after = 0;
+    assert(solar_os_audio_record_wav(recording, 100, NULL, &info) == ESP_ERR_NO_MEM);
+    assert(!live);fail_after = -1;
     puts("Teensy audio files: real MP3/WAV decode, resampling, cancellation and allocation cleanup passed");
 }

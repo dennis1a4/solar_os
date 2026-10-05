@@ -121,14 +121,11 @@ Diagnostic tone/off/mictest commands refuse while an audio app is active or
 retained on any console; microphone diagnostics also block competing audio app
 launches while their synchronous capture operation yields to other consoles.
 
-Ring capacities and recording duration are unchanged. At 44.1 kHz, the ring's
+At 44.1 kHz, the playback ring's
 usable 31 stereo blocks cover about 90 ms; 127 mono capture blocks cover about
-369 ms. A future 256 KiB PSRAM mono queue would cover about 2.97 seconds of
-storage stalls, but would require a separate draining stage so capture keeps
-running during a blocking storage write. Enlarging a temporary queue does not
-increase the recording duration limit. Current WAV recording streams to storage
-at 88,200 bytes/s and retains the one-hour limit (about 318 MB plus header).
-No additional PSRAM queue is implemented by this change.
+369 ms. SD recordings now add the independently fed PSRAM queue below.
+Current WAV recording streams to storage at 88,200 bytes/s and retains the
+one-hour limit (about 318 MB plus header).
 
 Host checks: `python3 tests/ports/test_teensy41_audio_memory.py` covers actual
 ring/ISR code, 100 lifecycle cycles, allocation/configuration failure, failed
@@ -154,5 +151,44 @@ leave playback intact. Stop with Ctrl+C; the partial WAV is finalized.
 For short acoustic checks, a temporary RAMFS avoids storage writes during
 capture; a 512 KiB mount has room for the 352,844-byte four-second mono WAV.
 Copy the recording to persistent storage after playback/capture stops. This
-is a bounded diagnostic, not an implementation of continuous full-duplex
-recording or a background PSRAM storage queue.
+is a bounded diagnostic; general continuous full-duplex recording is not exposed.
+
+
+## Longer SD recording — 2026-10-05
+
+Use `arecord -d 300 /sd/recording.wav` for five minutes, or omit `-d` and
+stop with Ctrl+C, Esc or Ctrl+]. Existing files are refused. The one-hour
+limit remains; storage space limits recording length independently of RAM.
+
+Paths under `/sd/` allocate a 256 KiB PSRAM single-producer/single-consumer
+queue, in addition to the existing 32 KiB internal capture ring and 4 KiB
+PSRAM write buffer. An on-demand priority-3 task with a 2 KiB internal stack
+copies blocks from the ISR's internal ring into PSRAM every RTOS tick. It
+never uses the filesystem, console gate, codec or allocator. Foreground
+writes aggregate up to 4 KiB; the feeder keeps running when those writes
+stall. The PSRAM queue holds 1,023 blocks (about 2.97 seconds), followed by
+another 127 internal blocks (0.37 seconds). Sustained overflow is an error,
+not silent overwriting. No DMA or ISR buffers move to PSRAM.
+
+Stop disables capture, joins the suspended feeder, and returns both queues
+and the stack before finalizing/syncing the WAV. Cancellation saves the data
+already handed to the writer; unwritten queued tail samples are discarded.
+Allocation/task admission failures roll back all resources. `audio status`
+reports allocated queue bytes and the last peak occupancy and feeder stack
+headroom. Routine history flash saves defer until capture stops; explicit
+flash writes from another console should still be avoided, since flash
+programming masks AudioStream interrupts. Flash/USB recording paths retain
+only the original short internal queue; long flash recording is out of scope.
+
+Host tests inject repeated 512-block (~1.49-second) writer stalls and queue
+wraps, verify every sample, and cover allocation/task failures, bounded
+queue overflow, cancellation and cleanup. WAV tests cover capture failure,
+final sync failure, allocation failure and partial header finalization.
+
+Live acceptance on the installed legacy bench image: 4/30/180/300-second SD
+recordings passed exact length/header and elapsed-time checks with zero
+overruns. The five-minute file contained 26,460,000 PCM bytes and completed
+in 300.222 seconds. Maximum observed spool occupancy across runs was 44,800
+bytes; feeder stack headroom was 1,940 bytes. Cancellation, existing-file
+protection, invalid destinations and exact idle memory recovery also passed.
+The full one-hour limit and arbitrary SD cards/loads have not been tested.

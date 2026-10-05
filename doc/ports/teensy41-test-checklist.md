@@ -39,9 +39,14 @@ Do not check off a physical test based on simulation, injected input or a build.
   20 repeats and synth eight-voice/filter/20-restart checks pass with zero
   reported underruns and exact heap recovery. USB disconnect/reconnect also
   stops synth cleanly and the next session works.
-- [ ] **AUDIO-LIVE-2:** Resolve SD 10/30-second recording overruns and flash
-  excess recording wall time (30-second WAV took 46.79 seconds). Re-test under
-  load and inspect continuity; zero queue overruns alone is insufficient.
+- [x] **AUDIO-LIVE-2-SD:** On-demand 256 KiB PSRAM spool and independent feeder:
+  4/30/180/300-second SD recordings pass exact length/header, wall-time and zero
+  overrun checks; cancellation, overwrite protection and exact heap recovery
+  pass. Peak queued audio 44,800 bytes. Host stall tests verify sample order.
+- [ ] **AUDIO-LIVE-2-LOAD:** Longer-duration/card/load and acoustic continuity
+  checks remain beyond the tested SD durations. USB recording is untested.
+  Long flash recording is deferred by user preference; previous 30-second flash
+  WAV took 46.79 seconds. Zero queue overruns alone cannot detect masked ISRs.
 - [ ] **AUDIO-LIVE-3:** User audible speaker check and microphone placement/
   wiring: user confirmed a beep and MIC/GND wiring; a new RAM recording detected
   the 440 Hz tone (+38.37 dB) without overruns. Significant 60 Hz hum remains;

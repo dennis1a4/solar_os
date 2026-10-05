@@ -16,7 +16,7 @@ using std::min;
 #define pdMS_TO_TICKS(x) (x)
 using esp_err_t = int;
 enum { ESP_OK, ESP_FAIL, ESP_ERR_NOT_FOUND, ESP_ERR_TIMEOUT, ESP_ERR_NO_MEM,
-       ESP_ERR_INVALID_STATE, ESP_ERR_INVALID_ARG, SOLAR_OS_MEMORY_INTERNAL_PREFERRED };
+       ESP_ERR_INVALID_STATE, ESP_ERR_INVALID_ARG, SOLAR_OS_MEMORY_INTERNAL_PREFERRED, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED };
 static bool interrupts = true, fail_alloc, i2c_ok = true, codec_ok = true;
 static bool app_busy;
 extern "C" bool sk_console_audio_busy() {return app_busy;}
@@ -30,10 +30,27 @@ static void AudioNoInterrupts() { assert(interrupts); interrupts = false; }
 static void AudioInterrupts() { assert(!interrupts); interrupts = true; if(on_enable)on_enable(); }
 static void __DMB() {}
 static uint32_t millis() { return ticks; }
-static void vTaskDelay(unsigned n) { ticks += n; if(run_updates)update_audio(); }
+static void step_feeder();
+static void vTaskDelay(unsigned n) { ticks += n; if(run_updates)update_audio(); step_feeder(); }
+using StackType_t = uint32_t;
+struct StaticTask_t {};
+using TaskHandle_t = StaticTask_t *;
+static TaskHandle_t mock_task;
+static bool fail_task, suspended;
+static int fail_nth = -1;
+static constexpr int eSuspended=1;
+static TaskHandle_t xTaskCreateStatic(void (*)(void *), const char *, unsigned, void *, unsigned,
+                                     StackType_t *, StaticTask_t *tcb) {
+    if(fail_task)return nullptr;
+    assert(!mock_task);suspended=false;return mock_task=tcb;
+}
+static void vTaskSuspend(void *) { suspended=true; }
+static int eTaskGetState(TaskHandle_t t) {assert(t==mock_task);return suspended?eSuspended:0;}
+static unsigned uxTaskGetStackHighWaterMark(TaskHandle_t t) {assert(t==mock_task);return 256;}
+static void vTaskDelete(TaskHandle_t t) {assert(t==mock_task && suspended);mock_task=nullptr;}
 static void *solar_os_memory_alloc(size_t n,int kind,const char *) {
-    assert(interrupts && kind == SOLAR_OS_MEMORY_INTERNAL_PREFERRED);
-    if(fail_alloc)return nullptr;
+    assert(interrupts && (kind == SOLAR_OS_MEMORY_INTERNAL_PREFERRED || kind == SOLAR_OS_MEMORY_EXTERNAL_REQUIRED));
+    if(fail_alloc || fail_nth-- == 0)return nullptr;
     void *p=malloc(n);assert(p);allocations[p]=n;live+=n;return p;
 }
 static void solar_os_memory_free(void *p) {

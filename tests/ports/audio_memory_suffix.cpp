@@ -1,6 +1,11 @@
 static void update_audio() { assert(interrupts); source.update(); capture.update(); }
+static void step_feeder() {
+    if (!mock_task || suspended) return;
+    if (feeder_stop) suspended=true;
+    else capture_feed_once();
+}
 static void check_empty() {
-    assert(!pcm && !captured && !live && allocations.empty());
+    assert(!pcm && !captured && !spool && !feeder_stack && !mock_task && !live && allocations.empty());
     assert(!head && !tail && !partial && !capture_enabled);
 }
 int main() {
@@ -77,4 +82,36 @@ int main() {
         sk_clock_alarm_sound(true);assert(clock_tone_on && !live);
         ticks+=1001;update_audio();assert(!clock_tone_on);check_empty();
     }
+    // Each of the three allocations and task admission must roll back cleanly.
+    for (int n=0;n<3;++n) {
+        fail_nth=n;
+        assert(sk_audio_capture_start_buffered()==ESP_ERR_NO_MEM);check_empty();
+    }
+    fail_nth=-1;fail_task=true;
+    assert(sk_audio_capture_start_buffered()==ESP_ERR_NO_MEM);check_empty();fail_task=false;
+    assert(sk_audio_capture_start_buffered()==ESP_OK);
+    assert(live==32768+262144+2048);
+    // Simulate ~1.5-second writer stalls, followed by catches up; wrap repeatedly.
+    for (unsigned round=0;round<8;++round) {
+        for (unsigned b=0;b<512;++b) {
+            for(unsigned i=0;i<128;++i)incoming.data[i]=int16_t(b*128+i);
+            input_pending=true;update_audio();step_feeder();
+        }
+        assert(!capture_drops && spool_peak==512);
+        for (unsigned b=0;b<512;++b) {
+            assert(sk_audio_capture_read(mono,128,&frames)==ESP_OK && frames==128);
+            for(unsigned i=0;i<128;++i)assert(mono[i]==int16_t(b*128+i));
+        }
+    }
+    // Sustained storage failure exceeds both bounded queues: report, never overwrite.
+    for (unsigned b=0;b<spool_slots+capture_slots;++b) {
+        input_pending=true;update_audio();step_feeder();
+    }
+    assert(capture_drops==2);
+    assert(sk_audio_capture_read(mono,128,&frames)==ESP_FAIL);
+    assert(sk_audio_capture_stop()==2);check_empty();
+    assert(feeder_stack_free==1024);
+    assert(sk_audio_capture_start_buffered()==ESP_OK);
+    cancelled=true;assert(sk_audio_capture_read(mono,128,&frames)==ESP_ERR_TIMEOUT);
+    sk_audio_capture_stop();cancelled=false;check_empty();
 }

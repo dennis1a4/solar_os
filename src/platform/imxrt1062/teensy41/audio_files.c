@@ -205,7 +205,11 @@ esp_err_t solar_os_audio_record_wav(const char *path, uint32_t duration,
     FILE *f = fopen(path, "wb");
     if (!f) { solar_os_memory_free(buffer); return ESP_FAIL; }
     info->sample_rate=44100; info->channels=1; info->bits_per_sample=16; info->block_align=2;
-    esp_err_t err = write_wav_header(f, 0) ? sk_audio_capture_start() : ESP_FAIL;
+    // SD explicitly opts into the bounded PSRAM spool. Short diagnostics on
+    // RAMFS and flash keep their existing small capture path.
+    const bool buffered = strncmp(path, "/sd/", 4) == 0;
+    esp_err_t err = write_wav_header(f, 0) ?
+        (buffered ? sk_audio_capture_start_buffered() : sk_audio_capture_start()) : ESP_FAIL;
     // Unbounded interactive recording stops at the existing one-hour limit.
     uint64_t wanted = (uint64_t)(duration ? duration : SOLAR_OS_AUDIO_WAV_MAX_MS)*44100/1000;
     while (err == ESP_OK && info->data_bytes/2 < wanted) {
