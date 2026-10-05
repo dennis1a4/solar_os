@@ -635,3 +635,20 @@ compares maintained counts with recounts after file changes, hashes a temporary
 reader, and logically ejects/remounts. Successful runs remove their unique USB
 fixture; failures retain evidence. It never formats the drive. The first cold
 `df` can include SD accounting too; later remount timing isolates USB with SD warm.
+
+### Embedded Teensy manual coverage
+
+```sh
+python3 tests/ports/test_teensy41_manual.py
+python3 tests/test_generate_manual.py
+/tmp/solaros-ssh-testenv/bin/python scripts/ports/test_teensy41_manual_device.py --log /tmp/teensy-manual-device.json
+```
+
+Host checks compare page availability with the actual app/command registry gates
+for full and reduced Teensy profiles. They verify complete body embedding,
+Teensy hardware/storage contracts, absence of stale ESP instructions, and the
+unchanged default upstream download policy. The device test requires pyserial,
+pyte, exclusive USB serial, and idle LCD/USB consoles. It opens every installed
+app/command page, checks both ends of the text, exits each pager, and exercises
+bare aliases, search, Help's browser and an LCD page. It reads help without
+starting hardware apps or changing files/settings apart from normal history.

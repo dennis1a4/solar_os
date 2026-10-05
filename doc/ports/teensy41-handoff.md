@@ -4,6 +4,32 @@ Updated 2026-10-05. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## Complete offline Teensy manual — 2026-10-05
+
+The manual selection now covers 27 apps and 67 shell commands, including Synth.
+Every selected page embeds its full audited text in program flash. Previously,
+most entries embedded only a generic instruction to download a manual over Wi-Fi;
+app overrides for WebRadio and ltop were also not applied. The default upstream
+ESP manual-generation policy is unchanged.
+
+Teensy pages describe wired Ethernet, SGTL5000 microphone/playback, the terminal
+Synth/WebRadio/Calc interfaces, single-core ltop stack headroom, persistent LCD
+font/colors, startup files, and `/flash/.ssh` and settings paths. Shared neutral
+app controls are retained with port-specific limits. Scope documents the legacy
+ADC40/AmpEn40 conflict; PD Power and OBD remain explicitly simulated. `help status`
+reports the complete embedded page count. No SD/manual download is required.
+
+Host coverage evaluates actual registry conditions for full/reduced profiles,
+checks complete generated bodies and prevents stale ESP instructions. Device
+procedure: `scripts/ports/test_teensy41_manual_device.py`. All 15 port and 16
+shared generator tests pass. Legacy build passes at RAM1 430,048 / RAM2 347,000
+bytes (unchanged), flash 1,468,720 bytes (+35,104 bytes). Candidate HEX SHA256:
+`6c0f08c13e52699c61e1e7fd6b8b8fe64bda6a912046a307aa25e43212e2c6d3`.
+
+Installation/device acceptance is pending: the user's PC serial monitor still
+holds `/dev/ttyACM0`. A request to close it and leave the keyboard idle is pending.
+The installed firmware remains the preceding USB batching image until upload.
+
 ## Faster FAT32 USB usage — 2026-10-05
 
 Installed `teensy41_telnet_legacy`, with bench pins unchanged. USB reads now

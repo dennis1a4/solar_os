@@ -502,7 +502,12 @@ void solar_os_shell_cmd_help(solar_os_context_t *ctx, int argc, char **argv)
     }
 #else
     if (argc == 2 && strcmp(argv[1], "status") == 0) {
+#if SOLAR_OS_PLATFORM_IMXRT1062
+        solar_os_shell_io_printf(io, "Manual: %u embedded Teensy app/command pages (offline)\n",
+                                 (unsigned)solar_os_manual_count());
+#else
         solar_os_shell_io_writeln(io, "Manual: built-in setup guide");
+#endif
         solar_os_shell_io_writeln(io, "Updates: unavailable on this build");
         return;
     }

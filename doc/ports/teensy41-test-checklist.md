@@ -532,3 +532,17 @@ profile; no GPIO reassignment is needed for the dedicated On/Off pad.
 
 Evidence: `/tmp/teensy-df-device.json`. These checks do not establish physical
 removal during active I/O or compatibility with other drive formats/controllers.
+
+## Complete offline manual — 2026-10-05
+
+- [x] **MAN-1 — Registry and rendering coverage:** all 27 apps and 67 commands
+  have pages. Full/reduced profile gates match actual registries. Every body is
+  embedded; default upstream download policy remains unchanged. Fifteen Teensy
+  and sixteen shared generator tests pass.
+- [x] **MAN-2 — Hardware audit/build:** Ethernet, flash paths, SGTL5000 capture,
+  single-core ltop, terminal Synth/Calc/WebRadio, LCD appearance, and pending
+  scope/PD/OBD hardware are described accurately. Legacy firmware builds.
+- [ ] **MAN-3 — Device acceptance:** install the manual build, open every page,
+  check beginning/end text, bare-name lookup, search, browser, LCD and memory.
+  `scripts/ports/test_teensy41_manual_device.py` automates this; close the PC USB
+  monitor and leave the LCD keyboard idle first.
