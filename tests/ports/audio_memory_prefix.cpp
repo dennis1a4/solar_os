@@ -31,10 +31,13 @@ static void AudioInterrupts() { assert(!interrupts); interrupts = true; if(on_en
 static void __DMB() {}
 static uint32_t millis() { return ticks; }
 static void step_feeder();
-static void vTaskDelay(unsigned n) { ticks += n; if(run_updates)update_audio(); step_feeder(); }
+static void (*delay_hook)();
+static void vTaskDelay(unsigned n) { ticks += n; if(run_updates)update_audio(); step_feeder(); if(delay_hook)delay_hook(); }
 using StackType_t = uint32_t;
 struct StaticTask_t {};
 using TaskHandle_t = StaticTask_t *;
+static StaticTask_t mock_current;
+static TaskHandle_t xTaskGetCurrentTaskHandle() { return &mock_current; }
 static TaskHandle_t mock_task;
 static bool fail_task, suspended;
 static int fail_nth = -1;
@@ -46,7 +49,7 @@ static TaskHandle_t xTaskCreateStatic(void (*)(void *), const char *, unsigned, 
 }
 static void vTaskSuspend(void *) { suspended=true; }
 static int eTaskGetState(TaskHandle_t t) {assert(t==mock_task);return suspended?eSuspended:0;}
-static unsigned uxTaskGetStackHighWaterMark(TaskHandle_t t) {assert(t==mock_task);return 256;}
+static unsigned uxTaskGetStackHighWaterMark(TaskHandle_t t) {if(!t)return 512;assert(t==mock_task);return 256;}
 static void vTaskDelete(TaskHandle_t t) {assert(t==mock_task && suspended);mock_task=nullptr;}
 static void *solar_os_memory_alloc(size_t n,int kind,const char *) {
     assert(interrupts && (kind == SOLAR_OS_MEMORY_INTERNAL_PREFERRED || kind == SOLAR_OS_MEMORY_EXTERNAL_REQUIRED));

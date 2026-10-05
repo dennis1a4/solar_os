@@ -4,6 +4,36 @@ Updated 2026-10-05. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## Folder player and editing during playback — 2026-10-05
+
+Installed on the unchanged `teensy41_telnet_legacy` bench wiring. The shared
+solarOS player now accepts a folder of MP3/WAV files, with shuffle, repeat
+off/all/one, pause, next/previous and volume. `player --shuffle --repeat all
+/sd/music` starts it. Ctrl+Z keeps playback and automatic track advancement
+running; `sessions` and `fg ID` switch between the player and a retained editor.
+No seeking or saved playlists are exposed. See [player notes](teensy41-player.md).
+
+The decoder uses a 32 KiB PSRAM stack and an on-demand 128 KiB PSRAM PCM queue.
+A priority-3 feeder with a 2 KiB internal stack keeps the 16 KiB internal audio
+ring supplied during console redraws and SD writes. Background timer delivery
+is opt-in and preserves the editor's foreground context. Routine history flash
+saves defer during playback; explicit flash writes can still mask audio IRQs.
+
+Final live acceptance passed folder ordering/shuffle, repeat modes, transport,
+volume, ownership, failures and cleanup. On the same USB console, MP3 playback
+continued across tracks while editing/saving to SD, then player controls and
+the preserved editor buffer were restored successfully. Zero reported underruns;
+exact idle heap recovery: 372,616 internal / 8,123,832 PSRAM bytes. Fixtures removed.
+Host folder/control, audio queue, retained-session, decoder, upstream seek and
+manual checks passed. Acoustic listening remains separate.
+Five final one-second playback/SD-recording cycles and tone cleanup passed on
+this image with exact heap recovery (`teensy-player-audio-memory-live.json`).
+
+Current installed HEX SHA256:
+`0a5fc7bb7904deb50174810eb36672a4ec938d04fbddec4f70a1c71f232db64c`.
+Build: RAM1 431,648, RAM2 187,256, flash 1,488,736 bytes. Artifacts and live
+evidence are beside the repository in `solar_os-baselines/2026-10-05-player/`.
+
 ## Longer SD microphone recordings — 2026-10-05
 
 Installed on the unchanged `teensy41_telnet_legacy` bench profile. `/sd/`

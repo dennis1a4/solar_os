@@ -5,6 +5,25 @@ below contain procedures and historical evidence; the roadmap tracks development
 Unchecked items are outstanding, not failed unless explicitly described as such.
 Do not check off a physical test based on simulation, injected input or a build.
 
+## Folder music player
+
+- [x] **PLAYER-1:** Actual-code host checks: folder filtering/sorting, 512-file
+  limit, shuffle permutations, allocation rollback, repeat and task joining.
+- [x] **PLAYER-2:** Host audio queue checks: pause, decoder stalls, stereo sample
+  ordering, EOF drain and allocation/task failure cleanup; retained timer context
+  and existing decoder/recording/upstream seek regressions pass.
+- [x] **PLAYER-3:** Installed legacy firmware passes MP3/WAV folder playback,
+  shuffle, repeat, transport/volume, corrupt-file reporting and ownership checks.
+  Zero reported underruns and exact heap recovery after repeated open/close.
+- [x] **PLAYER-4:** USB player/editor session switching: playback continues
+  across tracks while editing and saving to SD; player next/pause/resume works;
+  editor contents survive switching. Test fixtures removed.
+- [ ] **PLAYER-5:** Acoustic listening with real music and broader SD/card loads;
+  USB storage playback after reconnecting USB host; physical keyboard controls.
+  Automated LCD/USB input and digital counters do not replace these checks.
+
+Details and artifact locations: [player notes](teensy41-player.md).
+
 ## On-demand internal memory
 
 - [x] **RAM-1:** Host OCRAM routing, alignment, allocation failure, DMA refusal,

@@ -1,8 +1,14 @@
 """Select accurate embedded documentation for the Teensy workstation shell."""
-APP_NAMES = set('synth ltop webradio io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders mqttx obd clock pdpower scope help curl'.split())
+APP_NAMES = set('player synth ltop webradio io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders mqttx obd clock pdpower scope help curl'.split())
 COMMAND_NAMES = set('poweroff serial sshkey midi pd grep head wc ramfs gpio i2c spi uart expansion help man commands echo wait watch apps mem uptime clear setterm identity network audio cd ls cat sh mkdir rm mv cp exit reboot version board status top port df pwd session sessions fg bg tail close ping netscan ntp jobs job schedule zip unzip rtc date time flash sd usb lcd telnetd'.split())
 # Audited Teensy contracts. Hardware-neutral shared app pages remain upstream.
 OVERRIDES = {
+    'player': ('Play MP3/WAV files from a folder.',
+        'player [--tui] [--shuffle] [--repeat off|all|one] [FOLDER]\n'
+        'Examples: player /sd/music; player --shuffle /sd/music\n'
+        'Starts playback of visible MP3/WAV files directly in the folder (current directory if omitted). Filename order by default; no recursive scan or saved playlist. Up to 512 tracks; oversized folders/path names fail rather than silently truncate. Shuffle visits each track once per cycle. Repeat defaults to off; all repeats the folder, one repeats the current track.\n'
+        'Space pauses/resumes (plays the selected track when stopped); n/p or Right/Left select next/previous; Up/Down select a row, Enter plays it or stops the current track; s toggles shuffle, r cycles off/all/one, +/- changes volume; q, Esc, Ctrl+C or Ctrl+] exits. No seek controls. The terminal interface works on LCD, USB and Telnet. Ctrl+Z suspends the interface while playback and automatic track changes continue. Open edit or another non-audio app, suspend it with Ctrl+Z, then use sessions and fg ID to return to the player. Pause before suspending if you want silence. Stop/exit the owning session to release audio.\n'
+        'Track paths, ordering, the 32 KiB decoder-worker stack and a 128 KiB playback buffer use PSRAM on demand. A separate feeder with a 2 KiB internal stack supplies the 16 KiB internal PCM ring during brief decoder/storage/UI stalls. Audio is exclusive with aplay, arecord, synth and WebRadio. Exit frees the folder and playback allocations; pause retains them. Folder membership refreshes when reopened. Unsupported/corrupt files stop with an error; next skips manually.'),
     'aplay': ('Play WAV or MP3 through the SGTL5000 shield.',
         'aplay [-v volume] FILE.wav|FILE.mp3\n'
         'Example: aplay -v 20 /sd/music.wav\n'

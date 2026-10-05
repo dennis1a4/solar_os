@@ -105,8 +105,25 @@ static esp_err_t output_frame(solar_os_audio_s16_converter_t *converter,
         if (err != ESP_OK) return err;
         err = sk_audio_output_write(output, count / 2);
         if (err != ESP_OK) return err;
+        if (options && options->samples && count)
+            options->samples(output, count, 2, options->user);
     } while (!done);
     return ESP_OK;
+}
+static esp_err_t playback_start(uint8_t volume, const solar_os_audio_wav_options_t *options) {
+    // This port deliberately does not implement seeking.
+    if (options && options->start_ms) return ESP_ERR_NOT_SUPPORTED;
+    esp_err_t err=sk_audio_output_start(volume);
+    if (err==ESP_OK && options && options->device) {
+        solar_os_audio_device_info_t device={0};
+        strcpy(device.id,"sgtl5000");
+        device.capabilities=SOLAR_OS_AUDIO_DEVICE_CAP_OUTPUT|SOLAR_OS_AUDIO_DEVICE_CAP_VOLUME;
+        device.native_format.sample_rate=44100;
+        device.native_format.channels=2; device.native_format.bits_per_sample=16;
+        device.native_format.sample_format=SOLAR_OS_STREAM_AUDIO_S16_LE;
+        options->device(&device,options->user);
+    }
+    return err;
 }
 esp_err_t solar_os_audio_play_mp3(const char *path, uint8_t volume,
     const solar_os_audio_wav_options_t *options, solar_os_audio_wav_info_t *info) {
@@ -118,7 +135,7 @@ esp_err_t solar_os_audio_play_mp3(const char *path, uint8_t volume,
     int16_t *output = solar_os_memory_alloc(OUTPUT_SAMPLES*2, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "mp3.output");
     esp_err_t err = input && pcm && output ? solar_os_audio_mp3_decoder_create(&decoder) : ESP_ERR_NO_MEM;
     if (err == ESP_OK) err = skip_id3(f);
-    if (err == ESP_OK) err = sk_audio_output_start(volume);
+    if (err == ESP_OK) err = playback_start(volume, options);
     solar_os_audio_s16_converter_t converter = {0};
     size_t used = 0;
     bool eof = false, have_audio = false;
@@ -164,7 +181,7 @@ esp_err_t solar_os_audio_play_wav(const char *path, uint8_t volume,
     int16_t *pcm = solar_os_memory_alloc(4096, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "wav.pcm");
     int16_t *output = solar_os_memory_alloc(OUTPUT_SAMPLES*2, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "wav.output");
     if (!pcm || !output) err = ESP_ERR_NO_MEM;
-    if (err == ESP_OK) err = sk_audio_output_start(volume);
+    if (err == ESP_OK) err = playback_start(volume, options);
     uint32_t remaining = info->data_bytes;
     solar_os_audio_s16_converter_t converter = {0};
     solar_os_stream_audio_format_t format = {.sample_rate=info->sample_rate,

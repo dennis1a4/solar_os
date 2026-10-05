@@ -34,6 +34,9 @@ typedef esp_err_t (*solar_os_context_output_fn)(const char *text,
 #define SOLAR_OS_APP_FLAG_AXIS_EVENTS (1U << 4)
 /* Receive recognized touchless and touch gesture events. */
 #define SOLAR_OS_APP_FLAG_GESTURE_EVENTS (1U << 5)
+/* Opt into retained-session timer events in supporting port shells. Callbacks
+ * must not draw or consume input while suspended. Used for audio auto-advance. */
+#define SOLAR_OS_APP_FLAG_BACKGROUND_TICKS (1U << 6)
 
 /*
  * Foreground-app mutable state is cold by default: the shared app lifecycle

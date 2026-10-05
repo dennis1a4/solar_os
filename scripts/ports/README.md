@@ -700,3 +700,21 @@ With SGTL5000 connected at boot and the USB serial monitor closed:
   tone energy above adjacent-band noise; an auto-off speaker is inconclusive.
   Host WAVs can contain
   ambient microphone audio. Successful temporary fixtures are removed.
+
+
+### Folder player
+
+The shared solarOS `player` is available on integrated Teensy display builds.
+Use `player /sd/music` or `player --shuffle --repeat all /sd/music`.
+Ctrl+Z leaves music playing; open `edit`, suspend it, then use `sessions` and
+`fg ID` to return to either app. Details and controls are in
+[teensy41-player.md](../../doc/ports/teensy41-player.md).
+
+`bash scripts/ports/test_teensy41_player_host.sh` and
+`python3 tests/ports/test_teensy41_player_controls.py` cover folder ordering,
+shuffle, limits, allocation errors and repeat transitions under sanitizers.
+`python3 scripts/ports/test_teensy41_player.py --log LOG` needs host `pyserial`,
+`pyte` and `ffmpeg`, plus audio hardware, SD, Ethernet and exclusive USB.
+It serves generated tones over local HTTP,
+checks their hashes, tests controls, background playback while editing/saving,
+and exact idle memory recovery, then removes its unique fixture directory.

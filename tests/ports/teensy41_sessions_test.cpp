@@ -68,6 +68,13 @@ static void suspend(solar_os_context_t *){++suspends;}
 static void resume(solar_os_context_t *ctx){++resumes;assert(ctx->argc==1 && !strcmp(ctx->argv[0],"saved argument"));assert(active_tui==&tui);}
 static void launch(const solar_os_app_t *app,solar_os_launch_policy_t policy=SOLAR_OS_LAUNCH_REPLACE){char *args[]={const_cast<char *>("saved argument")};assert(solar_os_context_request_launch_ex(current_context(),app,1,args,policy)==ESP_OK);service_requests();}
 static void request(uint32_t id,unsigned action){char b[16];snprintf(b,sizeof(b),"%lu",(unsigned long)id);char *args[]={const_cast<char *>("test"),b};request_app(&shell_context,2,args,action);}
+static unsigned background_ticks;
+static solar_os_context_t *background_context;
+static bool background_event(solar_os_context_t *ctx,const solar_os_event_t *ev) {
+ assert(ctx==background_context && ev->type==SOLAR_OS_EVENT_TICK);
+ assert(foreground && !strcmp(foreground->name,"calc"));
+ ++background_ticks;return true;
+}
 int main(){
  consoles[0].name="usb-shell";consoles[1].name="lcd-shell";consoles[1].local=true;
  for(auto &c:consoles){solar_os_context_init(&c.context,nullptr,nullptr);solar_os_context_set_shell_io(&c.context,&io);}
@@ -75,6 +82,20 @@ int main(){
  const char *names[]={"editor","files","calc","clock","notes","synth","nonresumable"};
  for(unsigned i=0;i<7;++i){apps[i].name=names[i];apps[i].app_class=SOLAR_OS_APP_CLASS_TUI;apps[i].start=start;apps[i].stop=stop;apps[i].suspend=suspend;apps[i].resume=resume;apps[i].flags=SOLAR_OS_APP_FLAG_RESUMABLE;}
  apps[6].flags=0;
+ // A retained audio-style app receives opt-in timers without replacing editor
+ // context/TUI; normal retained apps receive none, including timer wraparound.
+ apps[0].flags|=SOLAR_OS_APP_FLAG_BACKGROUND_TICKS;
+ apps[0].event=background_event;apps[0].tick_interval_ms=100;
+ launch(&apps[0]);assert(suspend_app());background_context=&active().retained[0]->context;
+ launch(&apps[1]);assert(suspend_app());launch(&apps[2]);auto *shown=app_frame;
+ service_background_apps(100);assert(background_ticks==1 && app_frame==shown);
+ service_background_apps(150);assert(background_ticks==1);
+ service_background_apps(200);assert(background_ticks==2);
+ active().retained[1]->background_tick=UINT32_MAX-20;
+ service_background_apps(79);assert(background_ticks==3 && app_frame==shown);
+ close_all_apps();assert(allocations==frees);
+ apps[0].flags=SOLAR_OS_APP_FLAG_RESUMABLE;apps[0].event=nullptr;
+
  launch(&apps[0]);const auto id=app_frame->id;auto *saved=app_frame;
  assert(suspend_app() && !foreground && active().retained[0]==saved);
  // A retained singleton remains claimed on every console.

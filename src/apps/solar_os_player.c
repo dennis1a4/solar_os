@@ -27,10 +27,20 @@
 #include "solar_os_tui.h"
 #include "solar_os_tui_widgets.h"
 
+#if SOLAR_OS_PLATFORM_IMXRT1062
+#include "audio_output.h"
+#include "player_folder.h"
+#define PLAYER_TASK_STACK 32768U
+#else
 #define PLAYER_TASK_STACK 28672U
+#endif
 #define PLAYER_TASK_PRIORITY (tskIDLE_PRIORITY + 2U)
 #define PLAYER_WORKER_POLL_MS 20U
+#if SOLAR_OS_PLATFORM_IMXRT1062
+#define PLAYER_REFRESH_MS 250U
+#else
 #define PLAYER_REFRESH_MS 40U
+#endif
 #define PLAYER_DISPLAY_HPM_HZ_TENTHS 255U
 #define PLAYER_SCOPE_SAMPLES 256U
 #define PLAYER_SPECTRUM_FFT_SIZE 256U
@@ -38,7 +48,7 @@
 #define PLAYER_ROW_HEIGHT 24
 #define PLAYER_FOOTER_HEIGHT 20
 #define PLAYER_VOLUME_STEP 5
-#if !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+#if !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM && !SOLAR_OS_PLATFORM_IMXRT1062
 SOLAR_OS_TASK_REQUIRE_FOREGROUND_STACK(PLAYER_TASK_STACK);
 #endif
 
@@ -87,6 +97,9 @@ typedef struct {
     bool high_refresh_active;
     bool redraw;
     bool natural_completion;
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    unsigned repeat; // 0 off, 1 folder, 2 track
+#endif
     volatile bool stop_requested;
     volatile bool paused;
     volatile bool seeking;
@@ -258,6 +271,9 @@ static void player_device_callback(const solar_os_audio_device_info_t *device,
 static void player_worker(void *arg)
 {
     (void)arg;
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    sk_audio_worker_begin(player_cancel_callback, player_pause_callback, NULL);
+#endif
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     strlcpy(path, player.active_path, sizeof(path));
     solar_os_audio_wav_info_t info = {0};
@@ -287,6 +303,9 @@ static void player_worker(void *arg)
             solar_os_audio_play_mp3(path, player.volume, &options, &info) :
             solar_os_audio_play_wav(path, player.volume, &options, &info);
     }
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    sk_audio_worker_end();
+#endif
     portENTER_CRITICAL(&player_lock);
     player.playback_error = err;
     player.natural_completion = err == ESP_OK && !player.stop_requested;
@@ -313,7 +332,7 @@ static void player_stop_playback(void)
             task, &player.task_done, SOLAR_OS_TASK_STOP_WAIT_MS)) {
         SOLAR_OS_LOGW(TAG, "player task did not stop within %u ms",
                       (unsigned)SOLAR_OS_TASK_STOP_WAIT_MS);
-        while (!player.task_done) {
+        while (!solar_os_task_wait_done(task, &player.task_done, SOLAR_OS_TASK_STOP_WAIT_MS)) {
             vTaskDelay(pdMS_TO_TICKS(PLAYER_WORKER_POLL_MS));
         }
     }
@@ -414,9 +433,21 @@ static void player_reap_finished(void)
     TaskHandle_t task = player.task;
     player.task = NULL;
     player.natural_completion = false;
+    while (!solar_os_task_wait_done(task, &player.task_done, SOLAR_OS_TASK_STOP_WAIT_MS))
+        vTaskDelay(1);
     solar_os_task_delete_external(task);
     if (advance && player.track_count > 0U) {
+#if SOLAR_OS_PLATFORM_IMXRT1062
+        size_t next=player.active_index+1;
+        if (player.repeat==2) next=player.active_index;
+        else if (next==player.track_count) {
+            if (!player.repeat) { player.redraw=true; return; }
+            next=sk_player_folder_shuffle(sk_player_folder_shuffled(), SIZE_MAX);
+        }
+        (void)player_play_index(next);
+#else
         (void)player_play_index((player.active_index + 1U) % player.track_count);
+#endif
     }
 }
 
@@ -489,9 +520,13 @@ static void player_render_tui(void)
         return;
     }
     solar_os_tui_clear(&player.tui);
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    solar_os_tui_draw_title(&player.tui, "Folder Player", NULL);
+#else
     solar_os_tui_draw_title(&player.tui,
                             player.browsing ? "Player - Add track" : "Player",
                             NULL);
+#endif
     size_t count = player.browsing ? solar_os_storage_browser_count(player.browser) :
         player.track_count;
     size_t cursor = player.browsing ? solar_os_storage_browser_cursor(player.browser) :
@@ -530,13 +565,24 @@ static void player_render_tui(void)
     } else if (player.playback_state == PLAYER_ERROR && player.message[0] != '\0') {
         snprintf(status, sizeof(status), "%s", player.message);
     } else {
+#if SOLAR_OS_PLATFORM_IMXRT1062
+        snprintf(status, sizeof(status), "%s %s | %u tracks Vol:%u Shuffle:%s Repeat:%s",
+                 player_state_symbol(), elapsed, (unsigned)player.track_count, player.volume, sk_player_folder_shuffled()?"on":"off",
+                 player.repeat==2?"one":player.repeat==1?"all":"off");
+#else
         snprintf(status, sizeof(status), "%s %s / %s | Up/Down  Enter play/stop  Space pause  </> seek  A add  Del remove  Esc exit",
                  player_state_symbol(), elapsed, total);
+#endif
     }
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    solar_os_tui_draw_footer(&player.tui, status,
+        "Space pause | n/p next/prev | s shuffle | r repeat | +/- vol | q exit");
+#else
     solar_os_tui_draw_footer(
         &player.tui,
         player.playback_state == PLAYER_ERROR ? player.message : NULL,
         status);
+#endif
     solar_os_tui_set_cursor_visible(&player.tui, false);
     solar_os_tui_refresh(&player.tui);
 }
@@ -735,7 +781,7 @@ static void player_remove_selected(void)
 
 static bool player_handle_key(solar_os_context_t *ctx, uint8_t key)
 {
-    if (key == SOLAR_OS_KEY_APP_EXIT ||
+    if (key == 3 || key == SOLAR_OS_KEY_APP_EXIT ||
         (!player.browsing && (key == SOLAR_OS_KEY_ESCAPE || key == 'q' || key == 'Q'))) {
         solar_os_context_finish(ctx, 0, NULL);
         return true;
@@ -755,6 +801,26 @@ static bool player_handle_key(solar_os_context_t *ctx, uint8_t key)
         player_render(ctx);
         return true;
     }
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    if (key=='n' || key=='p' || key==SOLAR_OS_KEY_LEFT || key==SOLAR_OS_KEY_RIGHT) {
+        player_play_offset(key=='p' || key==SOLAR_OS_KEY_LEFT ? -1 : 1);
+    } else if (key=='s') {
+        size_t index=sk_player_folder_shuffle(!sk_player_folder_shuffled(),
+                                             player.task ? player.active_index : player.cursor);
+        player.active_index=player.cursor=index;
+    } else if (key=='r') player.repeat=(player.repeat+1)%3;
+    else if (key=='+' || key=='=' || key=='-') player_adjust_volume(key=='-'?-1:1);
+    else if (key==' ') {
+        if (player.task && !player.task_done) player_toggle_pause();
+        else player_toggle_play_stop();
+    } else if (key==SOLAR_OS_KEY_UP || key=='k') { if(player.cursor) --player.cursor; }
+    else if (key==SOLAR_OS_KEY_DOWN || key=='j') {
+        if(player.cursor+1<player.track_count) ++player.cursor;
+    } else if (key=='\r' || key=='\n') {
+        if (player.task && player.cursor==player.active_index) player_stop_playback();
+        else (void)player_play_index(player.cursor);
+    }
+#else
     if (key == '<' || key == '>') {
         player_seek(key == '<' ? -1 : 1);
     } else if (player.mode == PLAYER_MODE_GRAPHICS && key == '\t') {
@@ -784,19 +850,39 @@ static bool player_handle_key(solar_os_context_t *ctx, uint8_t key)
         else if (key == 'a' || key == 'A') player_begin_browser();
         else if (key == SOLAR_OS_KEY_DELETE || key == 0x7fU) player_remove_selected();
     }
+#endif
     player.redraw = true;
     player_render(ctx);
     return true;
 }
 
+static void player_stop(solar_os_context_t *ctx);
+
 static esp_err_t player_start(solar_os_context_t *ctx)
 {
     memset(&player, 0, sizeof(player));
     const int argc = solar_os_context_argc(ctx);
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    bool force_tui = true, shuffle = false;
+#else
     bool force_tui = false;
+#endif
     const char *path_arg = NULL;
     for (int i = 1; i < argc; i++) {
         const char *arg = solar_os_context_argv(ctx, i);
+#if SOLAR_OS_PLATFORM_IMXRT1062
+        if (!strcmp(arg,"--shuffle")) { shuffle=true; continue; }
+        if (!strcmp(arg,"--repeat")) {
+            if (++i>=argc) return ESP_ERR_INVALID_ARG;
+            const char *mode=solar_os_context_argv(ctx,i);
+            if (!strcmp(mode,"off")) player.repeat=0;
+            else if (!strcmp(mode,"all")) player.repeat=1;
+            else if (!strcmp(mode,"one")) player.repeat=2;
+            else return ESP_ERR_INVALID_ARG;
+            continue;
+        }
+        if (arg[0]=='-' && strcmp(arg,"--tui")) return ESP_ERR_INVALID_ARG;
+#endif
         if (strcmp(arg, "--tui") == 0) {
             force_tui = true;
         } else if (path_arg == NULL) {
@@ -818,6 +904,17 @@ static esp_err_t player_start(solar_os_context_t *ctx)
     solar_os_audio_get_status(&audio_status);
     player.volume = audio_status.volume <= 100U ? audio_status.volume : 50U;
     player.visualizer = PLAYER_VISUALIZER_CASSETTE;
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    char folder[SOLAR_OS_STORAGE_PATH_MAX];
+    esp_err_t err=solar_os_storage_resolve_path(path_arg ? path_arg : ".",folder,sizeof(folder));
+    if (err==ESP_OK) err=sk_player_folder_open(folder);
+    if (err!=ESP_OK) {
+        solar_os_shell_io_printf(solar_os_context_shell_io(ctx),
+            "player: cannot scan folder (%s); use up to 512 MP3/WAV files, no subfolders\n", esp_err_to_name(err));
+        return err;
+    }
+    if (shuffle) sk_player_folder_shuffle(true,SIZE_MAX);
+#else
     esp_err_t err = solar_os_player_playlist_init();
     if (err != ESP_OK) return err;
     err = solar_os_storage_browser_create(player_audio_file, NULL, &player.browser);
@@ -829,6 +926,7 @@ static esp_err_t player_start(solar_os_context_t *ctx)
         player.browser = NULL;
         return err;
     }
+#endif
     player.mode = launch_mode;
     if (player.mode == PLAYER_MODE_TUI) {
         err = solar_os_tui_screen_begin(&player.tui, ctx);
@@ -843,9 +941,18 @@ static esp_err_t player_start(solar_os_context_t *ctx)
             solar_os_context_set_graphics_active(ctx, true);
         }
     }
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK) {
+#if SOLAR_OS_PLATFORM_IMXRT1062
+        sk_player_folder_close();
+#endif
+        return err;
+    }
     player.ui_started = true;
     player_refresh_playlist();
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    err=player_play_index(0);
+    if (err!=ESP_OK) { player_stop(ctx); return err; }
+#else
     if (path_arg != NULL) {
         char path[SOLAR_OS_STORAGE_PATH_MAX];
         err = solar_os_storage_resolve_path(path_arg, path, sizeof(path));
@@ -868,12 +975,14 @@ static esp_err_t player_start(solar_os_context_t *ctx)
             return err;
         }
     }
+#endif
     player_render(ctx);
     return err;
 }
 
 static void player_stop(solar_os_context_t *ctx)
 {
+    if (!player_state) return;
     player_stop_playback();
     if (player.mode == PLAYER_MODE_GRAPHICS) {
         player_disable_high_refresh();
@@ -889,6 +998,9 @@ static void player_stop(solar_os_context_t *ctx)
     solar_os_storage_browser_destroy(player.browser);
     player.browser = NULL;
     player.ui_started = false;
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    sk_player_folder_close();
+#endif
 }
 
 static void player_suspend(solar_os_context_t *ctx)
@@ -983,9 +1095,17 @@ static void player_title(solar_os_context_t *ctx, char *buffer, size_t buffer_le
 
 const solar_os_app_t solar_os_player_app = {
     .name = "player",
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    .summary = "folder music player",
+#else
     .summary = "playlist audio player",
+#endif
     .app_class = SOLAR_OS_APP_CLASS_TUI,
-    .flags = SOLAR_OS_APP_FLAG_RESUMABLE | SOLAR_OS_APP_FLAG_POINTER_EVENTS,
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE | SOLAR_OS_APP_FLAG_POINTER_EVENTS
+#if SOLAR_OS_PLATFORM_IMXRT1062
+        | SOLAR_OS_APP_FLAG_BACKGROUND_TICKS
+#endif
+        ,
     .start = player_start,
     .suspend = player_suspend,
     .resume = player_resume,

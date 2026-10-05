@@ -12,12 +12,15 @@ class Console:
         assert len(ports)==1, ports
         self.conn=serial.Serial(ports[0],115200,timeout=.02,write_timeout=3,exclusive=True)
         self.report=report
+        self.observe=None
         self.cmd('')
     def exchange(self, raw=b'', suffix=None, timeout=30, log=True):
         self.conn.write(raw);data=bytearray();last=time.monotonic();end=last+timeout
         while time.monotonic()<end:
             chunk=self.conn.read(16384)
-            if chunk:data.extend(chunk);last=time.monotonic()
+            if chunk:
+                data.extend(chunk);last=time.monotonic()
+                if self.observe:self.observe(chunk)
             text=ANSI.sub('',data.decode(errors='replace')).replace('\r','')
             assert 'Fault IRQ:' not in text and 'STACK OVERFLOW:' not in text,text
             found=text.endswith(suffix) if suffix else bool(re.search(r'[\w.-]+@[\w.-]+:/[^\n]* (?=$|\[\d+\])',text,re.M))

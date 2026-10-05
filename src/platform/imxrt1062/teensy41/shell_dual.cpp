@@ -223,12 +223,13 @@ static esp_err_t terminal_read(void *,uint8_t *data,size_t length,uint32_t timeo
     } while(true);
 }
 static bool audio_app(const solar_os_app_t *app) {
-    return app && (!strcmp(app->name,"webradio") || !strcmp(app->name,"synth") || !strcmp(app->name,"aplay") || !strcmp(app->name,"arecord"));
+    return app && (!strcmp(app->name,"player") || !strcmp(app->name,"webradio") || !strcmp(app->name,"synth") || !strcmp(app->name,"aplay") || !strcmp(app->name,"arecord"));
 }
 static bool console_has_audio(const Console &c);
 #if SK_AUDIO_PLAYER
 extern "C" bool sk_audio_diagnostic_busy();
 extern "C" bool sk_audio_capture_active();
+extern "C" bool sk_audio_worker_active();
 #endif
 static bool sk_app_allowed(const solar_os_app_t *app) {
     if(!audio_app(app)) return true;
@@ -453,13 +454,14 @@ static void run_console(void *) {
 #endif
 #if SK_SETTINGS
         // QSPI flash programming masks AudioStream updates. Defer routine
-        // history persistence until capture stops; shutdown still force-flushes.
+        // history persistence until capture/file playback stops; shutdown still force-flushes.
 #if SK_AUDIO_PLAYER
-        if (!sk_audio_capture_active())
+        if (!sk_audio_capture_active() && !sk_audio_worker_active())
 #endif
             solar_os_shell_history_flush(session, false);
 #endif
         service_session_request();
+        service_background_apps(millis());
         auto *io=solar_os_shell_session_io(session);
         if(foreground && foreground->event && millis()-last_tick>=solar_os_app_tick_interval_ms(foreground,25)) {
             last_tick=millis(); solar_os_event_t event{}; event.type=SOLAR_OS_EVENT_TICK; event.data.tick_ms=millis();

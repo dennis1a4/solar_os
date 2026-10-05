@@ -22,6 +22,95 @@ static volatile unsigned head, tail;
 static volatile uint32_t played, underruns;
 static volatile bool consuming, tone_on;
 static bool ready;
+static TaskHandle_t file_worker;
+static bool (*file_cancel)(void *), (*file_pause)(void *);
+static void *file_user;
+static volatile bool output_paused;
+static uint32_t file_stack_free;
+extern "C" void sk_audio_worker_begin(bool (*cancel)(void *), bool (*pause)(void *), void *user) {
+    file_cancel=cancel; file_pause=pause; file_user=user;
+    file_worker=xTaskGetCurrentTaskHandle();
+}
+extern "C" void sk_audio_worker_end() {
+    file_stack_free=uxTaskGetStackHighWaterMark(nullptr)*sizeof(StackType_t);
+    output_paused=false; file_worker=nullptr;
+    file_cancel=file_pause=nullptr; file_user=nullptr;
+}
+extern "C" bool sk_audio_worker_active() { return file_worker != nullptr; }
+static bool file_worker_context() {
+    return file_worker && file_worker==xTaskGetCurrentTaskHandle();
+}
+static bool output_wait_ready(uint32_t *deadline_start) {
+    if (!file_worker_context() || !file_pause || !file_pause(file_user)) return true;
+    output_paused=true;
+    while (file_pause(file_user)) {
+        if (sk_audio_cancelled()) { output_paused=false; return false; }
+        vTaskDelay(1);
+    }
+    output_paused=false;
+    if (deadline_start) *deadline_start=millis();
+    return !sk_audio_cancelled();
+}
+// Folder playback decodes ahead in PSRAM. A short priority-3 feeder keeps the
+// internal ISR ring supplied while an editor redraw or SD write blocks decoding.
+static constexpr unsigned file_slots=256;
+static PlaybackBlock *file_pcm;
+static volatile unsigned file_head,file_tail,file_peak;
+static unsigned file_partial;
+static volatile bool file_eof,file_primed,file_feed_stop;
+static StaticTask_t file_feed_tcb;
+static StackType_t *file_feed_stack;
+static TaskHandle_t file_feed_task;
+static uint32_t file_feed_stack_free;
+static void file_feed_once() {
+    output_paused=file_pause && file_pause(file_user);
+    if (output_paused) return;
+    if (!file_primed) {
+        if (!file_eof && (file_head+file_slots-file_tail)%file_slots<file_slots/2) return;
+        file_primed=true;
+    }
+    while (file_head!=file_tail && (head+1)%slots!=tail) {
+        const unsigned t=file_tail,h=head;
+        memcpy(pcm[h],file_pcm[t],sizeof(PlaybackBlock));
+        __DMB(); head=(h+1)%slots; file_tail=(t+1)%file_slots;
+        consuming=true;
+    }
+    if (file_eof && file_head==file_tail) consuming=false;
+}
+static void file_feed(void *) {
+    while (!file_feed_stop) { file_feed_once(); vTaskDelay(1); }
+    for (;;) vTaskSuspend(nullptr);
+}
+static void file_feed_release() {
+    file_feed_stop=true;
+    if (file_feed_task) {
+        while (eTaskGetState(file_feed_task)!=eSuspended) vTaskDelay(1);
+        file_feed_stack_free=uxTaskGetStackHighWaterMark(file_feed_task)*sizeof(StackType_t);
+        vTaskDelete(file_feed_task); file_feed_task=nullptr;
+    }
+    solar_os_memory_free(file_pcm); file_pcm=nullptr;
+    solar_os_memory_free(file_feed_stack); file_feed_stack=nullptr;
+}
+static esp_err_t file_output_write(const int16_t *data,size_t frames) {
+    while (frames) {
+        if (!output_wait_ready(nullptr)) return ESP_ERR_TIMEOUT;
+        uint32_t started=millis();
+        while ((file_head+1)%file_slots==file_tail) {
+            if (!output_wait_ready(&started) || sk_audio_cancelled()) return ESP_ERR_TIMEOUT;
+            if (millis()-started>1000) return ESP_FAIL;
+            vTaskDelay(1);
+        }
+        const size_t count=min(frames,size_t(AUDIO_BLOCK_SAMPLES-file_partial));
+        memcpy(file_pcm[file_head]+file_partial*2,data,count*4);
+        data+=count*2;frames-=count;file_partial+=count;
+        if (file_partial==AUDIO_BLOCK_SAMPLES) {
+            __DMB(); file_head=(file_head+1)%file_slots; file_partial=0;
+            unsigned used=(file_head+file_slots-file_tail)%file_slots;
+            if(used>file_peak)file_peak=used;
+        }
+    }
+    return ESP_OK;
+}
 // Console gate serializes diagnostics with app admission across all consoles.
 static bool diagnostic_busy;
 static bool monitor_capture;
@@ -53,6 +142,7 @@ class StereoSource : public AudioStream {
 public:
     StereoSource() : AudioStream(0, nullptr) {}
     void update() override {
+        if (output_paused) return;
         bool clock_sound=false;
 #if SK_CLOCK
         if (clock_tone_on && int32_t(millis()-clock_tone_until)>=0) clock_tone_on=false;
@@ -272,6 +362,12 @@ extern "C" bool sk_console_poll_cancel(bool);
 extern "C" bool sk_audio_owner_connected();
 #endif
 extern "C" bool sk_audio_cancelled() {
+    if (file_worker_context()) {
+#if SK_LCD_CONSOLE
+        if (!sk_audio_owner_connected()) return true;
+#endif
+        return file_cancel && file_cancel(file_user);
+    }
 #if SK_LCD_CONSOLE
     return sk_console_poll_cancel(true);
 #else
@@ -303,13 +399,29 @@ extern "C" esp_err_t sk_audio_output_start(uint8_t volume) {
     AudioNoInterrupts();
     pcm = buffer;
     AudioInterrupts();
+    if (file_worker_context()) {
+        file_head=file_tail=file_peak=file_partial=0;
+        file_eof=file_primed=file_feed_stop=false;
+        file_feed_stack_free=0;
+        file_pcm=static_cast<PlaybackBlock *>(solar_os_memory_alloc(
+            file_slots*sizeof(PlaybackBlock),SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,"player.pcm"));
+        file_feed_stack=static_cast<StackType_t *>(solar_os_memory_alloc(
+            2048,SOLAR_OS_MEMORY_INTERNAL_PREFERRED,"player.feeder"));
+        if (file_pcm && file_feed_stack)
+            file_feed_task=xTaskCreateStatic(file_feed,"player-pcm",2048/sizeof(StackType_t),
+                                            nullptr,3,file_feed_stack,&file_feed_tcb);
+        if (!file_feed_task) { sk_audio_output_finish(false); return ESP_ERR_NO_MEM; }
+    }
     return ESP_OK;
 }
 extern "C" esp_err_t sk_audio_output_write(const int16_t *data, size_t frames) {
     if (!pcm) return ESP_ERR_INVALID_STATE;
+    if (file_pcm) return file_output_write(data,frames);
     while (frames) {
+        if (!output_wait_ready(nullptr)) return ESP_ERR_TIMEOUT;
         uint32_t started = millis();
         while ((head + 1) % slots == tail) {
+            if (!output_wait_ready(&started)) return ESP_ERR_TIMEOUT;
             if (sk_audio_cancelled()) return ESP_ERR_TIMEOUT;
             if (millis() - started > 1000) return ESP_FAIL;
             vTaskDelay(1);
@@ -372,13 +484,29 @@ extern "C" esp_err_t sk_audio_synth_write(const int16_t *data, size_t frames,
 #endif
 extern "C" esp_err_t sk_audio_output_finish(bool drain) {
     esp_err_t result = ESP_OK;
+    if (file_pcm && drain) {
+        if (file_partial) {
+            memset(file_pcm[file_head]+file_partial*2,0,(AUDIO_BLOCK_SAMPLES-file_partial)*4);
+            __DMB(); file_head=(file_head+1)%file_slots; file_partial=0;
+        }
+        file_eof=true;
+        uint32_t started=millis();
+        while (file_head!=file_tail) {
+            if (!output_wait_ready(&started) || sk_audio_cancelled()) {result=ESP_ERR_TIMEOUT;break;}
+            if (millis()-started>1500) {result=ESP_FAIL;break;}
+            vTaskDelay(1);
+        }
+    }
+    file_feed_release();
+    if (result!=ESP_OK) drain=false;
     consuming = false; // The producer is finished; an empty tail is no underrun.
     if (drain && partial) {
         memset(pcm[head] + partial * 2, 0, (AUDIO_BLOCK_SAMPLES - partial) * 4);
         __DMB(); head = (head + 1) % slots; partial = 0;
     }
-    const uint32_t started = millis();
+    uint32_t started = millis();
     while (drain && head != tail) {
+        if (!output_wait_ready(&started)) { result = ESP_ERR_TIMEOUT; break; }
         if (sk_audio_cancelled()) { result = ESP_ERR_TIMEOUT; break; }
         if (millis() - started > 1000) { result = ESP_FAIL; break; }
         vTaskDelay(1);
@@ -386,7 +514,7 @@ extern "C" esp_err_t sk_audio_output_finish(bool drain) {
     // Two I2S blocks can remain downstream of the source.
     if (drain && result == ESP_OK) vTaskDelay(pdMS_TO_TICKS(10));
     AudioNoInterrupts();
-    consuming = tone_on = false;
+    consuming = tone_on = output_paused = false;
     head = tail = partial = 0;
     auto *buffer = pcm;
     pcm = nullptr;
@@ -409,6 +537,11 @@ extern "C" void sk_audio_output_status() {
     sk_console_printf("Audio rings: playback=%u capture=%u bytes (internal RAM)\r\n",
         pcm ? unsigned(slots * sizeof(PlaybackBlock)) : 0,
         captured ? unsigned(capture_slots * sizeof(CaptureBlock)) : 0);
+    sk_console_printf("File player: running=%u paused=%u stack_free=%lu bytes\r\n",
+        unsigned(file_worker!=nullptr), unsigned(output_paused), (unsigned long)file_stack_free);
+    sk_console_printf("Player buffer: allocated=%u peak=%u bytes; feeder stack free=%lu bytes\r\n",
+        file_pcm?unsigned(file_slots*sizeof(PlaybackBlock)):0, unsigned(file_peak*sizeof(PlaybackBlock)),
+        (unsigned long)file_feed_stack_free);
     sk_console_printf("SD capture buffer: allocated=%u peak=%u bytes; feeder stack free=%lu bytes\r\n",
         spool ? unsigned(spool_slots * sizeof(CaptureBlock)) : 0,
         unsigned(spool_peak * sizeof(CaptureBlock)), (unsigned long)feeder_stack_free);

@@ -1,12 +1,24 @@
 static void update_audio() { assert(interrupts); source.update(); capture.update(); }
 static void step_feeder() {
     if (!mock_task || suspended) return;
-    if (feeder_stop) suspended=true;
-    else capture_feed_once();
+    if (mock_task==file_feed_task) {
+        if (file_feed_stop) suspended=true; else file_feed_once();
+    } else {
+        if (feeder_stop) suspended=true; else capture_feed_once();
+    }
 }
 static void check_empty() {
-    assert(!pcm && !captured && !spool && !feeder_stack && !mock_task && !live && allocations.empty());
+    assert(!pcm && !file_pcm && !file_feed_stack && !captured && !spool && !feeder_stack && !mock_task && !live && allocations.empty());
     assert(!head && !tail && !partial && !capture_enabled);
+}
+static bool worker_paused, worker_stop;
+static unsigned pause_ticks;
+static uint32_t saved_played;
+static bool worker_cancel(void *) {return worker_stop;}
+static bool worker_pause(void *) {return worker_paused;}
+static void resume_later() {
+    assert(played==saved_played); // ISR leaves queued samples intact throughout pause.
+    if (++pause_ticks==1500) worker_paused=false;
 }
 int main() {
     int16_t stereo[256], mono[128];
@@ -111,6 +123,43 @@ int main() {
     assert(sk_audio_capture_read(mono,128,&frames)==ESP_FAIL);
     assert(sk_audio_capture_stop()==2);check_empty();
     assert(feeder_stack_free==1024);
+    // Pausing longer than the write timeout preserves PCM and does not time out.
+    sk_audio_worker_begin(worker_cancel,worker_pause,nullptr);
+    assert(sk_audio_output_start(20)==ESP_OK);
+    for(unsigned i=0;i<128;++i)assert(sk_audio_output_write(stereo,128)==ESP_OK);
+    step_feeder();
+    saved_played=played;pause_ticks=0;worker_paused=true;delay_hook=resume_later;
+    assert(sk_audio_output_write(stereo,128)==ESP_OK && pause_ticks==1500);
+    delay_hook=nullptr;update_audio();assert(played==saved_played+1);
+    worker_paused=true;worker_stop=true;
+    assert(sk_audio_output_write(stereo,128)==ESP_ERR_TIMEOUT);
+    sk_audio_output_finish(false);sk_audio_worker_end();check_empty();
+    worker_paused=worker_stop=false;
+    sk_audio_worker_begin(worker_cancel,worker_pause,nullptr);
+    for (int n=0;n<3;++n) {
+        fail_nth=n;assert(sk_audio_output_start(20)==ESP_ERR_NO_MEM);check_empty();
+    }
+    fail_nth=-1;fail_task=true;
+    assert(sk_audio_output_start(20)==ESP_ERR_NO_MEM);check_empty();fail_task=false;
+    assert(sk_audio_output_start(20)==ESP_OK && live==16384+131072+2048);
+    // A >500ms decoder/UI stall still delivers each stereo sample in order.
+    for(unsigned b=0;b<255;++b) {
+        for(unsigned i=0;i<256;++i)stereo[i]=b+1;
+        assert(sk_audio_output_write(stereo,128)==ESP_OK);
+    }
+    step_feeder();
+    for(unsigned b=0;b<180;++b) {
+        update_audio();step_feeder();
+        for(unsigned i=0;i<128;++i)assert(transmitted.data[i]==int16_t(b+1));
+    }
+    assert(!underruns && played==180);
+    assert(sk_audio_output_finish(true)==ESP_OK && played==255 && !underruns);check_empty();
+    assert(sk_audio_output_start(20)==ESP_OK);
+    for(unsigned i=0;i<256;++i)stereo[i]=i;
+    assert(sk_audio_output_write(stereo,3)==ESP_OK);
+    assert(sk_audio_output_finish(true)==ESP_OK && played==1 && !underruns);
+    assert(transmitted.data[0]==1 && transmitted.data[2]==5 && transmitted.data[3]==0);
+    sk_audio_worker_end();check_empty();
     assert(sk_audio_capture_start_buffered()==ESP_OK);
     cancelled=true;assert(sk_audio_capture_read(mono,128,&frames)==ESP_ERR_TIMEOUT);
     sk_audio_capture_stop();cancelled=false;check_empty();

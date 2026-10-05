@@ -69,6 +69,22 @@ static void close_all_apps() {
     }
     active().quiet=false;active().request_action=0;
 }
+// Opt-in background timers run in the owning console under its gate. Never
+// switch the active frame/TUI; retained callbacks must keep their UI suspended.
+static void background_chain_tick(AppFrame *frame, uint32_t now) {
+    for (; frame; frame=frame->parent) {
+        const auto *app=frame->app;
+        if (!(app->flags & SOLAR_OS_APP_FLAG_BACKGROUND_TICKS) || !app->event ||
+            now-frame->background_tick < solar_os_app_tick_interval_ms(app,25)) continue;
+        frame->background_tick=now;
+        solar_os_event_t tick{}; tick.type=SOLAR_OS_EVENT_TICK; tick.data.tick_ms=now;
+        app->event(&frame->context,&tick);
+    }
+}
+static void service_background_apps(uint32_t now) {
+    for (auto *frame:active().retained) background_chain_tick(frame,now);
+    if (app_frame) background_chain_tick(app_frame->parent,now);
+}
 static void service_session_request() {
     const unsigned action=active().request_action;
     const uint32_t id=active().request_id;

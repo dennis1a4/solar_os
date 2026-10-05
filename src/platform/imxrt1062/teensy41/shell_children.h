@@ -6,7 +6,7 @@ extern "C" void sk_shell_pipe_release(solar_os_shell_io_t *);
 // in PSRAM, not on the console stack.
 struct AppFrame {
     AppFrame *parent;
-    uint32_t id;
+    uint32_t id, background_tick;
     const solar_os_app_t *app;
     solar_os_tui_t *tui;
     solar_os_context_t context;
