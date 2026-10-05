@@ -8,6 +8,7 @@ extern "C" {
 #include "solar_os_storage.h"
 #include "solar_os_memory.h"
 #include "solar_os_port.h"
+esp_err_t sk_storage_refresh_usb_usage(void);
 #if SK_CLOCK
 #include "solar_os_time.h"
 #endif
@@ -92,7 +93,18 @@ extern "C" void solar_os_shell_cmd_port(solar_os_context_t *ctx,int argc,char **
 }
 extern "C" void solar_os_shell_cmd_df(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);
-    if(!no_args(io,argc,argv))return;
+    io->command_status=0;
+    if(argc!=1 && (argc!=2 || strcmp(argv[1],"--refresh"))) {
+        solar_os_shell_io_writeln(io,"usage: df [--refresh]");io->command_status=2;return;
+    }
+    if(argc==2) {
+        esp_err_t result=sk_storage_refresh_usb_usage();
+        if(result!=ESP_OK) {
+            solar_os_shell_io_writeln(io,result==ESP_ERR_INVALID_STATE ?
+                "df: USB refresh busy; close USB files/apps first" : "df: USB refresh failed");
+            io->command_status=1;return;
+        }
+    }
     solar_os_shell_io_writeln(io,"Mount       Total(KiB)    Used(KiB)    Free(KiB)");
     solar_os_storage_mount_info_t mount;
     for(size_t i=0;solar_os_storage_get_mount(i,&mount);++i) {

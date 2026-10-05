@@ -8,6 +8,8 @@ void sk_usb_storage_begin();
 void sk_usb_storage_poll();
 bool sk_usb_storage_mounted();
 FsVolume *sk_usb_storage_volume();
+// Requires StorageLock; refuses while any USB file/directory is open.
+bool sk_usb_storage_refresh_usage();
 void sk_usb_storage_acquire();
 void sk_usb_storage_release();
 #endif

@@ -1,8 +1,10 @@
 #if SK_USB_STORAGE
 #include <arduino_freertos.h>
 #include "usb_storage.h"
+#include "usb_sector_batch.h"
 #include "storage_lock.h"
 #include <SD.h>
+#include <errno.h>
 #include "platform.h"
 #include "sd_storage.h"
 extern "C" {
@@ -12,19 +14,35 @@ extern "C" {
 
 namespace {
 volatile bool transport_failed;
+// Eight sectors per USB command, staged outside the small internal heap.
+DMAMEM uint8_t sector_buffer[4096] __attribute__((aligned(32)));
 // One physical device and its first supported partition for the initial port.
 class Drive : public USBDrive {
-    uint8_t sector_buffer[512] __attribute__((aligned(32)));
 public:
     Drive() : USBDrive(static_cast<USBHost *>(nullptr)) {}
     bool readSector(uint32_t s, uint8_t *p) override { return readSectors(s, p, 1); }
     bool readSectors(uint32_t s, uint8_t *p, size_t n) override {
-        if (transport_failed || msDriveInfo.capacity.BlockSize != 512) return false;
-        for (size_t i=0; i<n; ++i) {
-            if (!USBDrive::readSectors(s+i, sector_buffer, 1)) return false;
-            memcpy(p+i*512, sector_buffer, 512);
-        }
-        return true;
+        return readBatches(s,n,[&](uint32_t,uint8_t *buf,size_t count) {
+            memcpy(p,buf,count*512);p+=count*512;return true;
+        });
+    }
+    bool readSectorsCallback(uint32_t s,uint8_t *p,size_t n,
+        void (*callback)(uint32_t,uint8_t *,void *),void *context) override {
+        if (!callback) return false;
+        return readBatches(s,n,[&](uint32_t first,uint8_t *buf,size_t count) {
+            for(size_t i=0;i<count;++i) {
+                memcpy(p,buf+i*512,512);
+                callback(first+i,p,context);
+            }
+            return true;
+        });
+    }
+    template<class Deliver> bool readBatches(uint32_t s,size_t n,Deliver deliver) {
+        if (transport_failed || msDriveInfo.capacity.BlockSize!=512) return false;
+        return sk_usb_read_batches(s,n,sector_buffer,sizeof(sector_buffer)/512,
+            [&](uint32_t first,uint8_t *buf,size_t count) {
+                return !transport_failed && USBDrive::readSectors(first,buf,count) && !transport_failed;
+            },deliver);
     }
     bool writeSector(uint32_t s, const uint8_t *p) override { return writeSectors(s, p, 1); }
     bool writeSectors(uint32_t s, const uint8_t *p, size_t n) override {
@@ -58,6 +76,10 @@ public:
     bool readSectors(uint32_t s, uint8_t *p, size_t n) override {
         return valid && drive.readSectors(s, p, n);
     }
+    bool readSectorsCallback(uint32_t s,uint8_t *p,size_t n,
+        void (*callback)(uint32_t,uint8_t *,void *),void *context) override {
+        return valid && drive.readSectorsCallback(s,p,n,callback,context) && valid;
+    }
     bool writeSector(uint32_t s, const uint8_t *p) override {
         return valid && drive.writeSector(s, p);
     }
@@ -67,6 +89,7 @@ public:
 } media;
 
 class Volume : public USBFilesystem {
+    uint32_t first_sector=0,sector_count=0;
 public:
     Volume() : USBFilesystem(static_cast<USBHost *>(nullptr)) {}
     bool claimPartition(USBDrive *d, int part, int kind, int type,
@@ -86,6 +109,7 @@ public:
             media.valid = false;
             return false;
         }
+        first_sector=first;sector_count=count;
         device = d;
         partition = part;
         partitionType = type;
@@ -95,6 +119,21 @@ public:
         media.valid = false;
         device = nullptr;
         // Do not destroy SdFat's volume while a task is using an open handle.
+    }
+    bool resetUsage() {
+        // SdFat keeps FAT counts private. Reload its volume object to reset
+        // accounting without replacing the USB device/partition registration.
+        // No live file/directory handle may retain pointers to that object.
+        if (!media.valid || open_handles) return false;
+        FsFile root;
+        bool ok=root.open(&mscfs,"/",O_RDONLY) && root.sync();
+        ok=root.close() && ok;
+        if (!ok) return false;
+        mscfs.end();
+        if (!mscfs.begin(&media,false,first_sector,sector_count)) {
+            media.valid=false;return false;
+        }
+        return true;
     }
     void eject() {
         media.valid = false;
@@ -109,6 +148,12 @@ void sk_usb_storage_begin() {
     drive.whenToUpdateConnectedFilesystems(USBDrive::UPDATE_MANUAL);
 }
 bool sk_usb_storage_mounted() { return media.valid && bool(volume) && !ejected; }
+bool sk_usb_storage_refresh_usage() {
+    if (!sk_usb_storage_mounted()) { errno=ENODEV;return false; }
+    if (open_handles) { errno=EBUSY;return false; }
+    if (!volume.resetUsage()) { errno=EIO;return false; }
+    return true;
+}
 FsVolume *sk_usb_storage_volume() { return &volume.mscfs; }
 void sk_usb_storage_acquire() { ++open_handles; }
 void sk_usb_storage_release() { configASSERT(open_handles); --open_handles; }

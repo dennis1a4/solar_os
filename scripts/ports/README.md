@@ -619,3 +619,19 @@ Logs record removed/retained paths, and a cleanup failure fails the run.
 `python3 tests/ports/test_teensy41_fixture_cleanup.py` verifies whole-batch path
 validation, protected-path/traversal/injection rejection, retention, and failure
 handling. The cleanup helper confirms each directory is absent after removal.
+
+### FAT32 USB usage and batched reads
+
+```sh
+bash scripts/ports/test_teensy41_usb_batch_host.sh
+python3 scripts/ports/test_teensy41_df.py --log /tmp/teensy-df-device.json
+```
+
+The host test checks the actual batching helper under ASan/UBSan, including
+bounds, data/order, tails and failures. The device test requires mounted FAT32,
+exclusive USB serial and idle consoles. It measures cold/warm/refresh timings,
+compares maintained counts with recounts after file changes, hashes a temporary
+513 KiB file through Python reads, checks refresh refusal with a suspended Python
+reader, and logically ejects/remounts. Successful runs remove their unique USB
+fixture; failures retain evidence. It never formats the drive. The first cold
+`df` can include SD accounting too; later remount timing isolates USB with SD warm.

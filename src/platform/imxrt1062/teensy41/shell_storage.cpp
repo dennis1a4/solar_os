@@ -523,6 +523,14 @@ extern "C" bool solar_os_storage_flash_is_mounted() { StorageLock lock;
 #endif
 }
 extern "C" bool solar_os_storage_is_mounted() { StorageLock lock; return solar_os_storage_mount_count()!=0; }
+extern "C" esp_err_t sk_storage_refresh_usb_usage() {
+    StorageLock lock;
+#if SK_USB_STORAGE
+    if (!sk_usb_storage_mounted()) return ESP_OK;
+    if (!sk_usb_storage_refresh_usage()) return errno==EBUSY ? ESP_ERR_INVALID_STATE : ESP_FAIL;
+#endif
+    return ESP_OK;
+}
 extern "C" esp_err_t solar_os_storage_get_usage_for_path(const char *path,solar_os_storage_usage_t *out) {
     StorageLock lock;
     if(!out)return ESP_ERR_INVALID_ARG;

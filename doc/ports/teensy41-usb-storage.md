@@ -12,6 +12,8 @@ ls /usb
 cd /usb
 usb eject               # close files/apps first; flush before unplugging
 usb mount               # retry/remount without unplugging
+df                      # maintained FAT usage after the first scan
+df --refresh            # recount USB usage; close USB files/apps first
 ```
 
 Files discovers the mount through the shared mount enumeration API. Shell file
@@ -51,8 +53,13 @@ serialized static DTCM storage, blocking command/status waits have a three-secon
 timeout, and failed initialization is not retried internally. The installed SDK
 is untouched; exact patch counts catch unexpected upstream changes.
 
-Sector I/O uses a 512-byte DTCM bounce buffer, including directory/partition
-reads and data supplied by either console or PSRAM. A timed-out transport is
+Sector I/O uses a 4 KiB, 32-byte-aligned OCRAM bounce buffer, including
+directory/partition reads and data supplied by either console or PSRAM. The
+base USB driver performs cache maintenance for these data transfers. Reads use
+at most eight sectors per synchronous USB request; FAT scan callbacks run in
+task context after each completed batch. Writes remain single-sector. The buffer
+replaces the former 512-byte DTCM buffer: net static RAM growth is 3.5 KiB, with
+no PSRAM allocation. A timed-out transport is
 quarantined until unplugged; late completions cannot reuse a new request's
 buffers. `test_teensy41_usb_driver_host.py` checks the adaptation and verifies
 actual linked DMA buffer addresses are in DTCM (10 symbols checked).
@@ -76,7 +83,31 @@ The driver uses synchronous USB transfers, so a slow/faulty drive can delay
 console work. USB storage is a new hardware path, not a guarantee that every
 USB bridge or flash-drive controller is compatible.
 
-## Validation
+## Usage accounting and scan timing
+
+SdFat already caches FAT free-cluster counts and maintains them on allocation
+and release. `df` reuses that counter. `df --refresh` reloads USB volume
+accounting under the storage mutex and performs a fresh count; it refuses while
+any USB file or directory is open. Root metadata is synced before reload.
+Other volume rows display normally; without mounted USB, refresh is a no-op.
+A reconnect or logical remount starts a fresh count. exFAT uses a bitmap scan;
+this change does not add an exFAT usage cache.
+
+On 2026-10-05, the powered-hub 16 GB FAT32 drive's cold USB scan fell from
+45.828 to 5.791 seconds with SD already warmed (about 7.9 times faster).
+Repeated `df` takes 0.031 seconds; explicit USB refresh takes about 5.82 seconds.
+The first whole-system `df` after firmware boot took 11.298 seconds, including
+initial SD accounting. Results depend on drive size, format and controller.
+
+The installed `teensy41_telnet_legacy` build passed the batch helper's ASan/UBSan
+tests and `test_teensy41_df.py`: cached counts match recounts after create,
+truncate, rename and delete; logical remount preserves usage; live handles
+refuse refresh; a 513 KiB file hashes correctly through 16 KiB Python reads.
+Generated fixtures were removed and the original USB allocation restored.
+Evidence: `/tmp/teensy-df-device.json`. Physical removal during active I/O and
+other media remain separate tests.
+
+## Earlier validation
 
 Both `teensy41_display` and the non-USB `teensy41_network` build passed.
 Corrected display firmware uploaded successfully. The user confirmed keyboard
@@ -109,8 +140,9 @@ python3 scripts/ports/test_teensy41_usb_storage.py --log /tmp/teensy-usb-test.js
 The script only creates unique `_usb_test_*` folders. It checks root mount
 listing, binary read/write, append/update/seek, long names, directory listing,
 SD/flash isolation, cross-volume copies/moves, repeated eject/remount,
-persistence, and refusal to eject a handle held by the other console. It leaves
-fixtures for inspection. Physical surprise-removal and other formats/capacities
+persistence, and refusal to eject a handle held by the other console. Successful
+runs remove their generated fixtures; `--keep-fixtures` retains them for inspection.
+Failed runs retain evidence. Physical surprise-removal and other formats/capacities
 require separate checks. `--no-drive` checks the empty-host case.
 
 Upstream reference: [PJRC USB disk support](https://www.pjrc.com/2022/08/).

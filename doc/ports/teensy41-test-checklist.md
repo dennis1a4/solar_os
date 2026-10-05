@@ -1,6 +1,6 @@
 # Teensy / SuperKeyboard outstanding test checklist
 
-Updated 2026-10-04. **Use this as the master test queue.** Feature notes linked
+Updated 2026-10-05. **Use this as the master test queue.** Feature notes linked
 below contain procedures and historical evidence; the roadmap tracks development.
 Unchecked items are outstanding, not failed unless explicitly described as such.
 Do not check off a physical test based on simulation, injected input or a build.
@@ -519,3 +519,16 @@ profile; no GPIO reassignment is needed for the dedicated On/Off pad.
 - [x] **SSH-REGRESSION:** isolated-server password login, bulk/bidirectional I/O,
   editing keys, wrong-password and changed-host-key rejection, cancellation,
   remote close and repeated cleanup pass. Warm memory is unchanged across repeats.
+
+## FAT32 USB usage batching — 2026-10-05
+
+- [x] Batch helper sanitizer tests: bounded transfers, exact data/order, tail,
+  read/callback failure and sector-address overflow.
+- [x] Installed legacy image: cold USB scan 45.828 → 5.791 seconds; cached
+  `df` 0.031 seconds; `df --refresh` about 5.82 seconds on current FAT32 drive.
+- [x] Cached counts agree with recounts after create/truncate/rename/delete;
+  hashes pass through PSRAM reads; refresh refuses live USB handles; logical
+  eject/remount agrees; generated fixture removed, original usage restored.
+
+Evidence: `/tmp/teensy-df-device.json`. These checks do not establish physical
+removal during active I/O or compatibility with other drive formats/controllers.
