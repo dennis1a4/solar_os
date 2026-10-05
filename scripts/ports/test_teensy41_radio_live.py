@@ -70,15 +70,26 @@ try:
         samples=np.frombuffer(f.readframes(f.getnframes()),dtype='<i2').astype(float)
     r['clipped_samples']=int(np.count_nonzero(np.abs(samples)>=32760))
     r['peak_to_peak']=float(np.ptp(samples))
-    # Windowed tone energy detects dropouts in the controlled stream; music
+    # 100 ms Hann windows separate 440 Hz from the 420 Hz hum harmonic.
+    # Windowed tone energy detects sustained dropouts in the controlled stream; music
     # silence cannot be classified as a dropout from amplitude alone.
     energies=[]
-    for start in range(4410,len(samples)-882,882):
-        x=samples[start:start+882];x=x-x.mean();window=np.hanning(len(x))
+    for start in range(4410,len(samples)-4410,441):
+        x=samples[start:start+4410];x=x-x.mean();window=np.hanning(len(x))
         z=abs(np.sum(x*window*np.exp(-2j*np.pi*440*np.arange(len(x))/44100)))
         energies.append(float(z))
-    r['tone_window_min_median_ratio']=min(energies)/max(float(np.median(energies)),1)
-    r['weak_tone_windows']=sum(x<float(np.median(energies))*.2 for x in energies)
+    noise_powers=[]
+    for frequency in (370,390,490,510):
+        values=[]
+        for start in range(4410,len(samples)-4410,441):
+            x=samples[start:start+4410];x=x-x.mean()
+            z=abs(np.sum(x*np.hanning(len(x))*np.exp(-2j*np.pi*frequency*np.arange(len(x))/44100)))
+            values.append(float(z)**2)
+        noise_powers.append(float(np.median(values)))
+    r['tone_snr_db']=float(10*np.log10((float(np.median(np.square(energies)))+1)/(float(np.median(noise_powers))+1)))
+    r['tone_detected']=r['tone_snr_db']>10
+    r['tone_100ms_min_median_ratio']=min(energies)/max(float(np.median(energies)),1)
+    r['tone_100ms_weak_windows']=sum(x<float(np.median(energies))*.2 for x in energies)
     c.cmd('rm '+mount+'/radio.wav');c.cmd('ramfs unmount '+mount)
     r['memory_after']=c.memory();assert r['memory_after']==baseline,(baseline,r['memory_after'])
     assert 'playback=0 capture=0 bytes' in c.cmd('audio status')
@@ -86,6 +97,7 @@ try:
     statuses=[r['initial_status'],r['capture_status'],r['final_status']]
     r['playback_underruns']=[int(re.search(r'underruns=(\d+)',s)[1]) for s in statuses]
     r['transport_passed']=all(n==0 for n in r['playback_underruns'])
+    r['acoustic_continuity_passed']=(r['tone_100ms_weak_windows']==0) if a.fixture and r['tone_detected'] else None
     r['passed']=r['transport_passed']
     # The recording is evidence, not automatic proof that arbitrary music has
     # no stutter. Controlled tone continuity also needs an audible tone signal.

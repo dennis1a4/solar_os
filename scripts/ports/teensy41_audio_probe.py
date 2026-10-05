@@ -20,7 +20,7 @@ class Console:
             if chunk:data.extend(chunk);last=time.monotonic()
             text=ANSI.sub('',data.decode(errors='replace')).replace('\r','')
             assert 'Fault IRQ:' not in text and 'STACK OVERFLOW:' not in text,text
-            found=text.endswith(suffix) if suffix else bool(re.search(r'[\w.-]+@[\w.-]+:/[^\n]* $',text))
+            found=text.endswith(suffix) if suffix else bool(re.search(r'[\w.-]+@[\w.-]+:/[^\n]* (?=$|\[\d+\])',text,re.M))
             if found and time.monotonic()-last>.03:
                 if log:self.report.setdefault('commands',[]).append({'input':repr(raw),'output':text})
                 return text

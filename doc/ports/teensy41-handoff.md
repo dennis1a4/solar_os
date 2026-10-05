@@ -42,24 +42,51 @@ write-latency investigation. USB recording remains untested with host unplugged.
 Added `audio monitor NEWFILE.wav`: four seconds of microphone capture without
 stopping existing playback, for use on a second console and preferably RAMFS.
 Capture busy/retained-recorder protection, buffer preservation and manuals pass
-host tests. Installed monitor image SHA256:
+host tests. Initial monitor image SHA256:
 `cc447ce64c508bb3d5f0968aaed3e9285dd9c62614e83ddae9078239d8da16f7`.
 
 Actual WebRadio decoding from a controlled local HTTP MP3 stream then triggered
 `STACK OVERFLOW: webradio_`, halting the board before its monitor capture. The
 Teensy worker now requests 32 KiB PSRAM instead of 20 KiB and logs its minimum
-stack headroom; ESP configuration is unchanged. Corrected candidate builds:
+stack headroom; ESP configuration is unchanged. Installed build:
 RAM1 431,104, RAM2 187,256, flash 1,472,616 bytes; HEX SHA256:
 `5ff456c046b218317097f87765dcd75791b9f259804ac690630e1889b1afb092`.
-**Candidate upload is waiting for the physical Program button: USB soft reboot
-failed on the halted board. Stack correction and WebRadio acoustic/counter tests
-are NOT device-validated yet.** Upload log `/tmp/teensy-radio-stack-upload.log`.
+**Corrected image installed after the user pressed Program.** The original
+uploader had timed out; restarting it succeeded. Controlled HTTP playback and
+concurrent RAM microphone capture now complete
+without playback underruns or capture overruns; worker minimum stack headroom
+is 9,176 bytes. A 100 ms tone analysis window separates 440 Hz from the strong
+420 Hz hum harmonic: first recording minimum/median tone amplitude 0.908, no
+weak-tone windows. The original 20 ms window conflated these tones and was
+unsuitable for dropout analysis.
+Upload log `/tmp/teensy-radio-stack-upload.log`.
 
-Resume: press Program, wait for upload completion, repeat controlled HTTP radio
-and HTTPS station tests, inspect headroom/underruns and monitor WAV, then synth
-USB-disconnect cleanup. Defer physical speaker/mic quality checks until user is
-present. Remove only retained failed fixture `/sd/_solaros_mic_f588b304d9.wav`;
-other successful SD/flash fixtures were removed, RAMFS disappears on reboot.
+The user subsequently heard a test beep and confirmed MIC/GND pad wiring.
+A new four-second RAM capture detected the beep with **38.37 dB tone-band gain**
+and zero overruns. Significant 60 Hz hum remains. The powered speaker can auto
+shut off, so a missing acoustic tone alone does not establish a software failure.
+Evidence: `/tmp/teensy-mic-listen.json` and `.wav`.
+
+The RTC had reset to 2019; NTP restored 2026-10-05 UTC without changing the
+user's display timezone. A finite HTTPS GET of the Nightride server's root now
+returns HTTP 200. Actual Nightride HTTPS MP3 playback still stays in buffering
+and is NOT validated; basic reachability/certificate checks are insufficient.
+The host can receive that 320 kb/s stream. Investigate the WebRadio streaming
+path separately. No certificate checks were disabled.
+
+The retained failed fixture `/sd/_solaros_mic_f588b304d9.wav` and empty failed
+HTTPS-test RAMFS mounts were removed. The initial controlled radio cycle changed
+DTCM free by 20 bytes; TLS initialization retained 252 PSRAM bytes and a later
+curl warmed another 48 DTCM bytes. Check subsequent cycles against their warmed
+baseline rather than claiming exact cold-start recovery. The controlled repeat
+recovered exactly: 373,112 internal / 8,123,616 PSRAM bytes before and after;
+zero playback underruns/capture overruns and zero idle rings. Its acoustic tone
+was below adjacent-band noise (-5.37 dB), so no acoustic continuity claim is made
+for that repeat. The first controlled recording had 22.86 dB tone/noise contrast
+and no weak-tone windows. This distinguishes an absent/auto-off speaker from
+actual audio dropouts. Synth USB-disconnect/reconnect cleanup also passed;
+the following synth session worked, leaving zero idle rings. Evidence:
+`/tmp/teensy-synth-disconnect-live.json`. Logs: `/tmp/teensy-radio-local-repeat.json` and `.wav`.
 
 Evidence: `/tmp/teensy-audio-rings-live.json`, `/tmp/teensy-audio-play-live.json`,
 `/tmp/teensy-synth-live.json`, `/tmp/teensy-mic-ram-live.json` and `.wav`,

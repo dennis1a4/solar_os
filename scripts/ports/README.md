@@ -692,5 +692,8 @@ With SGTL5000 connected at boot and the USB serial monitor closed:
   128 kb/s MP3 over local HTTP, plays it on the LCD console and captures four
   seconds of microphone input in RAMFS. `--url URL` instead tests an actual
   station without changing the saved catalog. Inspect counters and the recording;
-  arbitrary music silence alone cannot establish a dropout. Host WAVs can contain
+  arbitrary music silence alone cannot establish a dropout. Controlled tone
+  analysis uses 100 ms windows to separate the 420 Hz hum harmonic and requires
+  tone energy above adjacent-band noise; an auto-off speaker is inconclusive.
+  Host WAVs can contain
   ambient microphone audio. Successful temporary fixtures are removed.

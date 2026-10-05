@@ -37,17 +37,22 @@ Do not check off a physical test based on simulation, injected input or a build.
 
 - [x] **AUDIO-LIVE-1:** Generated MP3/WAV playback, resampling, cancellation,
   20 repeats and synth eight-voice/filter/20-restart checks pass with zero
-  reported underruns and exact heap recovery.
+  reported underruns and exact heap recovery. USB disconnect/reconnect also
+  stops synth cleanly and the next session works.
 - [ ] **AUDIO-LIVE-2:** Resolve SD 10/30-second recording overruns and flash
   excess recording wall time (30-second WAV took 46.79 seconds). Re-test under
   load and inspect continuity; zero queue overruns alone is insufficient.
 - [ ] **AUDIO-LIVE-3:** User audible speaker check and microphone placement/
-  wiring: RAM capture works, but 60 Hz hum dominates and 440 Hz test tone was
-  not clearly detected. Deferred at user's request while away.
-- [ ] **RADIO-RECOVERY:** Press Program to load built 32 KiB WebRadio PSRAM
-  stack correction after actual HTTP decode overflowed the former 20 KiB stack.
-  Upload is waiting; then re-run HTTP/HTTPS radio, monitor capture, buffer
-  counters, measured stack headroom and memory cleanup.
+  wiring: user confirmed a beep and MIC/GND wiring; a new RAM recording detected
+  the 440 Hz tone (+38.37 dB) without overruns. Significant 60 Hz hum remains;
+  speaker auto-power-off can invalidate unattended acoustic checks.
+- [x] **RADIO-RECOVERY:** Installed 32 KiB WebRadio PSRAM stack correction;
+  controlled HTTP MP3 playback and concurrent RAM capture work with zero reported
+  underruns/overruns and 9,176 bytes of worker stack headroom. Tone capture shows
+  no weak-tone gaps in 100 ms analysis windows. Speaker path user-confirmed.
+- [ ] **RADIO-HTTPS:** Live Nightride MP3 stays in buffering. RTC was corrected
+  from 2019 via NTP; a finite HTTPS GET on the same host returns HTTP 200, so
+  streaming still needs diagnosis. Do not claim live HTTPS-radio acceptance.
 
 ## Firmware and wiring first
 
