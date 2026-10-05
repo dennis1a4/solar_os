@@ -212,7 +212,8 @@ HTTP fixture server on the host LAN interface, transfers the example to a new
 SD directory, and checks exact binary HTTP response bytes, exclusive-file
 creation, four-socket limits, GC/interpreter cleanup, timeout/nonblocking
 receive, Ctrl-C, repeated fetch memory stability and software network recovery.
-It also resolves example.com; it does not scan the LAN. Test SD files remain.
+It also resolves example.com; it does not scan the LAN. Successful test files
+are removed unless `--keep-fixtures` is selected.
 
 Use `--cable` for an interactive blocked-receive cable-removal/reconnection test.
 Wait for its READY message before unplugging only Ethernet; reconnect when
@@ -259,12 +260,13 @@ for a new chip. That option still refuses any nonblank media. It creates unique
 `/sd/_solaros_flash_<id>` and `/flash/_solaros_flash_<id>` test directories, checks
 65,806-byte binary transfers both ways, 20 PSRAM-buffer read/write/hash cycles,
 file I/O at Python's recursion limit, file moves/modes, editor save/replacement,
-Python execution, handle exhaustion and cleanup. Files remain for persistence
-checks. It never overwrites unrelated paths. Optional `--audio-fixtures
+Python execution, handle exhaustion and cleanup. Successful runs remove their
+fixtures; use `--keep-fixtures` on the initial run for later persistence checks. It never overwrites unrelated paths. Optional `--audio-fixtures
 /_solaros_audio_<id>` copies the previously generated tone fixtures onto flash
 and plays them at 10% volume through the existing aplay app.
 
-Use the printed directory name to verify after a software reboot:
+Use the printed directory name from a `--keep-fixtures` run to verify after a software reboot.
+`--verify-existing` preserves the supplied directory because it was not created by that run:
 
 ```sh
 python3 scripts/ports/test_teensy41_flash.py --verify-existing _solaros_flash_<id> \
@@ -313,7 +315,8 @@ bash scripts/ports/test_teensy41_children_host.sh
 ```
 
 The serial monitor must be closed. The device test creates unique
-`_solaros_files_<random>` directories on SD and flash and retains them. It drives
+`_solaros_files_<random>` directories on SD and flash and removes them after success
+(unless `--keep-fixtures` is selected). It drives
 the real two-pane TUI through a terminal emulator, checks editor return, copy,
 move in both directions, recursive copy, mkdir/delete, ZIP payloads, copy
 cancellation and partial cleanup, failed Python child return, numeric sizes and
@@ -336,7 +339,7 @@ The hardware suite requires pyserial and pyte, a closed serial monitor, SD and
 mounted flash. It tests saved identity/geometry/startup selection across reboot,
 both storage volumes, pager search, Notes save/reopen, Sheet formulas, Files child
 return, and repeated lifecycle/memory cleanup. Unique `_apps_<random>` fixtures
-remain. Original preferences are restored. A temporary startup script is created
+are removed after success unless `--keep-fixtures` is selected. Original preferences are restored. A temporary startup script is created
 only if none exists, then removed; an existing script is preserved. If interrupted,
 use `--restore-from <previous-log>` with a different `--log` path to recover the
 original preferences before retrying. The test waits for the reboot acknowledgement
@@ -603,3 +606,16 @@ reboots once and runs a shutdown dry-run without cutting power.
 case with simulated peripheral states, including preservation of a ready sample
 whose oscillator has stopped. The SSH device test accepts `--debug-log PATH`
 for test-server negotiation diagnostics.
+
+### Test fixture cleanup
+
+Flash, Files, text-app, USB-storage and Python-network suites now remove only
+their exact generated fixture roots after successful validation. `--keep-fixtures`
+retains successful runs for inspection; failed/interrupted runs retain evidence.
+The flash suite's `--verify-existing` always preserves the supplied fixtures.
+No suite sweeps older directories or removes files outside its own generated roots.
+Logs record removed/retained paths, and a cleanup failure fails the run.
+
+`python3 tests/ports/test_teensy41_fixture_cleanup.py` verifies whole-batch path
+validation, protected-path/traversal/injection rejection, retention, and failure
+handling. The cleanup helper confirms each directory is absent after removal.

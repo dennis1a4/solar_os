@@ -3,6 +3,7 @@
 Only --initialize-blank permits initialization, and firmware scans every byte
 and refuses nonblank media. All ordinary writes use unique test directories.
 """
+from teensy41_fixture_cleanup import cleanup_fixtures
 import argparse
 import hashlib
 import json
@@ -16,6 +17,7 @@ from serial.tools import list_ports
 from test_teensy41_shell import ANSI, PROMPT
 
 p=argparse.ArgumentParser(description=__doc__)
+p.add_argument('--keep-fixtures', action='store_true', help='Retain successful test files for inspection/persistence checks')
 p.add_argument('--log',type=Path,required=True)
 p.add_argument('--probe',action='store_true',help='Only status, mount and read-only blank scan')
 p.add_argument('--initialize-blank',action='store_true')
@@ -171,6 +173,8 @@ try:
         report['uptime']=cmd('uptime')
         if not a.probe and not a.verify_existing:
             assert int(re.search(r'stack-free=(\d+)',report['uptime'])[1])>=1024,report['uptime']
+        if not a.probe and not a.verify_existing:
+            cleanup_fixtures(cmd, (sd, flash), report, a.keep_fixtures)
         report['passed']=True
         print('PASS: '+('read-only flash probe' if a.probe else 'SD/flash file operations and persistence' if a.verify_existing else 'SD/flash copy/move, file modes, editor, Python, cleanup and protection'))
         print(name)

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Exercise the upstream Files TUI on Teensy. Requires pyserial and pyte.
-Writes only unique SD/flash fixture directories and retains them for inspection.
+Writes only unique SD/flash fixture directories; removes them after success.
 """
+from teensy41_fixture_cleanup import cleanup_fixtures
 import argparse
 import io
 import json
@@ -17,6 +18,7 @@ from serial.tools import list_ports
 from test_teensy41_shell import ANSI, PROMPT
 
 p = argparse.ArgumentParser(description=__doc__)
+p.add_argument('--keep-fixtures', action='store_true', help='Retain successful test files for inspection/persistence checks')
 p.add_argument('--log', type=Path, required=True)
 a = p.parse_args()
 name = '_solaros_files_' + uuid.uuid4().hex[:8]
@@ -167,6 +169,7 @@ try:
         assert restarted[0] >= after[0] and restarted[1] == after[1], (after, restarted)
         assert 'open=0' in cmd('flash status')
         report['uptime'] = cmd('uptime')
+        cleanup_fixtures(cmd, (sd, flash), report, a.keep_fixtures)
         report['passed'] = True
         print('PASS: Files mount navigation, SD/flash copy/move, recursive copy, mkdir/delete, ZIP, editor return and cleanup')
 finally:

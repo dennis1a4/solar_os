@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Exercise USB storage through the Teensy console; only writes unique folders.
-No formatting, rebooting or physical-removal simulation. Leaves fixture folders
-for inspection and leaves the drive mounted at the end.
+No formatting, rebooting or physical-removal simulation. Removes successful
+fixture folders and leaves the drive mounted at the end.
 """
+from teensy41_fixture_cleanup import cleanup_fixtures
 import argparse
 import json
 import re
@@ -19,6 +20,7 @@ PROMPT = re.compile(r'[\w.-]+@[\w.-]+:/[^\n]* $')
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--keep-fixtures', action='store_true', help='Retain successful test files for inspection/persistence checks')
     p.add_argument('--log', type=Path, required=True)
     p.add_argument('--no-drive', action='store_true')
     args = p.parse_args()
@@ -116,6 +118,7 @@ def main():
             time.sleep(.5)
             assert 'safe to unplug' in exchange('usb eject')
             assert '/usb' in exchange('usb mount')
+            cleanup_fixtures(exchange, roots, report, args.keep_fixtures)
             report.update(passed=True, memory=exchange('mem'))
     except Exception as exc:
         report['error'] = str(exc)

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Hardware tests for saved settings, less, Notes and Sheet (pyserial + pyte).
-Retains unique SD/flash fixtures. Restores identity, terminal size, and startup
+Removes successful unique SD/flash fixtures. Restores identity, terminal size, and startup
 selection; never overwrites an existing startup script.
 """
+from teensy41_fixture_cleanup import cleanup_fixtures
 import argparse
 import json
 import re
@@ -16,6 +17,7 @@ from serial.tools import list_ports
 from test_teensy41_shell import ANSI
 
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--keep-fixtures', action='store_true', help='Retain successful test files for inspection/persistence checks')
 parser.add_argument('--log', type=Path, required=True)
 parser.add_argument('--restore-from', type=Path, help='Restore preferences from an interrupted test log first')
 args = parser.parse_args()
@@ -138,7 +140,7 @@ try:
     assert 'size 80 24; startup '+original[4] in cmd('setterm')
     for volume in ('/sd', '/flash'):
         root = volume+'/'+name
-        cmd('mkdir '+root)
+        assert 'mkdir:' not in cmd('mkdir '+root)
         exchange(b'python\r', suffix='>>> ')
         py('f=open('+repr(root+'/text.txt')+',"x"); f.write("".join("line %03d hello\\n"%i for i in range(100))); f.close()')
         py('f=open('+repr(root+'/table.csv')+',"x"); f.write(\'name,value\\n"alpha, one",2\\nbeta,3\\ngamma,5\\n\'); f.close()')
@@ -219,6 +221,7 @@ try:
         report['startup_once_per_boot'] = True
     else:
         report['startup_test'] = 'Existing startup file preserved; execution fixture skipped'
+    cleanup_fixtures(cmd, ('/sd/'+name, '/flash/'+name), report, args.keep_fixtures)
     report['passed'] = True
 finally:
     if conn and conn.is_open:

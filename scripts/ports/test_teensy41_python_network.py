@@ -2,6 +2,7 @@
 """Test Teensy Python TCP clients against a temporary local fixture server.
 Creates unique storage files. No LAN scan; server binds only the chosen LAN address.
 """
+from teensy41_fixture_cleanup import cleanup_fixtures
 import argparse
 import base64
 import hashlib
@@ -18,6 +19,7 @@ from test_teensy41_shell import ANSI, PROMPT
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--board-ip', default='192.168.1.197')
+parser.add_argument('--keep-fixtures', action='store_true', help='Retain successful test files for inspection/persistence checks')
 parser.add_argument('--log', type=Path, required=True)
 parser.add_argument('--volume', choices=('/', '/sd', '/flash'), default='/',
                     help='Storage root for the unchanged HTTP example and downloaded files')
@@ -112,7 +114,7 @@ try:
             r['status']=cmd('network status'); r['passed']=True
             print('PASS: cable-loss exception and exact HTTP transfer after reconnection',flush=True)
         else:
-            cmd('mkdir '+root)
+            assert 'mkdir:' not in cmd('mkdir '+root)
             exchange(b'python\r',suffix='>>> ')
             py('import socket, gc, binascii, hashlib, errno')
             py("print(socket.getaddrinfo('example.com',80))", "[(2, 1, 6,")
@@ -177,6 +179,7 @@ try:
                 exchange(b'\x04')
                 r['example_install']=cmd('cp '+root+'/http_fetch.py /http_fetch.py')
             r['status']=cmd('network status'); r['uptime']=cmd('uptime')
+            cleanup_fixtures(cmd, (root,), r, a.keep_fixtures)
             r['passed']=True
             print('PASS: Python DNS/TCP, exact HTTP-to-file bytes, timeout, Ctrl-C, GC/session cleanup and restart')
             print(root)
