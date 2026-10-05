@@ -1,4 +1,5 @@
 #include "keyboard_input.h"
+#include "keyboard_numlock.h"
 #include <cassert>
 #include <cstdio>
 #include <string>
@@ -12,6 +13,19 @@ static std::string encode(uint8_t key,uint8_t mods=0,uint8_t leds=0) {
     auto s=Input::encode(key,mods,leds);return std::string(reinterpret_cast<char *>(s.bytes),s.size);
 }
 int main() {
+    KeyboardNumLockStartup startup;
+    startup.request(true);assert(!startup.take_request());
+    startup.connect(true);assert(!startup.take_request()); // SET_IDLE in flight
+    startup.initialized();assert(startup.take_request());assert(!startup.take_request());
+    // Polling must not turn the lock back on after a physical key toggle.
+    for(unsigned i=0;i<100;++i)assert(!startup.take_request());
+    startup.disconnect();assert(!startup.connected() && !startup.take_request());
+    startup.connect(true);assert(!startup.take_request());
+    startup.initialized();assert(startup.take_request()); // same logical LED bit still needs sending
+    startup.disconnect();startup.initialized();assert(!startup.take_request());
+    startup.connect(false);startup.initialized();assert(!startup.take_request());
+    startup.request(true);assert(startup.take_request());
+    startup.connect(true);startup.request(false);startup.initialized();assert(!startup.take_request());
     Input k;
     k.press(4,0);assert(read(k,0)=="a");assert(read(k,399).empty());assert(read(k,400)=="a");
     assert(read(k,432).empty());assert(read(k,433)=="a");k.release(4);assert(read(k,1000).empty());
@@ -68,5 +82,5 @@ int main() {
         k.press(80,i*1000+401);read(k,i*1000+401);k.boundary();k.disconnect();
         assert(read(k,i*1000+999).empty());
     }
-    puts("PASS: repeat timing/wrap, no bursts, modifier changes, newest-key policy, release, disconnect, app boundaries, rollover, atomic overflow, ANSI/keypad mapping and 10,000 lifecycle cycles");
+    puts("PASS: Num Lock initialization/reconnect ordering, repeat timing/wrap, no bursts, modifier changes, newest-key policy, release, disconnect, app boundaries, rollover, atomic overflow, ANSI/keypad mapping and 10,000 lifecycle cycles");
 }

@@ -4,6 +4,30 @@ Updated 2026-10-04. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## Num Lock USB request ordering fix — 2026-10-04
+
+User testing of the initial preference implementation found that the Num Lock
+key still changed logical behavior but its light did not work; keyboard
+unplug/replug was also reported failing. The initial connection hook queued
+SET_REPORT while KeyboardController's SET_IDLE was still in flight. USBHIDParser
+reuses one setup packet, and queue_Control_Transfer references that packet until
+completion, so the requests must not overlap.
+
+The installed correction records the connection preference, waits for the
+matching SET_IDLE completion callback, then submits the LED update from host
+polling. Disconnect cancels the pending request; repeated polling does not
+reassert Num Lock after a manual toggle. Explicit preference changes use the
+same pending-request path. Host sanitizer tests cover the ordering, cancellation,
+reconnect and existing keyboard lifecycle/keypad behavior. On-device startup
+reaches `numlock=on auto=on`. User confirmed the physical LED, manual toggle,
+unplug/replug auto-enable, letters and keypad numbers all work on the bench keyboard.
+
+Current installed HEX SHA256:
+`b167e0c8d1868ec03a8b53d92ee4ce09223c1fbc67df4a0b757be8c82e82ea09`.
+Flash 1,431,616 bytes; RAM1 430,560; RAM2 342,904. Measured free memory:
+35,812 internal / 8,123,892 PSRAM bytes. Evidence:
+`/tmp/teensy-numlock-fix-build.log`, `/tmp/teensy-numlock-upload.log`.
+
 ## Saved keyboard Num Lock — 2026-10-04
 
 Installed and enabled `setterm numlock on` on the unchanged legacy bench
@@ -20,7 +44,7 @@ persistence across reboot. After reboot the Microsoft 045e:0750 driver reports
 `numlock=on auto=on`. Physical LED/keypad unplug/replug confirmation is tracked
 as KEY-NUM in the master checklist.
 
-Current installed HEX SHA256:
+Initial Num Lock image HEX SHA256:
 `a39b5d60d129b4533d743db7969a211f6d1aee19fc117cf08dd0d31a9e577747`.
 Flash 1,431,536 bytes; RAM1 430,528; RAM2 342,904. Idle free memory remains
 35,844 internal / 8,123,892 PSRAM bytes. Build/upload evidence:

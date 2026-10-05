@@ -228,6 +228,7 @@ static void midi_poll(){
 static USBHub hub1(host), hub2(host);
 static USBHIDParser hid1(host), hid2(host), hid3(host);
 #include "keyboard_input.h"
+#include "keyboard_numlock.h"
 static TeensyKeyboardInput keyboard_input;
 static bool auto_numlock;
 struct KeyboardIrqGuard {
@@ -238,20 +239,27 @@ struct KeyboardIrqGuard {
 class RepeatingKeyboard : public KeyboardController {
 public:
     explicit RepeatingKeyboard(USBHost &h):KeyboardController(h) {}
+    void request_numlock(bool enabled) { startup.request(enabled); }
+    void poll_numlock() {
+        KeyboardIrqGuard guard;
+        if(startup.take_request()) {
+            // Resend even when the previous keyboard left the logical bit on.
+            LEDS(LEDS() | 1);keyboard_input.leds=LEDS();
+        }
+    }
 protected:
     hidclaim_t claim_collection(USBHIDParser *driver,Device_t *device,uint32_t usage) override {
         const auto result=KeyboardController::claim_collection(driver,device,usage);
         const bool primary=usage==0x10006 || (driver && driver->interfaceSubClass()==1 && driver->interfaceProtocol()==1);
-        if(result!=CLAIM_NO && primary && !connection_initialized) {
-            connection_initialized=true;
-            if(auto_numlock) {
-                // Force a SET_REPORT on every attachment, even if the controller
-                // retained the same LED bits from the previous keyboard.
-                LEDS(LEDS() | 1);
-                keyboard_input.leds=LEDS();
-            }
+        if(result!=CLAIM_NO && primary && !startup.connected()) {
+            init_driver=driver;startup.connect(auto_numlock);
         }
         return result;
+    }
+    bool hid_process_control(const Transfer_t *transfer) override {
+        if(transfer->driver==init_driver && transfer->setup.bmRequestType==0x21 && transfer->setup.bRequest==10)
+            startup.initialized();
+        return false;
     }
     bool hid_process_in_data(const Transfer_t *transfer) override {
         const bool handled=KeyboardController::hid_process_in_data(transfer);
@@ -283,16 +291,18 @@ protected:
     }
     void disconnect_collection(Device_t *device) override {
         KeyboardController::disconnect_collection(device);
-        if(!bool(*this)) { KeyboardIrqGuard guard;connection_initialized=false;keyboard_input.disconnect(); }
+        if(!bool(*this)) { KeyboardIrqGuard guard;startup.disconnect();init_driver=nullptr;keyboard_input.disconnect(); }
     }
 private:
-    bool variable_keys=false,connection_initialized=false;
+    bool variable_keys=false;
+    USBHIDParser *init_driver=nullptr;
+    KeyboardNumLockStartup startup;
 };
 static RepeatingKeyboard keyboard(host);
 extern "C" bool sk_usb_auto_numlock() { KeyboardIrqGuard guard;return auto_numlock; }
 extern "C" void sk_usb_set_auto_numlock(bool enabled) {
     KeyboardIrqGuard guard;auto_numlock=enabled;
-    if(enabled && keyboard) {keyboard.LEDS(keyboard.LEDS() | 1);keyboard_input.leds=keyboard.LEDS();}
+    keyboard.request_numlock(enabled);
 }
 
 bool sk_usb_keyboard_connected() { return bool(keyboard); }
@@ -352,6 +362,7 @@ void sk_usb_poll() {
     StorageLock lock;
 #endif
     host.Task();
+    keyboard.poll_numlock();
 #if SK_MIDI
     midi_poll();
 #endif

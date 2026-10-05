@@ -39,9 +39,10 @@ setterm numlock
 
 `on` saves the preference and immediately enables Num Lock on a connected USB
 host keyboard. It enables Num Lock again when a keyboard is attached, including
-at boot and after unplug/replug or a hub reconnect. Each new connection sends
-an LED report even if the driver retained an already-on bit from the previous
-keyboard. Caps Lock and Scroll Lock are preserved.
+at boot and after unplug/replug or a hub reconnect. Each new connection waits for the library’s SET_IDLE initialization request to
+finish before sending an LED report, even if the driver retained an already-on
+bit from the previous keyboard. The requests must not overlap because the USB
+HID parser reuses its setup packet buffer. Caps Lock and Scroll Lock are preserved.
 
 This is a connection default, not a forced lock: the physical Num Lock key
 still toggles normally until the next connection. `off` disables automatic
@@ -60,3 +61,11 @@ pass. On-device on/off, invalid values and reboot persistence pass; the connecte
 045e:0750 driver reports Num Lock on after boot. Internal/PSRAM free memory
 returns to the previous baseline. Physical LED/keypad reconnect verification
 remains separately tracked as KEY-NUM.
+
+The initial physical test reported a non-working LED (the Num Lock key itself
+worked) and a reconnect problem. The installed ordering fix waits for SET_IDLE
+completion before issuing SET_REPORT. Host tests explicitly cover that boundary,
+reconnect, disabling a pending request, and not overriding later manual toggles.
+User confirmed the corrected image: LED, manual toggle, reconnect auto-enable,
+letters and keypad digits all work on the bench keyboard. Other keyboards remain
+untested.

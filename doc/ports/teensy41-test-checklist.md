@@ -492,9 +492,8 @@ profile; no GPIO reassignment is needed for the dedicated On/Off pad.
 - [x] **KEY-NUM-SW — Preference persistence:** on/off and invalid argument
   behavior, reboot reload, driver Num Lock state and unchanged free memory
   verified on the installed legacy image; keyboard/settings host tests pass.
-- [ ] **KEY-NUM — Physical reconnect:** with `setterm numlock on`, turn Num Lock
-  off using the keyboard key, unplug/replug the keyboard (also through the hub),
-  then verify the LED lights and keypad digits type as numbers. Toggle it off
-  again while connected to confirm normal manual behavior remains available.
-  Repeat with a second keyboard when available. Firmware status alone does not
-  prove LED delivery or keypad input; see [keyboard settings](teensy41-keyboard.md).
+- [x] **KEY-NUM — Physical reconnect:** after deferring the LED request until
+  SET_IDLE completes, user confirmed the light, manual toggle, unplug/replug
+  auto-enable, letters and keypad digits all work on the bench keyboard.
+- [ ] **KEY-NUM-OTHER — Additional keyboards:** repeat the LED/manual toggle/
+  reconnect/keypad check with another keyboard when available.
