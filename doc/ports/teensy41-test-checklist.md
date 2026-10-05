@@ -542,7 +542,9 @@ removal during active I/O or compatibility with other drive formats/controllers.
 - [x] **MAN-2 — Hardware audit/build:** Ethernet, flash paths, SGTL5000 capture,
   single-core ltop, terminal Synth/Calc/WebRadio, LCD appearance, and pending
   scope/PD/OBD hardware are described accurately. Legacy firmware builds.
-- [ ] **MAN-3 — Device acceptance:** install the manual build, open every page,
-  check beginning/end text, bare-name lookup, search, browser, LCD and memory.
-  `scripts/ports/test_teensy41_manual_device.py` automates this; close the PC USB
-  monitor and leave the LCD keyboard idle first.
+- [x] **MAN-3 — Device acceptance:** installed legacy build; all 94 pages pass
+  beginning/end text checks, bare-name lookup, search, browser and LCD paging.
+  Free internal/PSRAM memory is identical before/after the run. Evidence:
+  `/tmp/teensy-manual-device.json`. Index summary truncation and backward wrapped
+  row traversal bugs discovered during acceptance are fixed; the new navigation
+  regression also passes. See handoff for the installed image hash.

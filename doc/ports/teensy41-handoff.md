@@ -22,13 +22,23 @@ reports the complete embedded page count. No SD/manual download is required.
 Host coverage evaluates actual registry conditions for full/reduced profiles,
 checks complete generated bodies and prevents stale ESP instructions. Device
 procedure: `scripts/ports/test_teensy41_manual_device.py`. All 15 port and 16
-shared generator tests pass. Legacy build passes at RAM1 430,048 / RAM2 347,000
-bytes (unchanged), flash 1,468,720 bytes (+35,104 bytes). Candidate HEX SHA256:
-`6c0f08c13e52699c61e1e7fd6b8b8fe64bda6a912046a307aa25e43212e2c6d3`.
+shared generator tests pass, along with the new actual-code wrapped-row
+navigation regression (widths 1–100, tabs, CRLF, long words and blank lines).
 
-Installation/device acceptance is pending: the user's PC serial monitor still
-holds `/dev/ttyACM0`. A request to close it and leave the keyboard idle is pending.
-The installed firmware remains the preceding USB batching image until upload.
+Installed and device-validated on the unchanged legacy wiring. All 94 pages
+match the actual app/command lists and pass beginning/end text checks; bare
+aliases, search, Help browser and LCD paging pass. Free memory before/after:
+36,324 internal / 8,123,868 PSRAM bytes, unchanged. Evidence:
+`/tmp/teensy-manual-device.json`, `/tmp/teensy-manual-upload.log`.
+
+Acceptance uncovered two shared display bugs, now fixed: long index/search
+summaries exceeded the 192-byte printf scratch buffer and swallowed the next
+row's newline; summaries now stream separately. Backward pager traversal skipped
+a wrapped row, causing G/End to stop short; previous-row calculation is corrected.
+
+Installed RAM1 430,048 / RAM2 347,000 bytes (unchanged), program flash 1,468,728
+bytes (+35,112 bytes vs the USB batching image). Installed HEX SHA256:
+`f2d1eac065845f0147b861325173c024cf0cfbf3a126cd1f7f91122627f13bd6`.
 
 ## Faster FAT32 USB usage — 2026-10-05
 

@@ -89,10 +89,10 @@ static void man_list(solar_os_shell_io_t *io)
         const solar_os_manual_page_t *page = solar_os_manual_get(i);
         if (page != NULL) {
             solar_os_shell_io_printf(io,
-                                     "%-18s %-8s %s\n",
+                                     "%-18s %-8s ",
                                      page->id,
-                                     page->section,
-                                     page->summary);
+                                     page->section);
+            solar_os_shell_io_writeln(io, page->summary);
         }
     }
 }
@@ -108,9 +108,9 @@ static size_t man_search(solar_os_shell_io_t *io, const char *query)
     }
     for (size_t i = 0U; i < count; i++) {
         solar_os_shell_io_printf(io,
-                                 "%-18s - %s\n",
-                                 matches[i]->id,
-                                 matches[i]->summary);
+                                 "%-18s - ",
+                                 matches[i]->id);
+        solar_os_shell_io_writeln(io, matches[i]->summary);
     }
     return count;
 }

@@ -310,17 +310,15 @@ static size_t less_previous_visual_start(size_t offset, size_t cols)
         line_start = previous_line;
     }
 
-    size_t previous = line_start;
     size_t current = line_start;
     while (current < offset) {
         const size_t next = less_next_visual_start(current, cols);
         if (next >= offset || next <= current) {
-            return previous;
+            return current;
         }
-        previous = current;
         current = next;
     }
-    return previous;
+    return current;
 }
 
 static void less_write_inverse_line(solar_os_shell_io_t *io, const char *text)

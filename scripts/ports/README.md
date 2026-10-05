@@ -640,6 +640,7 @@ fixture; failures retain evidence. It never formats the drive. The first cold
 
 ```sh
 python3 tests/ports/test_teensy41_manual.py
+python3 tests/ports/test_teensy41_less_navigation.py
 python3 tests/test_generate_manual.py
 /tmp/solaros-ssh-testenv/bin/python scripts/ports/test_teensy41_manual_device.py --log /tmp/teensy-manual-device.json
 ```
@@ -652,3 +653,8 @@ pyte, exclusive USB serial, and idle LCD/USB consoles. It opens every installed
 app/command page, checks both ends of the text, exits each pager, and exercises
 bare aliases, search, Help's browser and an LCD page. It reads help without
 starting hardware apps or changing files/settings apart from normal history.
+
+The pager navigation regression compiles the actual row traversal functions and
+checks forward/backward symmetry over widths 1–100, wrapped words, tabs, long
+tokens, blank lines and CRLF. This guards the end-of-page/backward-scroll fix
+exposed by the full manual acceptance test.
