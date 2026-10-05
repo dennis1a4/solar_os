@@ -4,6 +4,29 @@ Updated 2026-10-04. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## Saved keyboard Num Lock — 2026-10-04
+
+Installed and enabled `setterm numlock on` on the unchanged legacy bench
+profile. This saves `keyboard/numlock` in `/flash/.solar-settings/keyboard.bin`,
+enables Num Lock immediately, and applies it once per USB keyboard connection
+(including startup). The physical key remains usable while connected. `off`
+disables automatic enabling without changing the current lock state. `setterm`
+shows the preference and `lcd` reports current driver state plus `auto=`.
+`man setterm` now includes the port's preference reference offline.
+
+Keyboard and settings host sanitizer suites and 11 port manual tests pass.
+Device checks pass for on/off, invalid-value rejection, unchanged memory, and
+persistence across reboot. After reboot the Microsoft 045e:0750 driver reports
+`numlock=on auto=on`. Physical LED/keypad unplug/replug confirmation is tracked
+as KEY-NUM in the master checklist.
+
+Current installed HEX SHA256:
+`a39b5d60d129b4533d743db7969a211f6d1aee19fc117cf08dd0d31a9e577747`.
+Flash 1,431,536 bytes; RAM1 430,528; RAM2 342,904. Idle free memory remains
+35,844 internal / 8,123,892 PSRAM bytes. Build/upload evidence:
+`/tmp/teensy-numlock-build.log`, `/tmp/teensy-numlock-upload.log`.
+See [keyboard preferences](teensy41-keyboard.md).
+
 ## Graceful On/Off shutdown — 2026-10-04
 
 Installed on `teensy41_telnet_legacy`; the dedicated On/Off pad uses no GPIO.
@@ -36,7 +59,7 @@ The user confirmed physical On/Off-to-GND shutdown and subsequent wake on
 2026-10-04. Detailed peripheral recovery, shutdown under recording load, forced
 hold and real PD/rail measurements remain in the master checklist.
 
-Installed HEX SHA256:
+Shutdown acceptance HEX SHA256:
 `feb87ed27c696eaaad771b8091a46489df77b619225a0f1edb050018c5b0b48a`.
 Flash 1,430,016 bytes; static RAM1 430,528; RAM2 342,904. The coordinator adds
 8 KiB of internal OCRAM stack. Measured idle heap: 35,844 / 84,192 bytes internal;

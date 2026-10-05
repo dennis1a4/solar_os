@@ -5699,6 +5699,10 @@ static bool shell_completion_settings(const solar_os_completion_request_t *r,
         const char *const *values=NULL;size_t n=0;
         if (!strcmp(tokens[1],"timezone")) {values=zones;n=3;}
         if (!strcmp(tokens[1],"startup")) {values=sources;n=3;}
+#if SK_SETTINGS && SK_USB_HOST
+        static const char *numlock[]={"on","off"};
+        if (!strcmp(tokens[1],"numlock")) {values=numlock;n=2;}
+#endif
         for (size_t i=0;i<n;++i) if (!emit(sink,values[i])) return false;
         return true;
     }
@@ -5708,6 +5712,9 @@ static bool shell_completion_settings(const solar_os_completion_request_t *r,
 #endif
 #if SK_SETTINGS
         "startup",
+#if SK_USB_HOST
+        "numlock",
+#endif
 #endif
     };
     for (size_t i=0;i<sizeof(names)/sizeof(names[0]);++i) if (!emit(sink,names[i])) return false;

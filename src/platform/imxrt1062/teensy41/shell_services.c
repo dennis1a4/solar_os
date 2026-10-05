@@ -84,9 +84,33 @@ void solar_os_shell_cmd_clear(solar_os_context_t *ctx, int argc, char **argv) {
 #if SK_CLOCK
 #include "solar_os_time.h"
 #endif
+#if SK_SETTINGS && SK_USB_HOST
+extern bool sk_usb_auto_numlock(void);
+extern void sk_usb_set_auto_numlock(bool);
+#endif
 void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) {
     solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
     io->command_status=1;
+#if SK_SETTINGS && SK_USB_HOST
+    if((argc==2 || argc==3) && !strcmp(argv[1],"numlock")) {
+        if(argc==3) {
+            if(strcmp(argv[2],"on") && strcmp(argv[2],"off")) {
+                solar_os_shell_io_writeln(io,"usage: setterm numlock [on|off]");return;
+            }
+            const bool enabled=!strcmp(argv[2],"on");
+            nvs_handle_t h;esp_err_t err=nvs_open("keyboard",NVS_READWRITE,&h);
+            if(err==ESP_OK) {
+                err=nvs_set_u8(h,"numlock",enabled);
+                if(err==ESP_OK)err=nvs_commit(h);
+                nvs_close(h);
+            }
+            if(err!=ESP_OK) {solar_os_shell_io_printf(io,"numlock not saved: %s\n",esp_err_to_name(err));return;}
+            sk_usb_set_auto_numlock(enabled);
+        }
+        solar_os_shell_io_printf(io,"Num Lock on keyboard connect: %s (saved in flash)\n",sk_usb_auto_numlock()?"on":"off");
+        io->command_status=0;return;
+    }
+#endif
 #if SK_CLOCK
     if ((argc==2 || argc==3) && !strcmp(argv[1],"timezone")) {
         if (argc==3) {
@@ -111,6 +135,9 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) 
         solar_os_shell_io_printf(io,"size %u %u; startup %s (%s)\n",
             (unsigned)solar_os_shell_io_cols(io),(unsigned)solar_os_shell_io_rows(io),
             solar_os_shell_startup_source_name(solar_os_shell_startup_source()),path);
+#if SK_USB_HOST
+        solar_os_shell_io_printf(io,"Num Lock on keyboard connect: %s\n",sk_usb_auto_numlock()?"on":"off");
+#endif
         return;
     }
     if (argc == 3 && !strcmp(argv[1],"startup")) {
@@ -165,6 +192,9 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv) 
 #endif
     solar_os_shell_io_writeln(io, "usage: setterm size <cols 20..300> <rows 8..120> (default 80 24)");
 #if SK_SETTINGS
+#if SK_USB_HOST
+    solar_os_shell_io_writeln(io,"       setterm numlock [on|off] (saved; on also enables it now)");
+#endif
     solar_os_shell_io_writeln(io,"       setterm startup <auto|flash|sd>; setterm (show settings)");
 #endif
 }

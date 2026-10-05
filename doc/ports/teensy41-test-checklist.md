@@ -486,3 +486,15 @@ profile; no GPIO reassignment is needed for the dedicated On/Off pad.
   final PCB. The current external 3.3 V regulator EN is tied to +5 V; CPU TOP
   does not shut down that rail or the separate LCD/USB loads. Validate backfeed,
   I2C pullups and independent 5 V fallback for forced cutoff/reset.
+
+## Saved keyboard Num Lock — 2026-10-04
+
+- [x] **KEY-NUM-SW — Preference persistence:** on/off and invalid argument
+  behavior, reboot reload, driver Num Lock state and unchanged free memory
+  verified on the installed legacy image; keyboard/settings host tests pass.
+- [ ] **KEY-NUM — Physical reconnect:** with `setterm numlock on`, turn Num Lock
+  off using the keyboard key, unplug/replug the keyboard (also through the hub),
+  then verify the LED lights and keypad digits type as numbers. Toggle it off
+  again while connected to confirm normal manual behavior remains available.
+  Repeat with a second keyboard when available. Firmware status alone does not
+  prove LED delivery or keypad input; see [keyboard settings](teensy41-keyboard.md).

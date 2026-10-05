@@ -28,3 +28,35 @@ Remaining physical checks: Edit/Files, simultaneous holds, disconnect while
 repeating, app transitions and additional keyboards (checklist KEY-2 through KEY-5).
 
 Use `teensy41_telnet_legacy` for the current AmpEn40 wiring.
+
+## Saved Num Lock preference — 2026-10-04
+
+```
+setterm numlock on
+setterm numlock off
+setterm numlock
+```
+
+`on` saves the preference and immediately enables Num Lock on a connected USB
+host keyboard. It enables Num Lock again when a keyboard is attached, including
+at boot and after unplug/replug or a hub reconnect. Each new connection sends
+an LED report even if the driver retained an already-on bit from the previous
+keyboard. Caps Lock and Scroll Lock are preserved.
+
+This is a connection default, not a forced lock: the physical Num Lock key
+still toggles normally until the next connection. `off` disables automatic
+enabling; it does not force the current lock off. Without a saved preference,
+automatic enabling defaults to off. The installed bench preference is enabled.
+
+The existing transactional NVS-compatible store saves namespace `keyboard`,
+key `numlock`, in `/flash/.solar-settings/keyboard.bin`. Flash must be writable;
+failed saves leave the live preference unchanged. Boot loads it before starting
+USB host enumeration. `setterm` shows the preference; `lcd` shows `numlock=`
+(the driver's current state) and `auto=` (the connection preference). The driver
+status does not independently verify a keyboard's physical LED.
+
+Validation: keyboard/settings host sanitizer regressions and port manual tests
+pass. On-device on/off, invalid values and reboot persistence pass; the connected
+045e:0750 driver reports Num Lock on after boot. Internal/PSRAM free memory
+returns to the previous baseline. Physical LED/keypad reconnect verification
+remains separately tracked as KEY-NUM.

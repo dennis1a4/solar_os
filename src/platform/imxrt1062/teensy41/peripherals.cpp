@@ -1,6 +1,11 @@
 #include <arduino_freertos.h>
 #include "board.h"
 #include "platform.h"
+#if SK_SETTINGS
+extern "C" {
+#include "nvs.h"
+}
+#endif
 #if SK_USB_STORAGE
 #include "storage_lock.h"
 #include "usb_storage.h"
@@ -224,6 +229,7 @@ static USBHub hub1(host), hub2(host);
 static USBHIDParser hid1(host), hid2(host), hid3(host);
 #include "keyboard_input.h"
 static TeensyKeyboardInput keyboard_input;
+static bool auto_numlock;
 struct KeyboardIrqGuard {
     uint32_t mask=__get_PRIMASK();
     KeyboardIrqGuard() { __disable_irq(); }
@@ -233,6 +239,20 @@ class RepeatingKeyboard : public KeyboardController {
 public:
     explicit RepeatingKeyboard(USBHost &h):KeyboardController(h) {}
 protected:
+    hidclaim_t claim_collection(USBHIDParser *driver,Device_t *device,uint32_t usage) override {
+        const auto result=KeyboardController::claim_collection(driver,device,usage);
+        const bool primary=usage==0x10006 || (driver && driver->interfaceSubClass()==1 && driver->interfaceProtocol()==1);
+        if(result!=CLAIM_NO && primary && !connection_initialized) {
+            connection_initialized=true;
+            if(auto_numlock) {
+                // Force a SET_REPORT on every attachment, even if the controller
+                // retained the same LED bits from the previous keyboard.
+                LEDS(LEDS() | 1);
+                keyboard_input.leds=LEDS();
+            }
+        }
+        return result;
+    }
     bool hid_process_in_data(const Transfer_t *transfer) override {
         const bool handled=KeyboardController::hid_process_in_data(transfer);
         if(handled && transfer->length==8) {
@@ -263,20 +283,27 @@ protected:
     }
     void disconnect_collection(Device_t *device) override {
         KeyboardController::disconnect_collection(device);
-        if(!bool(*this)) { KeyboardIrqGuard guard;keyboard_input.disconnect(); }
+        if(!bool(*this)) { KeyboardIrqGuard guard;connection_initialized=false;keyboard_input.disconnect(); }
     }
 private:
-    bool variable_keys=false;
+    bool variable_keys=false,connection_initialized=false;
 };
 static RepeatingKeyboard keyboard(host);
+extern "C" bool sk_usb_auto_numlock() { KeyboardIrqGuard guard;return auto_numlock; }
+extern "C" void sk_usb_set_auto_numlock(bool enabled) {
+    KeyboardIrqGuard guard;auto_numlock=enabled;
+    if(enabled && keyboard) {keyboard.LEDS(keyboard.LEDS() | 1);keyboard_input.leds=keyboard.LEDS();}
+}
+
 bool sk_usb_keyboard_connected() { return bool(keyboard); }
 void sk_usb_status(char *out,size_t len) {
     uint32_t presses,repeats,dropped; unsigned key;
     { KeyboardIrqGuard guard;
       key=keyboard_input.repeat_key(); presses=keyboard_input.presses;
       repeats=keyboard_input.repeats; dropped=keyboard_input.dropped; }
-    snprintf(out,len,"hub=%u/%u keyboard=%04x:%04x repeat=%u delay=%lu rate=%lu press=%lu repeat-count=%lu drop=%lu",
+    snprintf(out,len,"hub=%u/%u keyboard=%04x:%04x numlock=%s auto=%s repeat=%u delay=%lu rate=%lu press=%lu repeat-count=%lu drop=%lu",
         unsigned(bool(hub1)),unsigned(bool(hub2)),keyboard.idVendor(),keyboard.idProduct(),
+        keyboard.numLock()?"on":"off",auto_numlock?"on":"off",
         key,(unsigned long)TeensyKeyboardInput::delay_ms,
         (unsigned long)TeensyKeyboardInput::interval_ms,(unsigned long)presses,
         (unsigned long)repeats,(unsigned long)dropped);
@@ -304,6 +331,13 @@ static void key_released(uint8_t key) { KeyboardIrqGuard guard;keyboard_input.re
 #endif
 void sk_usb_begin() {
 #if SK_USB_HOST
+#if SK_SETTINGS
+    nvs_handle_t prefs;uint8_t enabled=0;
+    if(nvs_open("keyboard",NVS_READONLY,&prefs)==ESP_OK) {
+        if(nvs_get_u8(prefs,"numlock",&enabled)==ESP_OK)auto_numlock=enabled==1;
+        nvs_close(prefs);
+    }
+#endif
     keyboard.attachPress(key_pressed);
     keyboard.attachRawRelease(key_released);
 #if SK_USB_STORAGE
