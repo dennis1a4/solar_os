@@ -38,6 +38,9 @@ struct StaticTask_t {};
 using TaskHandle_t = StaticTask_t *;
 static StaticTask_t mock_current;
 static TaskHandle_t xTaskGetCurrentTaskHandle() { return &mock_current; }
+static void vTaskPrioritySet(TaskHandle_t task, unsigned priority) {
+    assert(task == &mock_current && priority == 2);
+}
 static TaskHandle_t mock_task;
 static bool fail_task, suspended;
 static int fail_nth = -1;

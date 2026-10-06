@@ -8,18 +8,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 
+#include "solar_os_memory.h"
+#include "solar_os_net.h"
+#include "solar_os_storage.h"
+
+#if SOLAR_OS_FTP_PORT_TRANSPORT
+#include "platform/imxrt1062/teensy41/ftp_socket.h"
+#include "solar_os_net_transport.h"
+#else
+#include <sys/socket.h>
 #include "esp_random.h"
 #include "lwip/inet.h"
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
-#include "solar_os_memory.h"
-#include "solar_os_net.h"
-#include "solar_os_storage.h"
+#endif
 
 #define FTP_COMMAND_MAX 384U
 #define FTP_LINE_MAX 512U
@@ -119,7 +125,7 @@ static esp_err_t ftp_send_all(solar_os_ftp_session_t *session,
         } else if (sent < 0 && errno == EINTR) {
             continue;
         } else {
-            return errno == EAGAIN || errno == EWOULDBLOCK ? ESP_ERR_TIMEOUT : ESP_FAIL;
+            return errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT ? ESP_ERR_TIMEOUT : ESP_FAIL;
         }
     }
     return ESP_OK;
@@ -156,7 +162,7 @@ static esp_err_t ftp_read_line(solar_os_ftp_session_t *session,
         }
         line[used] = '\0';
         return received == 0 ? ESP_ERR_INVALID_RESPONSE :
-            (errno == EAGAIN || errno == EWOULDBLOCK ? ESP_ERR_TIMEOUT : ESP_FAIL);
+            (errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT ? ESP_ERR_TIMEOUT : ESP_FAIL);
     }
     line[line_len - 1U] = '\0';
     return ESP_ERR_INVALID_SIZE;
@@ -244,7 +250,8 @@ static void ftp_set_connect_error(const solar_os_ftp_options_t *options,
     }
 }
 
-static esp_err_t ftp_connect_addr(const struct sockaddr_in *addr,
+static esp_err_t ftp_connect_addr(solar_os_ftp_session_t *session,
+                                  const struct sockaddr_in *addr,
                                   uint32_t timeout_ms,
                                   int *fd_out,
                                   int *socket_error)
@@ -259,6 +266,11 @@ static esp_err_t ftp_connect_addr(const struct sockaddr_in *addr,
         }
         return ESP_FAIL;
     }
+#if SOLAR_OS_FTP_PORT_TRANSPORT
+    sk_ftp_set_cancel(fd, session->should_cancel, session->cancel_user);
+#else
+    (void)session;
+#endif
     esp_err_t err = ftp_socket_timeout(fd, timeout_ms);
     if (err == ESP_OK && connect(fd, (const struct sockaddr *)addr, sizeof(*addr)) != 0) {
         const int connect_error = errno;
@@ -353,7 +365,7 @@ static esp_err_t ftp_open_data(solar_os_ftp_session_t *session, int *data_fd)
         }
         addr.sin_port = passive_addr.sin_port;
     }
-    return ftp_connect_addr(&addr, session->timeout_ms, data_fd, NULL);
+    return ftp_connect_addr(session, &addr, session->timeout_ms, data_fd, NULL);
 }
 
 static esp_err_t ftp_begin_data_command(solar_os_ftp_session_t *session,
@@ -408,7 +420,15 @@ esp_err_t solar_os_ftp_connect(const solar_os_ftp_options_t *options,
     ftp_set_connect_error(options, "");
     *session_out = NULL;
     char resolved[SOLAR_OS_NET_ADDR_MAX];
+#if SOLAR_OS_FTP_PORT_TRANSPORT
+    const int resolved_ok = solar_os_net_transport_resolve(options->host, resolved,
+        sizeof(resolved), options->timeout_ms ? options->timeout_ms : 5000U,
+        should_cancel, cancel_user);
+    esp_err_t err = resolved_ok == 0 ? ESP_OK :
+        errno == ETIMEDOUT ? ESP_ERR_TIMEOUT : ESP_FAIL;
+#else
     esp_err_t err = solar_os_net_resolve_host(options->host, resolved, sizeof(resolved));
+#endif
     if (err != ESP_OK) {
         ftp_set_connect_error(options, "host lookup failed");
         return err;
@@ -431,7 +451,7 @@ esp_err_t solar_os_ftp_connect(const solar_os_ftp_options_t *options,
         return ESP_ERR_INVALID_RESPONSE;
     }
     int connect_error = 0;
-    err = ftp_connect_addr(&session->peer,
+    err = ftp_connect_addr(session, &session->peer,
                            session->timeout_ms,
                            &session->control_fd,
                            &connect_error);
@@ -468,10 +488,16 @@ esp_err_t solar_os_ftp_connect(const solar_os_ftp_options_t *options,
     }
     if (err != ESP_OK) {
         if (options->error != NULL && options->error_len > 0U &&
-            options->error[0] == '\0' && session->reply[0] != '\0') {
-            ftp_set_connect_error(options, session->reply);
+            options->error[0] == '\0') {
+            const char *message = err == ESP_ERR_TIMEOUT ? "server response timed out" :
+                err == ESP_ERR_INVALID_RESPONSE ? "server closed connection or sent an invalid response" :
+                session->reply[0] != '\0' ? session->reply : "connection failed";
+            ftp_set_connect_error(options, message);
         }
-        solar_os_ftp_disconnect(session);
+        // The handshake failed: QUIT cannot repair this connection and may
+        // wait out a second receive timeout on an unresponsive server.
+        ftp_close_fd(&session->control_fd);
+        solar_os_memory_free(session);
         return err;
     }
     *session_out = session;
@@ -641,7 +667,7 @@ static esp_err_t ftp_list_once(solar_os_ftp_session_t *session,
         } else if (received == 0) {
             break;
         } else if (errno != EINTR) {
-            err = errno == EAGAIN || errno == EWOULDBLOCK ? ESP_ERR_TIMEOUT : ESP_FAIL;
+            err = errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT ? ESP_ERR_TIMEOUT : ESP_FAIL;
         }
     }
     if (err == ESP_OK && parser->pending_len > 0) {
@@ -735,7 +761,7 @@ esp_err_t solar_os_ftp_download(solar_os_ftp_session_t *session,
         } else if (received == 0) {
             break;
         } else if (errno != EINTR) {
-            err = errno == EAGAIN || errno == EWOULDBLOCK ? ESP_ERR_TIMEOUT : ESP_FAIL;
+            err = errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT ? ESP_ERR_TIMEOUT : ESP_FAIL;
         }
     }
     solar_os_memory_free(buffer);

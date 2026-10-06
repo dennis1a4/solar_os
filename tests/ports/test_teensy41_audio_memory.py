@@ -39,7 +39,7 @@ static bool diagnostic;
 extern "C" bool sk_audio_diagnostic_busy(){return diagnostic;}
 ''' + app + busy + r'''
 int main(){
- solar_os_app_t synth{"synth"},calc{"calc"},recorder{"arecord"};Frame frame{&synth,nullptr};
+ solar_os_app_t synth{"synth"},calc{"calc"},recorder{"arecord"},interactive{"recorder"};Frame frame{&synth,nullptr};
  assert(sk_app_allowed(&synth) && !sk_console_audio_busy());
  diagnostic=true;assert(!sk_app_allowed(&synth) && sk_app_allowed(&calc));diagnostic=false;
  consoles[1].frame=&frame;assert(sk_console_audio_busy() && !sk_app_allowed(&synth));
@@ -48,7 +48,8 @@ int main(){
  consoles[1].retained[0]=nullptr;remote_console.frame=&frame;
  assert(sk_console_audio_busy() && !sk_app_allowed(&synth));
  assert(!sk_console_recorder_busy());frame.app=&recorder;
- assert(sk_console_recorder_busy());remote_console.frame=nullptr;
+ assert(sk_console_recorder_busy());frame.app=&interactive;
+ assert(sk_console_recorder_busy() && !sk_app_allowed(&synth));remote_console.frame=nullptr;
  consoles[1].retained[0]=&frame;assert(sk_console_recorder_busy());
  consoles[1].retained[0]=nullptr;
  assert(!sk_console_recorder_busy() && !sk_console_audio_busy() && sk_app_allowed(&synth));

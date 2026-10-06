@@ -39,7 +39,9 @@ static TaskHandle_t xTaskCreateStatic(TaskFunction_t,const char *,size_t words,v
 }
 static State eTaskGetState(TaskHandle_t t) {return t->state;}
 static void vTaskDelete(TaskHandle_t t) {assert(t->state==eSuspended && allocations.count(t->stack));}
-static void vTaskSuspend(void *) {assert(false);}
-static TaskHandle_t xTaskGetCurrentTaskHandle() {return nullptr;}
+static TaskHandle_t current_task;
+struct ParkedTask {};
+static void vTaskSuspend(void *) {current_task->state=eSuspended;throw ParkedTask{};}
+static TaskHandle_t xTaskGetCurrentTaskHandle() {return current_task;}
 static unsigned millis(){return now;}
 static void vTaskDelay(unsigned n){now+=n;}

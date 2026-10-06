@@ -37,6 +37,11 @@ extern "C" bool sk_shutdown_ready() {
     }
 #if SK_BACKGROUND_JOBS
     if(process.frame || executing_job)ready=false;
+#if SK_FTP
+    solar_os_job_status_t ftp_status;
+    if(solar_os_jobs_get(4,&ftp_status) &&
+       (ftp_status.state==SOLAR_OS_JOB_RUNNING || ftp_status.state==SOLAR_OS_JOB_WAITING))ready=false;
+#endif
     for(auto &j:script_jobs)if(j.file || j.pending || j.console.shell)ready=false;
 #endif
     xSemaphoreGiveRecursive(console_gate);return ready;

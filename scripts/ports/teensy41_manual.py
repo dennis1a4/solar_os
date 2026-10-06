@@ -1,8 +1,18 @@
 """Select accurate embedded documentation for the Teensy workstation shell."""
-APP_NAMES = set('player synth ltop webradio io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders mqttx obd clock pdpower scope help curl'.split())
+APP_NAMES = set('recorder ftp player synth ltop webradio io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders mqttx obd clock pdpower scope help curl'.split())
 COMMAND_NAMES = set('poweroff serial sshkey midi pd grep head wc ramfs gpio i2c spi uart expansion help man commands echo wait watch apps mem uptime clear setterm identity network audio cd ls cat sh mkdir rm mv cp exit reboot version board status top port df pwd session sessions fg bg tail close ping netscan ntp jobs job schedule zip unzip rtc date time flash sd usb lcd telnetd'.split())
 # Audited Teensy contracts. Hardware-neutral shared app pages remain upstream.
 OVERRIDES = {
+    'recorder': ('Record and replay microphone WAV files interactively.',
+        'recorder [--tui] [DIRECTORY|FILE.wav]\n'
+        'Example: recorder /sd/take.wav. Default folder /sd; automatic names when no filename is set. Native SGTL5000 microphone format: 44100 Hz, mono, 16-bit WAV. Existing files are never overwritten.\n'
+        'R or Enter starts/stops recording; Space pauses/resumes without saving paused audio; S stops and saves; P replays the last recording; M toggles microphone monitoring. Up/Down changes output volume. Tab opens setup: filename, folder, microphone gain (0-63 dB), and output volume. Format fields are fixed on Teensy. Esc, Q or Ctrl+] exits and saves an active recording.\n'
+        'Ctrl+Z backgrounds the recorder while capture continues; sessions and fg ID return to it. close ID also stops and finalizes the WAV. Audio apps are exclusive. SD recordings use a bounded PSRAM buffer and stop with an error on capture overrun or storage failure. Recording is limited to one hour. Settings are saved in /sd/.recorder/settings.bin. The terminal interface works on LCD, USB and Telnet.'),
+    'ftp': ('Browse and transfer files over FTP.',
+        'ftp [HOST [PORT] [--user USER --password PASSWORD] [--remote PATH] [--local PATH]]\n'
+        'network up first. With no host, F2 opens connection setup. Default port 21; default login anonymous. Tab switches the local and remote panes; Enter opens a directory/file, F5 copies, F7 creates a directory, F8 deletes. Use the displayed footer for other keys.\n'
+        'Passive IPv4 FTP over Ethernet, with binary transfers and staged local downloads. FTP sends credentials and files without encryption. One FTP app at a time; its worker uses the shared foreground worker slot. Stop another worker app before starting FTP.\n'
+        'To serve a directory: job start ftpd /sd/share 2121 --user USER --password PASSWORD. job status ftpd and job stop ftpd inspect/stop it. Omit both credential options for anonymous access. The server exports one directory, supports one control client, and uses passive data ports. It can run alongside Telnet and Python jobs. The 16 KiB PSRAM server stack allocates on start and releases after stop. Restart the job after network loss.'),
     'player': ('Play MP3/WAV files from a folder.',
         'player [--tui] [--shuffle] [--repeat off|all|one] [FOLDER]\n'
         'Examples: player /sd/music; player --shuffle /sd/music\n'
@@ -138,9 +148,11 @@ OVERRIDES = {
     'io': ('Inspect Teensy pins, buses and claims.',
         'io [pins|claims|buses|release]\n'
         'release restores this console’s GPIO inputs and closes its raw UART/expansion leases. Built-in device reservations and COM app leases cannot be released here. Fixed board routing; no pin remapping or saved runtime claims.'),
-    'job': ('Run and inspect background scripts.',
+    'job': ('Run and inspect background scripts and the FTP server.',
         'job start script /path.sh\n'
         'job start script0 /path.sh\n'
+        'job start ftpd ROOT [PORT] [--user USER --password PASSWORD]\n'
+        'job status ftpd | job stop ftpd\n'
         'job status [script0|ID]\n'
         'job output script0|ID\n'
         'job stop script0|ID\n'

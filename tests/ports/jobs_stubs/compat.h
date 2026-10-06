@@ -9,7 +9,9 @@ typedef uint32_t StackType_t;
 typedef struct {int unused;} StaticTask_t;
 #define pdPASS 1
 #define tskNO_AFFINITY 0
+#ifndef SOLAR_OS_JOBS_MAX
 #define SOLAR_OS_JOBS_MAX 4
+#endif
 #ifdef __cplusplus
 extern "C" {
 #endif

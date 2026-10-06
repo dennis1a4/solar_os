@@ -718,3 +718,46 @@ shuffle, limits, allocation errors and repeat transitions under sanitizers.
 It serves generated tones over local HTTP,
 checks their hashes, tests controls, background playback while editing/saving,
 and exact idle memory recovery, then removes its unique fixture directory.
+
+## FTP client and server — 2026-10-05
+
+Build `teensy41_telnet_legacy` for the existing wiring. Run
+`bash scripts/ports/test_teensy41_ftp_host.sh` for sanitized adapter, loopback
+client/server, stalled-transfer cleanup and job-command tests. These use temporary
+host files and local TCP sockets; LeakSanitizer needs an environment that allows
+thread inspection. See [FTP usage and pending live checks](../../doc/ports/teensy41-ftp.md).
+Live acceptance (idle board, SD mounted, host on the Ethernet LAN):
+
+```sh
+/tmp/solaros-ssh-testenv/bin/python scripts/ports/test_teensy41_ftp.py --log /tmp/teensy-ftp-live.json
+/tmp/solaros-ssh-testenv/bin/python scripts/ports/test_teensy41_ftp_client.py --log /tmp/teensy-ftp-client-live.json
+/tmp/solaros-ssh-testenv/bin/python scripts/ports/test_teensy41_ftp_coexistence.py --log /tmp/teensy-ftp-coexistence-live.json
+/tmp/solaros-ssh-testenv/bin/python scripts/ports/test_teensy41_ftp_player.py --music /sd/music --local /sd --host 192.168.1.100 --log /tmp/teensy-ftp-player-live.json
+/tmp/solaros-ssh-testenv/bin/python scripts/ports/test_teensy41_ftp_client.py --music /sd/music --log /tmp/teensy-ftp-player-transfers.json
+```
+
+These require host USB/network access. The client test also requires `pyte` and
+`pyftpdlib`; the server test uses Python's `ftplib`. The player startup regression
+uses existing `--music` and `--local` directories read-only, and an anonymous
+server supplied with `--host`. Client `--music` enables playback during transfers
+and repeated server cleanup. Require idle consoles and run tests sequentially.
+The transfer/server tests create uniquely named SD fixtures, remove them after success, and retain paths
+in the JSON report on failure. The server test cycles Ethernet down/up; the
+coexistence test starts a temporary Telnet service and runs `poweroff --check`
+without cutting power. The FTP test console accepts asynchronous log messages
+after the shell prompt. The TUI test waits for the exact `connected` footer,
+which avoids confusing it with the initial `disconnected` title.
+
+### Interactive recorder
+
+`python scripts/ports/test_teensy41_recorder.py --log /tmp/recorder.json` tests
+LCD capture controls, pause, retained recording and remote close, WAV validity,
+existing-file protection, playback, monitoring and repeated memory recovery.
+Requires an idle audio-equipped Teensy, mounted SD and exclusive USB access.
+Creates a unique `_recorder_*` directory and removes it after success; the JSON
+report preserves fixture paths on failure.
+
+`test_teensy41_recorder_serial.py --log REPORT.json` additionally requires pyte
+and checks USB UI rendering, gain setup, monitored recording and file errors.
+Run recorder device tests sequentially. The deterministic host counterpart is
+`python3 tests/ports/test_teensy41_recorder_transport.py` (ASan/UBSan).

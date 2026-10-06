@@ -62,6 +62,10 @@
 #define FTP_APP_PANEL_MIN_WIDTH 18U
 #define FTP_APP_MESSAGE_MAX 128U
 #define FTP_APP_INPUT_MAX 80U
+#if SOLAR_OS_FTP_PORT_TRANSPORT
+#define solar_os_task_create_pinned solar_os_task_create_pinned_internal
+#define solar_os_task_delete solar_os_task_delete_internal
+#endif
 #define FTP_APP_TASK_STACK 12288U
 #define FTP_APP_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
 #define FTP_APP_QUEUE_LEN 2U

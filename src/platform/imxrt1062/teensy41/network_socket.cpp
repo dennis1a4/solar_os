@@ -93,6 +93,16 @@ static uint16_t listen_port;
 static bool listening;
 static int accepted_handle;
 #endif
+#if SK_FTP
+struct FtpListener {
+    EthernetServer server{0};
+    EthernetClient pending;
+    int handle=0;
+    bool failed=false;
+};
+static FtpListener ftp_listeners[2];
+static unsigned ftp_generation;
+#endif
 static unsigned next_handle;
 static bool was_ready;
 static uint32_t dns_generation;
@@ -125,6 +135,11 @@ extern "C" void sk_net_transport_reset() {
 #if SK_TELNETD
     telnet_server.end(); listening=false;
 #endif
+#if SK_FTP
+    for(auto &listener:ftp_listeners)if(listener.handle) {
+        listener.pending.abort(); listener.server.end(); listener.failed=true;
+    }
+#endif
     ++dns_generation; dns_error=ENETDOWN;
     for (auto &s:slots) if (s.handle) {
         s.failure=ENETDOWN;
@@ -153,6 +168,54 @@ extern "C" void sk_net_transport_poll(int ready) {
     Slot *s=nullptr;
     for (auto &slot:slots) if (slot.handle==q.handle && q.handle>0) s=&slot;
     switch(q.op) {
+#if SK_FTP
+    case SK_NET_LOCAL_ADDR: {
+        auto ip=Ethernet.localIP();
+        for(unsigned i=0;i<4;++i)r.ip[i]=ip[i];
+        break;
+    }
+    case SK_NET_FTP_LISTEN: {
+        if(!ready){r.error=ENETDOWN;break;}
+        if(q.port) {
+#if SK_TELNETD
+            if(q.port==listen_port){r.error=EADDRINUSE;break;}
+#endif
+            for(auto &listener:ftp_listeners)
+                if(listener.handle && listener.server.port()==q.port)r.error=EADDRINUSE;
+            if(r.error)break;
+        }
+        r.error=EMFILE;
+        for(auto &listener:ftp_listeners)if(!listener.handle) {
+            if(!listener.server.beginWithReuse(q.port)){r.error=EADDRINUSE;break;}
+            listener.handle=int((++ftp_generation & 0x3fffffff)+1);
+            listener.failed=false;r.value=listener.handle;r.port=listener.server.port();r.error=0;break;
+        }
+        break;
+    }
+    case SK_NET_FTP_END: case SK_NET_FTP_POLL: case SK_NET_FTP_ACCEPT: {
+        FtpListener *listener=nullptr;
+        for(auto &entry:ftp_listeners)if(entry.handle==q.handle && q.handle)listener=&entry;
+        if(!listener){r.error=EBADF;break;}
+        if(q.op==SK_NET_FTP_END) {
+            listener->pending.abort();listener->server.end();listener->handle=0;break;
+        }
+        if(!ready || listener->failed){r.error=ENETDOWN;break;}
+        if(!listener->pending)listener->pending=listener->server.accept();
+        if(q.op==SK_NET_FTP_POLL){r.value=bool(listener->pending);break;}
+        if(!listener->pending){r.error=EAGAIN;break;}
+        Slot *free_slot=nullptr;
+        for(auto &entry:slots)if(!entry.handle){free_slot=&entry;break;}
+        if(!free_slot){r.error=EMFILE;break;}
+        auto &entry=*free_slot;
+        entry.client=listener->pending;listener->pending=EthernetClient();
+        entry.handle=int((++next_handle & 0x3fffffff)+1);
+        entry.failure=0;entry.started=entry.service=true;
+        entry.packet=entry.rx_held=false;
+        r.value=entry.handle;r.port=entry.client.remotePort();
+        auto ip=entry.client.remoteIP();for(unsigned i=0;i<4;++i)r.ip[i]=ip[i];
+        break;
+    }
+#endif
 #if SK_NET_DIAGNOSTICS
     case SK_NET_PING_START: case SK_NET_PING_POLL: case SK_NET_PING_CLOSE:
         ping_rpc(q,r,ready);break;
@@ -161,6 +224,11 @@ extern "C" void sk_net_transport_poll(int ready) {
     case SK_NET_LISTEN_START:
         if(!ready) { r.error=ENETDOWN; break; }
         if(listen_port) { r.error=EALREADY; break; }
+#if SK_FTP
+        for(auto &listener:ftp_listeners)
+            if(listener.handle && listener.server.port()==q.port)r.error=EADDRINUSE;
+        if(r.error)break;
+#endif
         if(!q.port || !telnet_server.beginWithReuse(q.port)) { r.error=errno?errno:EADDRINUSE; break; }
         listening=true; listen_port=q.port; break;
     case SK_NET_LISTEN_STOP:

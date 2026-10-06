@@ -16,18 +16,31 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "lwip/inet.h"
-#include "lwip/sockets.h"
 #include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_storage.h"
 #include "solar_os_task.h"
 
+#if SOLAR_OS_FTP_PORT_TRANSPORT
+#include "platform/imxrt1062/teensy41/ftp_socket.h"
+#else
+#include <sys/socket.h>
+#include "esp_random.h"
+#include "lwip/inet.h"
+#include "lwip/netdb.h"
+#include "lwip/sockets.h"
+#endif
+
 #define FTPD_DEFAULT_PORT 21U
+#if SOLAR_OS_FTP_PORT_TRANSPORT
+#define FTPD_TASK_STACK 16384U
+#define solar_os_task_create_pinned_internal sk_ftp_task_create
+#define solar_os_task_delete_internal sk_ftp_task_delete
+#else
 #define FTPD_TASK_STACK 8192U
+#endif
 #define FTPD_TASK_PRIORITY (tskIDLE_PRIORITY + 2)
 #define FTPD_SELECT_MS 100U
 #define FTPD_DATA_TIMEOUT_MS 10000U
@@ -45,6 +58,7 @@ typedef struct {
     int listen_fd;
     int client_fd;
     int passive_fd;
+    int data_fd;
     uint16_t port;
     uint32_t generation;
     char root[SOLAR_OS_STORAGE_PATH_MAX];
@@ -68,6 +82,7 @@ static ftpd_state_t ftpd = {
     .listen_fd = -1,
     .client_fd = -1,
     .passive_fd = -1,
+    .data_fd = -1,
 };
 static portMUX_TYPE ftpd_lock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -83,6 +98,9 @@ static void ftpd_close(int *fd)
 {
     if (fd != NULL && *fd >= 0) {
         (void)shutdown(*fd, SHUT_RDWR);
+        portENTER_CRITICAL(&ftpd_lock);
+        if (ftpd.data_fd == *fd) ftpd.data_fd = -1;
+        portEXIT_CRITICAL(&ftpd_lock);
         close(*fd);
         *fd = -1;
     }
@@ -291,7 +309,22 @@ static int ftpd_accept_data(void)
         .tv_usec = (FTPD_DATA_TIMEOUT_MS % 1000U) * 1000U,
     };
     const int ready = select(listener + 1, &readfds, NULL, NULL, &timeout);
-    int data_fd = ready > 0 ? accept(listener, NULL, NULL) : -1;
+    struct sockaddr_in peer = {0}, control_peer = {0};
+    socklen_t peer_len = sizeof(peer), control_len = sizeof(control_peer);
+    int data_fd = ready > 0 ? accept(listener, (struct sockaddr *)&peer, &peer_len) : -1;
+    if (data_fd >= 0 &&
+        (getpeername(ftpd.client_fd, (struct sockaddr *)&control_peer, &control_len) != 0 ||
+         peer.sin_addr.s_addr != control_peer.sin_addr.s_addr)) {
+        ftpd_close(&data_fd);
+    }
+    if (data_fd >= 0) {
+        struct timeval data_timeout = {.tv_sec = FTPD_DATA_TIMEOUT_MS / 1000U};
+        (void)setsockopt(data_fd, SOL_SOCKET, SO_RCVTIMEO, &data_timeout, sizeof(data_timeout));
+        (void)setsockopt(data_fd, SOL_SOCKET, SO_SNDTIMEO, &data_timeout, sizeof(data_timeout));
+    }
+    portENTER_CRITICAL(&ftpd_lock);
+    ftpd.data_fd = data_fd;
+    portEXIT_CRITICAL(&ftpd_lock);
     ftpd_close(&ftpd.passive_fd);
     return data_fd;
 }
@@ -712,6 +745,7 @@ static void ftpd_task(void *arg)
         if (ready <= 0) {
             if (ready < 0 && errno != EINTR && !ftpd_should_stop()) {
                 ftpd.last_error = ESP_FAIL;
+                break;
             }
             continue;
         }
@@ -785,7 +819,7 @@ static esp_err_t ftpd_parse_args(int argc,
                                  const char **username,
                                  const char **password)
 {
-    if (argc < 2 || argv == NULL || root == NULL || port == NULL ||
+    if (argc < 1 || argv == NULL || root == NULL || port == NULL ||
         username == NULL || password == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -841,6 +875,9 @@ static esp_err_t ftpd_open_listener(uint16_t port, int *listener)
 static esp_err_t ftpd_start(solar_os_context_t *ctx, int argc, char **argv)
 {
     (void)ctx;
+#if SOLAR_OS_FTP_PORT_TRANSPORT
+    sk_ftp_task_reap();
+#endif
     const char *root_arg = NULL;
     const char *username = NULL;
     const char *password = NULL;
@@ -942,12 +979,16 @@ static void ftpd_stop(solar_os_context_t *ctx)
     const int listener = ftpd.listen_fd;
     const int client = ftpd.client_fd;
     const int passive = ftpd.passive_fd;
+    const int data = ftpd.data_fd;
     portEXIT_CRITICAL(&ftpd_lock);
     if (listener >= 0) {
         (void)shutdown(listener, SHUT_RDWR);
     }
     if (client >= 0) {
         (void)shutdown(client, SHUT_RDWR);
+    }
+    if (data >= 0) {
+        (void)shutdown(data, SHUT_RDWR);
     }
     if (passive >= 0) {
         (void)shutdown(passive, SHUT_RDWR);
@@ -957,6 +998,10 @@ static void ftpd_stop(solar_os_context_t *ctx)
         const bool stopped = ftpd.task == NULL;
         portEXIT_CRITICAL(&ftpd_lock);
         if (stopped) {
+#if SOLAR_OS_FTP_PORT_TRANSPORT
+            vTaskDelay(1);
+            sk_ftp_task_reap();
+#endif
             break;
         }
         vTaskDelay(pdMS_TO_TICKS(25));
@@ -970,4 +1015,7 @@ const solar_os_job_t solar_os_ftpd_job = {
     .stop = ftpd_stop,
     .event = NULL,
     .worker_stack_bytes = FTPD_TASK_STACK,
+#if SOLAR_OS_FTP_PORT_TRANSPORT
+    .worker_stack_external = true,
+#endif
 };

@@ -30,6 +30,10 @@ static uint32_t file_stack_free;
 extern "C" void sk_audio_worker_begin(bool (*cancel)(void *), bool (*pause)(void *), void *user) {
     file_cancel=cancel; file_pause=pause; file_user=user;
     file_worker=xTaskGetCurrentTaskHandle();
+    // The generic external worker starts at priority 1. File decoding must
+    // share console/network priority so directory scans and FTP cannot starve
+    // it. The bounded PCM queue paces this producer; the feeder remains at 3.
+    vTaskPrioritySet(file_worker, 2);
 }
 extern "C" void sk_audio_worker_end() {
     file_stack_free=uxTaskGetStackHighWaterMark(nullptr)*sizeof(StackType_t);
@@ -114,6 +118,7 @@ static esp_err_t file_output_write(const int16_t *data,size_t frames) {
 // Console gate serializes diagnostics with app admission across all consoles.
 static bool diagnostic_busy;
 static bool monitor_capture;
+static unsigned mic_gain_db=20;
 extern "C" bool sk_audio_diagnostic_busy() { return diagnostic_busy; }
 #if SK_LCD_CONSOLE
 extern "C" bool sk_console_audio_busy();
@@ -250,7 +255,7 @@ static esp_err_t capture_start(bool buffered) {
     sk_audio_capture_stop();
     if (!monitor_capture) sk_audio_output_finish(false);
     if (!sk_i2c_lock(0)) return ESP_ERR_TIMEOUT;
-    bool ok = codec.inputSelect(AUDIO_INPUT_MIC) && codec.micGain(20);
+    bool ok = codec.inputSelect(AUDIO_INPUT_MIC) && codec.micGain(mic_gain_db);
     sk_i2c_unlock(0);
     if (!ok) return ESP_FAIL;
     auto *buffer = static_cast<CaptureBlock *>(solar_os_memory_alloc(
@@ -545,8 +550,8 @@ extern "C" void sk_audio_output_status() {
     sk_console_printf("SD capture buffer: allocated=%u peak=%u bytes; feeder stack free=%lu bytes\r\n",
         spool ? unsigned(spool_slots * sizeof(CaptureBlock)) : 0,
         unsigned(spool_peak * sizeof(CaptureBlock)), (unsigned long)feeder_stack_free);
-    sk_console_printf("Capture: mic gain=20dB blocks=%lu overruns=%lu\r\n",
-        (unsigned long)capture_blocks, (unsigned long)capture_drops);
+    sk_console_printf("Capture: mic gain=%udB blocks=%lu overruns=%lu\r\n",
+        mic_gain_db, (unsigned long)capture_blocks, (unsigned long)capture_drops);
 }
 extern "C" void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char **argv) {
     if (argc == 1 || (argc == 2 && !strcmp(argv[1], "status"))) {
@@ -595,5 +600,21 @@ extern "C" void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char
     } else {
         solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), "usage: audio [status|tone|off|mictest new.wav|monitor new.wav]");
     }
+}
+#endif
+
+#if SK_AUDIO_PLAYER
+extern "C" esp_err_t solar_os_audio_get_device_input_gain(const char *id, float *gain) {
+    if (!id || strcmp(id,"sgtl5000") || !gain) return ESP_ERR_INVALID_ARG;
+    *gain=mic_gain_db; return ESP_OK;
+}
+extern "C" esp_err_t solar_os_audio_set_device_input_gain(const char *id, float gain) {
+    if (!id || strcmp(id,"sgtl5000") || !(gain>=0 && gain<=63)) return ESP_ERR_INVALID_ARG;
+    if (!ready) return ESP_ERR_NOT_FOUND;
+    if (!sk_i2c_lock(0)) return ESP_ERR_TIMEOUT;
+    bool ok=codec.micGain(unsigned(gain));
+    sk_i2c_unlock(0);
+    if(ok)mic_gain_db=unsigned(gain);
+    return ok?ESP_OK:ESP_FAIL;
 }
 #endif

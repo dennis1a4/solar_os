@@ -33,10 +33,27 @@
 #include "solar_os_tui.h"
 #include "solar_os_tui_widgets.h"
 
+#if SOLAR_OS_PLATFORM_IMXRT1062
+#include "audio_output.h"
+// Port logs go straight to USB and would corrupt the active terminal screen.
+// Errors are displayed by the recorder UI; retain compile-time format checking.
+#undef SOLAR_OS_LOGI
+#undef SOLAR_OS_LOGW
+#define SOLAR_OS_LOGI(...) do { if (false) solar_os_log_write(SOLAR_OS_LOG_LEVEL_INFO, __VA_ARGS__); } while (0)
+#define SOLAR_OS_LOGW(...) do { if (false) solar_os_log_write(SOLAR_OS_LOG_LEVEL_WARN, __VA_ARGS__); } while (0)
+#define RECORDER_TASK_STACK 32768U
+#define solar_os_task_create_pinned_internal solar_os_task_create_pinned_external
+#define solar_os_task_delete_internal solar_os_task_delete_external
+#else
 #define RECORDER_TASK_STACK 8192U
+#endif
 #define RECORDER_TASK_PRIORITY (tskIDLE_PRIORITY + 2U)
 #define RECORDER_TICK_MS 40U
+#if SOLAR_OS_PLATFORM_IMXRT1062
+#define RECORDER_VISUAL_REFRESH_MS 250U
+#else
 #define RECORDER_VISUAL_REFRESH_MS 40U
+#endif
 #define RECORDER_INPUT_REFRESH_MS 1000U
 #define RECORDER_TICK_DEADLINE_MS 120U
 #define RECORDER_WORKER_POLL_MS 20U
@@ -54,7 +71,9 @@
 #define RECORDER_SETTINGS_VERSION 1U
 #define RECORDER_SETTINGS_DIR ".recorder"
 #define RECORDER_SETTINGS_FILE "settings.bin"
+#if !SOLAR_OS_PLATFORM_IMXRT1062
 SOLAR_OS_TASK_REQUIRE_FOREGROUND_STACK(RECORDER_TASK_STACK);
+#endif
 
 typedef enum { RECORDER_MODE_TUI, RECORDER_MODE_GRAPHICS } recorder_mode_t;
 typedef enum {
@@ -175,6 +194,9 @@ static const uint32_t recorder_sample_rates[] = {
 
 static void recorder_log_internal_memory(const char *phase, uint32_t baseline)
 {
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    (void)phase; (void)baseline;
+#else
     const uint32_t free_now = (uint32_t)heap_caps_get_free_size(
         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     const uint32_t largest = (uint32_t)heap_caps_get_largest_free_block(
@@ -184,6 +206,7 @@ static void recorder_log_internal_memory(const char *phase, uint32_t baseline)
                   " delta=%" PRId32 " largest=%" PRIu32,
                   phase, free_now, (int32_t)free_now - (int32_t)baseline,
                   largest);
+#endif
 }
 
 static bool recorder_sample_rate_valid(uint32_t sample_rate)
@@ -201,8 +224,13 @@ static esp_err_t recorder_settings_path(bool create_directory,
                                         char *path, size_t path_len)
 {
     char directory[SOLAR_OS_STORAGE_PATH_MAX];
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    esp_err_t err = solar_os_storage_join_path(
+        "/sd", RECORDER_SETTINGS_DIR, directory, sizeof(directory));
+#else
     esp_err_t err = solar_os_storage_default_path(
         RECORDER_SETTINGS_DIR, directory, sizeof(directory));
+#endif
     if (err != ESP_OK) {
         return err;
     }
@@ -223,7 +251,11 @@ static bool recorder_settings_directory_valid(const char *directory)
     struct stat info;
     return solar_os_storage_path_mount_point(
                directory, stored_root, sizeof(stored_root)) == ESP_OK &&
+#if SOLAR_OS_PLATFORM_IMXRT1062
+        (!strcmp(stored_root, "/sd") || !strcmp(stored_root, "/flash") || !strcmp(stored_root, "/tmp")) &&
+#else
         strcmp(stored_root, solar_os_storage_mount_point()) == 0 &&
+#endif
         stat(directory, &info) == 0 && S_ISDIR(info.st_mode);
 }
 
@@ -426,6 +458,23 @@ static void recorder_refresh_gain(void)
 
 static void recorder_refresh_inputs(void)
 {
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    recorder.input_count = 1;
+    recorder.input_index = 0;
+    recorder_input_t *input = &recorder.inputs[0];
+    memset(input, 0, sizeof(*input));
+    strlcpy(input->stream.id, "mic", sizeof(input->stream.id));
+    strlcpy(input->stream.summary, "SGTL5000 microphone", sizeof(input->stream.summary));
+    input->stream.audio = (solar_os_stream_audio_format_t){
+        .sample_format=SOLAR_OS_STREAM_AUDIO_S16_LE,
+        .sample_rate=44100, .channels=1, .bits_per_sample=16};
+    input->has_device = true;
+    strlcpy(input->device.id, "sgtl5000", sizeof(input->device.id));
+    input->device.capabilities = SOLAR_OS_AUDIO_DEVICE_CAP_INPUT | SOLAR_OS_AUDIO_DEVICE_CAP_INPUT_GAIN;
+    input->device.input_gain_min_db=0; input->device.input_gain_max_db=63;
+    input->device.input_gain_step_db=1;
+    strlcpy(recorder.preferred_input_id, "mic", sizeof(recorder.preferred_input_id));
+#else
     char selected[SOLAR_OS_STREAM_ID_MAX] = "";
     if (recorder.preferred_input_id[0] != '\0') {
         strlcpy(selected, recorder.preferred_input_id, sizeof(selected));
@@ -476,6 +525,7 @@ static void recorder_refresh_inputs(void)
                 recorder.inputs[recorder.input_index].stream.id,
                 sizeof(recorder.preferred_input_id));
     }
+#endif
     recorder_refresh_gain();
 }
 
@@ -606,6 +656,10 @@ static void recorder_worker(void *arg)
 {
     (void)arg;
     const recorder_work_t work = recorder.work;
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    sk_audio_worker_begin(recorder_cancel_callback,
+        work == RECORDER_WORK_PLAY ? recorder_pause_callback : NULL, NULL);
+#else
     const char *capture_id = recorder.input_index < recorder.input_count ?
         recorder.inputs[recorder.input_index].stream.id : "-";
     SOLAR_OS_LOGI(TAG,
@@ -616,6 +670,7 @@ static void recorder_worker(void *arg)
                   recorder.sample_rate, (unsigned)recorder.channels,
                   (unsigned)recorder.bits_per_sample,
                   (unsigned)recorder.volume);
+#endif
     solar_os_audio_wav_info_t info = {0};
     const solar_os_audio_wav_options_t options = {
         .owner = "recorder",
@@ -648,9 +703,12 @@ static void recorder_worker(void *arg)
         err = solar_os_audio_play_wav(
             recorder.active_path, recorder.volume, &options, &info);
     }
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    sk_audio_worker_end();
+#else
     const uint32_t stack_free =
         (uint32_t)uxTaskGetStackHighWaterMark(NULL);
-    const bool stopped = recorder.stop_requested || err == ESP_ERR_TIMEOUT;
+    const bool stopped = err == ESP_ERR_TIMEOUT;
     if (err == ESP_OK || stopped) {
         SOLAR_OS_LOGI(TAG,
                       "%s worker ended ret=%s bytes=%" PRIu32
@@ -664,13 +722,14 @@ static void recorder_worker(void *arg)
                       recorder_work_name(work), esp_err_to_name(err),
                       info.data_bytes, info.duration_ms, stack_free);
     }
+#endif
     portENTER_CRITICAL(&recorder_lock);
     recorder.elapsed_ms = info.duration_ms;
     recorder.data_bytes = info.data_bytes;
     recorder.worker_error = err;
     recorder.natural_completion = err == ESP_OK && !recorder.stop_requested;
     recorder.operation_state =
-        err == ESP_OK || recorder.stop_requested || err == ESP_ERR_TIMEOUT ?
+        err == ESP_OK || err == ESP_ERR_TIMEOUT ?
         RECORDER_IDLE : RECORDER_ERROR;
     if (recorder.operation_state == RECORDER_ERROR) {
         const char *operation = work == RECORDER_WORK_RECORD ?
@@ -693,8 +752,12 @@ static void recorder_reap_finished(void)
     if (recorder.task == NULL || !recorder.task_done) {
         return;
     }
+    while (!solar_os_task_wait_done(recorder.task, &recorder.task_done, SOLAR_OS_TASK_STOP_WAIT_MS)) vTaskDelay(1);
     solar_os_task_delete_internal(recorder.task);
     recorder.task = NULL;
+    // A fast failure can arrive while the initial TUI paint is yielding.
+    // Repaint after joining so that paint cannot consume the error redraw.
+    recorder.redraw = true;
     recorder.stop_requested = false;
     recorder.paused = false;
     if (recorder.work == RECORDER_WORK_MONITOR) {
@@ -725,13 +788,15 @@ static void recorder_stop_worker(void)
         }
     }
     if (task != NULL) {
+        while (!solar_os_task_wait_done(task, &recorder.task_done, SOLAR_OS_TASK_STOP_WAIT_MS)) vTaskDelay(1);
         solar_os_task_delete_internal(task);
     }
     recorder.task = NULL;
     recorder.task_done = true;
     recorder.stop_requested = false;
     recorder.paused = false;
-    recorder.operation_state = RECORDER_IDLE;
+    recorder.operation_state = recorder.worker_error == ESP_OK ||
+        recorder.worker_error == ESP_ERR_TIMEOUT ? RECORDER_IDLE : RECORDER_ERROR;
     recorder.redraw = true;
     if (recorder.browser != NULL) {
         (void)solar_os_storage_browser_refresh(recorder.browser);
@@ -780,7 +845,9 @@ static esp_err_t recorder_start_worker(recorder_work_t work,
                   recorder.input_index < recorder.input_count ?
                     recorder.inputs[recorder.input_index].stream.id : "-",
                   path != NULL ? path : "-");
-    /* Capture and file I/O can cross cache-disabled regions, so this resumable
+    /* The Teensy adapter above uses an external worker stack; its storage
+     * path does not require an internal execution stack.
+     * Capture and file I/O on ESP can cross cache-disabled regions, so this resumable
      * transport keeps its stack in internal SRAM. It is user-started foreground
      * work for admission purposes even though it continues while the UI is
      * suspended. Durable app, browser, widget, and PCM-buffer state remains
@@ -801,7 +868,7 @@ static esp_err_t recorder_start_worker(recorder_work_t work,
                       recorder_work_name(work));
         return ESP_ERR_NO_MEM;
     }
-    SOLAR_OS_LOGI(TAG, "%s task accepted stack=%u internal",
+    SOLAR_OS_LOGI(TAG, "%s task accepted stack=%u bytes",
                   recorder_work_name(work), (unsigned)RECORDER_TASK_STACK);
     return ESP_OK;
 }
@@ -955,6 +1022,13 @@ static void recorder_cycle_rate(int direction)
 
 static void recorder_setup_adjust(int direction)
 {
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    if (recorder.setup_cursor >= 3U && recorder.setup_cursor <= 5U) {
+        recorder_set_message("Teensy capture: 44100 Hz, mono, 16-bit");
+        recorder.redraw = true;
+        return;
+    }
+#endif
     switch (recorder.setup_cursor) {
     case 2U: recorder_cycle_input(direction); break;
     case 3U:
@@ -1607,7 +1681,12 @@ static bool recorder_handle_key(solar_os_context_t *ctx, uint8_t key)
 static esp_err_t recorder_set_initial_path(const char *argument)
 {
     if (recorder.directory[0] == '\0') {
-        strlcpy(recorder.directory, solar_os_storage_mount_point(),
+        strlcpy(recorder.directory,
+#if SOLAR_OS_PLATFORM_IMXRT1062
+                "/sd",
+#else
+                solar_os_storage_mount_point(),
+#endif
                 sizeof(recorder.directory));
     }
     if (argument == NULL || argument[0] == '\0') {
@@ -1616,6 +1695,12 @@ static esp_err_t recorder_set_initial_path(const char *argument)
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     esp_err_t err = solar_os_storage_resolve_path(argument, path, sizeof(path));
     if (err != ESP_OK) return err;
+    struct stat info;
+    if (stat(path, &info) == 0 && S_ISDIR(info.st_mode)) {
+        strlcpy(recorder.directory, path, sizeof(recorder.directory));
+        recorder.filename[0] = '\0';
+        return ESP_OK;
+    }
     char *slash = strrchr(path, '/');
     if (slash == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -1634,6 +1719,9 @@ static esp_err_t recorder_start(solar_os_context_t *ctx)
 {
     const int argc = solar_os_context_argc(ctx);
     bool force_tui = false;
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    force_tui = true;
+#endif
     const char *path_arg = NULL;
     for (int i = 1; i < argc; i++) {
         const char *arg = solar_os_context_argv(ctx, i);
@@ -1654,8 +1742,12 @@ static esp_err_t recorder_start(solar_os_context_t *ctx)
             SOLAR_OS_APP_CLASS_GUI : SOLAR_OS_APP_CLASS_TUI);
     if (!solar_os_storage_is_mounted()) return ESP_ERR_INVALID_STATE;
     if (recorder_state != NULL) return ESP_ERR_INVALID_STATE;
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    const uint32_t internal_before = 0;
+#else
     const uint32_t internal_before = (uint32_t)heap_caps_get_free_size(
         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#endif
 #if SOLAR_OS_BOARD_HAS_PSRAM
     const solar_os_memory_class_t state_memory =
         SOLAR_OS_MEMORY_EXTERNAL_REQUIRED;
@@ -1684,6 +1776,9 @@ static esp_err_t recorder_start(solar_os_context_t *ctx)
     recorder.volume = status.volume <= 100U ? status.volume : 50U;
     recorder.visualizer = RECORDER_VISUALIZER_CASSETTE;
     const bool settings_loaded = recorder_load_settings();
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    recorder.sample_rate=44100; recorder.channels=1; recorder.bits_per_sample=16;
+#endif
     esp_err_t err = recorder_set_initial_path(path_arg);
     if (err != ESP_OK) goto fail_state;
     recorder_refresh_inputs();
@@ -1864,7 +1959,11 @@ const solar_os_app_t solar_os_recorder_app = {
     .name = "recorder",
     .summary = "interactive WAV recorder",
     .app_class = SOLAR_OS_APP_CLASS_TUI,
-    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE
+#if SOLAR_OS_PLATFORM_IMXRT1062
+        | SOLAR_OS_APP_FLAG_BACKGROUND_TICKS
+#endif
+        ,
     .start = recorder_start,
     .suspend = recorder_suspend,
     .resume = recorder_resume,
@@ -1874,5 +1973,9 @@ const solar_os_app_t solar_os_recorder_app = {
     .tick_interval_ms = RECORDER_TICK_MS,
     .tick_deadline_ms = RECORDER_TICK_DEADLINE_MS,
     .worker_stack_bytes = RECORDER_TASK_STACK,
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    .worker_stack_external = true,
+#else
     .worker_stack_external = false,
+#endif
 };

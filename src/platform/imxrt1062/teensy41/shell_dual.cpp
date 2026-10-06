@@ -223,7 +223,7 @@ static esp_err_t terminal_read(void *,uint8_t *data,size_t length,uint32_t timeo
     } while(true);
 }
 static bool audio_app(const solar_os_app_t *app) {
-    return app && (!strcmp(app->name,"player") || !strcmp(app->name,"webradio") || !strcmp(app->name,"synth") || !strcmp(app->name,"aplay") || !strcmp(app->name,"arecord"));
+    return app && (!strcmp(app->name,"recorder") || !strcmp(app->name,"player") || !strcmp(app->name,"webradio") || !strcmp(app->name,"synth") || !strcmp(app->name,"aplay") || !strcmp(app->name,"arecord"));
 }
 static bool console_has_audio(const Console &c);
 #if SK_AUDIO_PLAYER
@@ -294,6 +294,9 @@ extern "C" bool solar_os_shell_completion_runtime(const solar_os_completion_requ
         if(!emit(sink,id))return false;
     }
     if(r->kind==SOLAR_OS_COMPLETE_JOB) {
+#if SK_FTP
+        if(!emit(sink,"ftpd"))return false;
+#endif
         for(unsigned i=0;i<4;++i)
             if(script_jobs[i].pending || script_jobs[i].file)
                 if(!emit(sink,script_names[i]))return false;
@@ -572,7 +575,8 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
         else if(!strcmp(argv[2],"tab")) sk_usb_inject("\t");
         else if(!strcmp(argv[2],"space")) sk_usb_inject(" ");
         else if(!strcmp(argv[2],"enter")) sk_usb_inject("\r");
-        else { solar_os_shell_io_writeln(io,"usage: lcd key exit|ctrlc|ctrlz|esc|up|down|left|right|home|end|tab|space|enter"); return; }
+        else if(strlen(argv[2])==1) sk_usb_inject(argv[2]);
+        else { solar_os_shell_io_writeln(io,"usage: lcd key exit|ctrlc|ctrlz|esc|up|down|left|right|home|end|tab|space|enter|CHAR"); return; }
         solar_os_shell_io_writeln(io,"Queued for LCD session.");
     } else {
         solar_os_shell_io_printf(io,"LCD %ux%u, font %ux, color %s on %s; local consoles: usb and lcd; current=%s; keyboard=%s\n",

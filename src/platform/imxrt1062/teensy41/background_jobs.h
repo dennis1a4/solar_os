@@ -121,16 +121,26 @@ static void script_stop_##N(solar_os_context_t *){job_cleanup(N);} \
 static bool script_event_##N(solar_os_context_t *,const solar_os_event_t *){return script_tick(N);}
 SCRIPT_CALLBACKS(0) SCRIPT_CALLBACKS(1) SCRIPT_CALLBACKS(2) SCRIPT_CALLBACKS(3)
 #undef SCRIPT_CALLBACKS
-#define SCRIPT_JOB(N) {script_names[N],"cooperative shell script",SOLAR_OS_JOB_KIND_BACKGROUND,script_start_##N,script_stop_##N,script_event_##N,0,false,25,25,nullptr,nullptr}
+#define SCRIPT_JOB(N) {script_names[N],"cooperative shell script",SOLAR_OS_JOB_KIND_BACKGROUND,script_start_##N,script_stop_##N,script_event_##N,0,false,25,25,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr}
 static const solar_os_job_t script_descriptors[]={SCRIPT_JOB(0),SCRIPT_JOB(1),SCRIPT_JOB(2),SCRIPT_JOB(3)};
 #undef SCRIPT_JOB
+#if SK_FTP
+extern "C" {
+#include "jobs/solar_os_ftpd_job.h"
+void sk_ftp_task_reap(void);
+}
+#endif
 static const solar_os_job_registry_entry_t script_registry[]={
     {"script0","background script slot 0",&script_descriptors[0]},
     {"script1","background script slot 1",&script_descriptors[1]},
     {"script2","background script slot 2",&script_descriptors[2]},
-    {"script3","background script slot 3",&script_descriptors[3]}};
-extern "C" size_t solar_os_job_registry_count(){return 4;}
-extern "C" const solar_os_job_registry_entry_t *solar_os_job_registry_get(size_t i){return i<4?&script_registry[i]:nullptr;}
+    {"script3","background script slot 3",&script_descriptors[3]},
+#if SK_FTP
+    {"ftpd","FTP file server",&solar_os_ftpd_job},
+#endif
+};
+extern "C" size_t solar_os_job_registry_count(){return sizeof(script_registry)/sizeof(script_registry[0]);}
+extern "C" const solar_os_job_registry_entry_t *solar_os_job_registry_get(size_t i){return i<solar_os_job_registry_count()?&script_registry[i]:nullptr;}
 extern "C" const solar_os_job_registry_entry_t *solar_os_job_registry_find(const char *name){for(auto &e:script_registry)if(name && !strcmp(name,e.name))return &e;return nullptr;}
 static esp_err_t enqueue_script(const char *path) {
     for(unsigned i=0;i<4;++i) {
@@ -144,6 +154,10 @@ static esp_err_t enqueue_script(const char *path) {
 }
 static void print_job(solar_os_shell_io_t *io,unsigned i) {
     solar_os_job_status_t state;if(!solar_os_jobs_get(i,&state))return;
+    if(i>=4) {
+        solar_os_shell_io_printf(io,"%s %s result=%s\n",script_registry[i].name,
+            solar_os_job_state_name(state.state),esp_err_to_name(state.last_error));return;
+    }
     auto &j=script_jobs[i];
     const char *label=state.last_error!=ESP_OK?"failed":state.state==SOLAR_OS_JOB_RUNNING?
         (j.pending?"queued":j.wake_ms>solar_os_time_uptime_ms()?"waiting":"running"):solar_os_job_state_name(state.state);
@@ -154,13 +168,28 @@ extern "C" void solar_os_shell_cmd_jobs(solar_os_context_t *ctx,int argc,char **
     auto *io=solar_os_context_shell_io(ctx);
     if(argc!=1){solar_os_shell_io_writeln(io,"usage: jobs");return;}
     process_list(io);
-    for(unsigned i=0;i<4;++i)print_job(io,i);
+    for(unsigned i=0;i<solar_os_job_registry_count();++i)print_job(io,i);
 }
 extern "C" void solar_os_shell_cmd_job(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);
     if(process_command(ctx,argc,argv))return;
     if(argc==2 && !strcmp(argv[1],"status")){solar_os_shell_cmd_jobs(ctx,1,argv);return;}
-    if(argc<3){solar_os_shell_io_writeln(io,"usage: job start script[0-3] /path.sh | job status|stop|output scriptN");return;}
+    if(argc<3){solar_os_shell_io_writeln(io,"usage: job start script[0-3] /path.sh | job start ftpd ROOT [PORT] [--user USER --password PASSWORD] | job status|stop NAME | job output scriptN");return;}
+#if SK_FTP
+    if(!strcmp(argv[2],"ftpd")) {
+        esp_err_t err=ESP_ERR_INVALID_ARG;
+        if(!strcmp(argv[1],"start") && argc>=4) {
+            char path[SOLAR_OS_STORAGE_PATH_MAX];
+            err=solar_os_shell_resolve_path(ctx,argv[3],path,sizeof(path));
+            if(err==ESP_OK) {
+                char *saved=argv[3];argv[3]=path;
+                err=solar_os_jobs_start(ctx,"ftpd",argc-3,argv+3);argv[3]=saved;
+            }
+        } else if(!strcmp(argv[1],"stop") && argc==3)err=solar_os_jobs_stop(ctx,"ftpd");
+        else if(!strcmp(argv[1],"status") && argc==3){print_job(io,4);return;}
+        solar_os_shell_io_printf(io,"ftpd: %s\n",esp_err_to_name(err));return;
+    }
+#endif
     int slot=-1;for(unsigned i=0;i<4;++i)if(!strcmp(argv[2],script_names[i]))slot=int(i);
     if(argc==4 && !strcmp(argv[1],"start")) {
         char path[SOLAR_OS_SCHEDULE_VALUE_MAX];
@@ -172,7 +201,7 @@ extern "C" void solar_os_shell_cmd_job(solar_os_context_t *ctx,int argc,char **a
         }
         solar_os_shell_io_printf(io,"job start: %s\n",esp_err_to_name(err));return;
     }
-    if(argc!=3 || slot<0){solar_os_shell_io_writeln(io,"job: expected script0, script1, script2 or script3");return;}
+    if(argc!=3 || slot<0){solar_os_shell_io_writeln(io,"job: expected script0, script1, script2, script3 or ftpd");return;}
     if(!strcmp(argv[1],"status"))print_job(io,unsigned(slot));
     else if(!strcmp(argv[1],"output"))solar_os_shell_io_writeln(io,script_jobs[slot].output);
     else if(!strcmp(argv[1],"stop"))solar_os_shell_io_printf(io,"job stop: %s\n",esp_err_to_name(solar_os_jobs_stop(ctx,script_names[slot])));
@@ -194,7 +223,13 @@ static void background_begin() {
 static void background_run(void *) {
     xSemaphoreTakeRecursive(console_gate,portMAX_DELAY);
     while(true) {
+#if SK_FTP
+        sk_ftp_task_reap();
+#endif
         if(sk_power_cleaning()) {
+#if SK_FTP
+            solar_os_jobs_stop(nullptr,"ftpd");
+#endif
             for(unsigned i=0;i<4;++i)if(script_jobs[i].file || script_jobs[i].pending || script_jobs[i].console.shell)job_finish(i,ESP_OK);
         } else if(!sk_power_requested())solar_os_jobs_tick(nullptr,uint32_t(solar_os_time_uptime_ms()));
         background_console=nullptr;console_yield();

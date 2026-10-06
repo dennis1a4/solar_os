@@ -71,6 +71,7 @@ static constexpr uint32_t worker_stack_limit=7168*sizeof(StackType_t);
 static StackType_t *worker_stack;
 static StaticTask_t worker_tcb;
 static TaskHandle_t worker;
+static volatile bool worker_finished;
 #if SK_BACKGROUND_JOBS
 static constexpr uint32_t process_stack_limit=10240*sizeof(StackType_t);
 static StackType_t *process_stack;
@@ -108,7 +109,7 @@ extern "C" void solar_os_task_delete_external(TaskHandle_t task) {
     configASSERT(false);
 }
 static void reap() {
-    if (worker && eTaskGetState(worker)==eSuspended) { vTaskDelete(worker); worker=nullptr; solar_os_memory_free(worker_stack); worker_stack=nullptr; }
+    if (worker && worker_finished && eTaskGetState(worker)==eSuspended) { vTaskDelete(worker); worker=nullptr; solar_os_memory_free(worker_stack); worker_stack=nullptr; }
 }
 extern "C" bool solar_os_task_admit(const char *,uint32_t bytes,solar_os_task_role_t role,bool external) {
     if(external){
@@ -121,7 +122,7 @@ extern "C" bool solar_os_task_admit(const char *,uint32_t bytes,solar_os_task_ro
     if(role==SOLAR_OS_TASK_ROLE_BACKGROUND)return !external && bytes<=process_stack_limit && !process_worker;
 #endif
     return !bytes || (!external && bytes<=worker_stack_limit &&
-        (!worker || eTaskGetState(worker)==eSuspended));
+        (!worker || (worker_finished && eTaskGetState(worker)==eSuspended)));
 }
 extern "C" BaseType_t solar_os_task_create_pinned_internal(TaskFunction_t fn,const char *name,
     uint32_t bytes,void *arg,UBaseType_t priority,TaskHandle_t *out,BaseType_t,solar_os_task_role_t role) {
@@ -137,6 +138,7 @@ extern "C" BaseType_t solar_os_task_create_pinned_internal(TaskFunction_t fn,con
     }
 #endif
     if (worker || !bytes || bytes>worker_stack_limit || !out) return pdFAIL;
+    worker_finished=false;
     // App priorities originate on ESP. On this single-core port the USB
     // console and Ethernet owner run at priority 2: foreground workers must
     // stay below them so a CPU/storage-bound operation can still be cancelled.
@@ -149,6 +151,7 @@ extern "C" BaseType_t solar_os_task_create_pinned_internal(TaskFunction_t fn,con
 }
 extern "C" void solar_os_task_delete_internal(TaskHandle_t task) {
     configASSERT(!task || task==xTaskGetCurrentTaskHandle());
+    if(xTaskGetCurrentTaskHandle()==worker)worker_finished=true;
     for (;;) vTaskSuspend(nullptr);
 }
 extern "C" bool solar_os_task_wait_done(TaskHandle_t task,volatile bool *done,uint32_t timeout) {

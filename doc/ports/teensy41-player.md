@@ -65,7 +65,8 @@ their previous behavior. Shutdown/disconnect still owns cleanup.
 Folder paths and an ordering array live in PSRAM, growing from 16 to at most
 512 path slots (160 bytes each), plus two bytes per track. The folder has no
 persistent state and retains no open directory or per-track file handles.
-The decoder has an on-demand 32 KiB PSRAM stack and its existing PSRAM decode
+The decoder runs at priority 2 alongside the consoles and Ethernet worker,
+with backpressure from its bounded PCM queue. It has an on-demand 32 KiB PSRAM stack and its existing PSRAM decode
 buffers, plus a 128 KiB decoded-PCM queue. A priority-3 feeder with a 2 KiB
 internal stack supplies the 16 KiB internal PCM ring independently of decoder/UI
 scheduling. It primes half the PSRAM queue before playback (or primes at EOF for

@@ -126,9 +126,9 @@ static bool console_has_audio(const Console &c) {
 #if SK_AUDIO_PLAYER
 extern "C" bool sk_console_recorder_busy() {
     auto has_recorder=[](const Console &c) {
-        for(auto *f=c.frame;f;f=f->parent)if(!strcmp(f->app->name,"arecord"))return true;
+        for(auto *f=c.frame;f;f=f->parent)if((!strcmp(f->app->name,"arecord") || !strcmp(f->app->name,"recorder")))return true;
         for(auto *head:c.retained)
-            for(auto *f=head;f;f=f->parent)if(!strcmp(f->app->name,"arecord"))return true;
+            for(auto *f=head;f;f=f->parent)if((!strcmp(f->app->name,"arecord") || !strcmp(f->app->name,"recorder")))return true;
         return false;
     };
     for(auto &c:consoles)if(has_recorder(c))return true;

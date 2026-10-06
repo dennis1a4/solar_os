@@ -9,6 +9,14 @@ now lists fixed consoles and retained app chains. `Ctrl+Z` suspends a resumable
 app, `fg [ID]` resumes it and `close ID` discards its state. See
 [retained sessions](teensy41-sessions.md).
 
+**Recorder:** `recorder /sd/take.wav` provides microphone recording, pause,
+playback and background capture. See [controls and limits](teensy41-recorder.md).
+
+**FTP:** the shared two-pane `ftp` client and `job start ftpd ROOT [PORT]`
+server are available in the display profiles. See [usage and validation](teensy41-ftp.md).
+FTP is installed and live-tested on the legacy bench wiring, including client/server
+transfers, cleanup, network recovery and Telnet/Python coexistence.
+
 **Network diagnostics:** `ping`, bounded TCP `netscan`, and `ntp` now run on
 native Ethernet. `ntp -q` queries time; `ntp` sets UTC without changing the
 saved timezone. See [usage and limits](teensy41-network-diagnostics.md).

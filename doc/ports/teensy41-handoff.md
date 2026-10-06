@@ -4,6 +4,66 @@ Updated 2026-10-05. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## FTP/player halt and audio scheduling fixes — 2026-10-05
+
+Installed on the unchanged legacy wiring; USB currently `/dev/ttyACM0`, Ethernet
+`192.168.1.197`. Reproduced a firmware halt during FTP server cleanup with MP3
+playback retained: `solar_os_task_delete_external` asserted that its task was
+suspended. FTP and shared foreground-worker reapers now require explicit worker
+completion, rather than relying on a scheduler-state snapshot alone.
+
+The file decoder now shares priority 2 with the consoles/network, with its bounded
+PCM queue providing backpressure; the feeder remains priority 3. This addresses
+audio underruns reproduced during FTP directory scans and transfers. Failed FTP
+handshakes close directly without waiting for an extra QUIT reply, and report
+clear timeout/invalid-response errors.
+
+Live MP3 plus FTP client/server validation passed byte-exact 66,317-byte download
+and 33,547-byte upload, file operations, ten reconnect cycles with exact heap
+recovery, 45 ms cancellation, and five server start/stop cycles. Zero audio
+underruns throughout; final SD handles zero. Host FTP sanitizer, worker-lifetime,
+player-controls and audio-memory tests pass.
+Ten USB launches from the large `/sd` directory also passed during playback.
+Refused connections, early server EOF, silent-server timeout (10.615 seconds)
+and cancellation passed with zero underruns on the installed image.
+
+Build: RAM1 432,832, RAM2 187,256, flash 1,523,204 bytes. Installed HEX SHA256:
+`7ff95c2a51ca383efe4a67f73713f8e6bcad1559795ef3c1f12797bfbeaf5021`.
+Artifacts: `../solar_os-baselines/2026-10-05-ftp-player/`.
+See [FTP follow-up](teensy41-ftp.md#playback-and-connection-failure-follow-up--2026-10-05).
+
+## Initial FTP client/server installation — 2026-10-05
+
+Installed on unchanged `teensy41_telnet_legacy` bench wiring. The board is visible
+as `/dev/ttyACM1` outside the sandbox; the earlier absence was a sandbox visibility
+issue. Native Ethernet used `192.168.1.197` during acceptance.
+
+`ftp` opens the shared two-pane client. `job start ftpd /sd/share 2121
+--user USER --password PASSWORD` exports an existing directory; `job status ftpd`
+and `job stop ftpd` manage it. Passive IPv4, binary transfers, optional password
+login, staged writes, cancellable socket/DNS waits and independent FTP/Telnet
+listeners are integrated. FTP is unencrypted; no FTPS/SFTP support.
+
+Live server acceptance passed authentication, binary/empty files, PASV/EPSV,
+listings and file operations, confinement, stalled-upload stop with original-file
+preservation, ten lifecycle cycles with exact warmed heap recovery, and network
+down/up recovery. The TUI client passed byte-exact transfers against independent
+pyftpdlib, remote mkdir/delete, ten connect/exit cycles with exact heap recovery,
+and 22 ms cancellation of a stalled greeting. Client and server ran together.
+
+A 131,328-byte round trip passed alongside Telnet and Python; port conflicts were
+rejected in both directions. The 16 KiB PSRAM server stack retained 10,368 bytes
+minimum free. `poweroff --check` stopped FTP before storage synchronization and
+left power on; subsequent FTP restart passed. All fixtures were removed, all
+test services stopped, SD has zero open handles, and no retained app sessions
+remain. Final idle heap: 368,316 internal / 8,123,328 PSRAM bytes.
+
+Build: RAM1 432,832, RAM2 187,256, flash 1,522,464 bytes. Installed HEX SHA256:
+`3b38b1944194aabac1e625851e23cd5cdf2f8ff54776d8d1648c516e52834ebe`.
+Firmware and live evidence are beside the repo in `solar_os-baselines/2026-10-05-ftp/`.
+Host sanitizer, jobs/scheduler, Telnet and manual tests passed before flashing.
+See [FTP notes](teensy41-ftp.md) for commands, evidence and remaining coverage limits.
+
 ## Folder player and editing during playback — 2026-10-05
 
 Installed on the unchanged `teensy41_telnet_legacy` bench wiring. The shared
@@ -891,3 +951,28 @@ pin for CTS on the bench. Firmware still supports none/XON-XOFF only. Final
 RTS/CTS integration must resolve XBAR polarity, arbitrate the shared I2C2 bus
 and the CS pin, and pass physical jumper/flow tests. See PCB review notes and
 the master checklist. No firmware rebuild/upload accompanied this change.
+
+## 2026-10-06: interactive recorder installed
+
+`recorder [DIRECTORY|FILE.wav]` is enabled in display profiles, with a TUI on
+LCD/USB/Telnet and an embedded `man recorder` page. It captures SGTL5000 mic
+audio as 44.1 kHz mono 16-bit WAV, supports pause, monitor, replay, gain setup
+and retained background recording. Settings use `/sd/.recorder/settings.bin`;
+default recordings go to `/sd`. Native format fields are fixed.
+
+The worker uses the existing external-task and audio callback adapters, avoiding
+console polling from worker context. Completion is joined before deletion.
+Capture drains/discards paused input, reports progress, and finalizes partial
+WAVs on cancellation. Save errors are retained even on requested stop. The
+reaper forces a redraw for immediate failures, and recorder diagnostics cannot
+corrupt the USB TUI. Audio admission now includes retained recorder sessions.
+
+Final legacy firmware HEX SHA256:
+`a1e1d3fc0d98a5a06bb85e39d5ef72963b7ea5f1649222a9cefb4b82290a01d0`.
+RAM1 432832, RAM2 187256, flash 1538244 bytes. Artifact directory:
+`../solar_os-baselines/2026-10-06-recorder/`. LCD/background and USB acceptance
+passed on this exact firmware: valid WAV, pause, remote close, replay, monitoring,
+gain controls, file protection/error display and three repeated memory-recovery
+cycles, with zero capture overruns and output underruns. Host audio ring, task
+lifetime and recorder ASan/UBSan transport tests passed. See
+[recorder documentation](teensy41-recorder.md) for controls and test commands.

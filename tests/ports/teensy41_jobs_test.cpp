@@ -16,6 +16,7 @@ extern "C" {
 #include "solar_os_schedule.h"
 #include "solar_os_memory.h"
 #include "solar_os_time.h"
+#include "solar_os_storage.h"
 }
 #define EXTMEM
 #define DMAMEM
@@ -35,6 +36,8 @@ extern "C" TaskHandle_t xTaskGetCurrentTaskHandle(){return background_task;}
 extern "C" void vTaskDelay(uint32_t ms){clock_ms+=ms;}
 static void xSemaphoreTakeRecursive(int,unsigned){}
 static void console_yield(){}
+static bool sk_power_cleaning(){return false;}
+static bool sk_power_requested(){return false;}
 extern "C" uint64_t solar_os_time_uptime_ms(){return clock_ms;}
 extern "C" int64_t esp_timer_get_time(){return clock_ms*1000;}
 extern "C" const char *esp_err_to_name(esp_err_t e){return e==ESP_OK?"OK":"error";}
@@ -68,12 +71,34 @@ extern "C" esp_err_t solar_os_shell_execute_command(solar_os_context_t *ctx,cons
 }
 static void process_list(solar_os_shell_io_t *){}
 static bool process_command(solar_os_context_t *,int,char **){return false;}
+#if SK_FTP
+static bool ftp_started;
+static esp_err_t ftp_start(solar_os_context_t *,int argc,char **argv) {
+    assert(argc==2 && !strcmp(argv[0],"/sd/share") && !strcmp(argv[1],"2121"));
+    ftp_started=true;return ESP_OK;
+}
+static void ftp_stop(solar_os_context_t *) {ftp_started=false;}
+static solar_os_job_t ftp_descriptor() {
+    solar_os_job_t job{};job.name="ftpd";job.summary="FTP test";job.start=ftp_start;job.stop=ftp_stop;return job;
+}
+extern "C" const solar_os_job_t solar_os_ftpd_job=ftp_descriptor();
+extern "C" void sk_ftp_task_reap() {}
+#endif
 #include "platform/imxrt1062/teensy41/background_jobs.h"
 static void tick(){clock_ms+=25;solar_os_jobs_tick(nullptr,uint32_t(clock_ms));}
 static void file(const char *path,const std::string &s){FILE *f=fopen(path,"w");assert(f);assert(fwrite(s.data(),1,s.size(),f)==s.size());assert(!fclose(f));}
 int main(){
  (void)background_run;(void)background_stack;(void)background_tcb;
- background_begin();assert(solar_os_jobs_count()==4 && scheduled_runner);
+ background_begin();assert(solar_os_jobs_count()==solar_os_job_registry_count() && scheduled_runner);
+#if SK_FTP
+ assert(solar_os_jobs_count()==5);
+ solar_os_context_t ctx{};solar_os_shell_io_t io{};solar_os_context_set_shell_io(&ctx,&io);
+ char command[]="job",start[]="start",name[]="ftpd",root[]="/sd/share",port[]="2121",status[]="status",stop[]="stop";
+ char *start_args[]={command,start,name,root,port};solar_os_shell_cmd_job(&ctx,5,start_args);assert(ftp_started);
+ char *status_args[]={command,status,name};solar_os_shell_cmd_job(&ctx,3,status_args);
+ solar_os_shell_cmd_jobs(&ctx,1,status_args);
+ char *stop_args[]={command,stop,name};solar_os_shell_cmd_job(&ctx,3,stop_args);assert(!ftp_started);
+#endif
  char path[]="/tmp/solaros-jobs-XXXXXX";int fd=mkstemp(path);assert(fd>=0);close(fd);
  file(path,"echo BEFORE\nwait 2\necho AFTER\n");
  assert(scheduled_runner(path)==ESP_OK);assert(script_jobs[0].pending && !script_jobs[0].file);
