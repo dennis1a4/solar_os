@@ -13,6 +13,21 @@ extern "C" {
 static volatile uint32_t heartbeat_count;
 static QueueHandle_t heartbeat_queue;
 static solar_os_context_t context;
+#if SK_QSPI_FLASH
+static constexpr unsigned console_stack_words = 10240; // Python/network and LittleFS.
+#elif SK_AUDIO_PLAYER
+static constexpr unsigned console_stack_words = 8192;
+#elif SK_UPSTREAM_SHELL
+static constexpr unsigned console_stack_words = 6144;
+#else
+static constexpr unsigned console_stack_words = 4096;
+#endif
+// The console is permanent CPU state, not DMA storage. Keep its large stack
+// in cached internal OCRAM, like the LCD/Telnet stacks. Dynamic xTaskCreate
+// placed it in newlib's small DTCM heap, leaving TCP connection buffers and
+// their temporary allocations only a few KiB during concurrent SSH/FTP.
+DMAMEM static StackType_t console_stack[console_stack_words];
+static StaticTask_t console_task_control;
 static esp_err_t output(const char *text, size_t length, void *) {
     sk_console_write(text, length);
     sk_display_write(text, length);
@@ -167,16 +182,8 @@ void setup() {
     heartbeat_queue = solar_os_queue_create_internal(1, sizeof(uint32_t));
     configASSERT(heartbeat_queue);
     configASSERT(xTaskCreate(heartbeat, "heartbeat", 256, nullptr, 1, nullptr) == pdPASS);
-    #if SK_QSPI_FLASH
-    constexpr unsigned console_stack = 10240; // Python/network plus nested LittleFS frames.
-#elif SK_AUDIO_PLAYER
-    constexpr unsigned console_stack = 8192; // MP3 decoder scratch plus shell frames.
-#elif SK_UPSTREAM_SHELL
-    constexpr unsigned console_stack = 6144;
-#else
-    constexpr unsigned console_stack = 4096;
-#endif
-    configASSERT(xTaskCreate(shell_task, "solar-console", console_stack, nullptr, 2, nullptr) == pdPASS);
+    configASSERT(xTaskCreateStatic(shell_task, "solar-console", console_stack_words,
+        nullptr, 2, console_stack, &console_task_control));
     vTaskStartScheduler();
     while (true) {}
 }

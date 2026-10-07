@@ -761,3 +761,24 @@ report preserves fixture paths on failure.
 and checks USB UI rendering, gain setup, monitored recording and file errors.
 Run recorder device tests sequentially. The deterministic host counterpart is
 `python3 tests/ports/test_teensy41_recorder_transport.py` (ASan/UBSan).
+
+### Concurrent multi-console investigation
+
+`test_teensy41_multitask.py` exercises MP3 playback, detached Python CPU/SD
+logging, FTP transfers, and Telnet-owned SSH against an isolated host fixture.
+It supports reduced combinations for fault isolation and logs byte comparisons,
+audio counters, latency, memory, and cleanup. Requires `pyserial`, `paramiko`,
+idle consoles, LAN access, and `/sd/music` (or `--music`). Example:
+
+```sh
+python scripts/ports/test_teensy41_multitask.py --mode no-ssh --soak-only \
+  --seconds 120 --payload-kib 64 --log /tmp/teensy-multitask-no-ssh.json
+```
+
+The original firmware hung during concurrent SSH/FTP. Moving the permanent
+console stack from DTCM to OCRAM increases network allocation headroom; verify
+the linked placement with `python3 scripts/ports/test_teensy41_console_stack_host.py`
+(defaults to the `teensy41_telnet_legacy` ELF and its 40,960-byte stack).
+Successful device runs remove their unique SD fixtures; failures preserve evidence. Read the
+[investigation results](../../doc/ports/teensy41-multitask-testing.md) before
+repeating the failing combinations. No physical USB host keyboard is required.
