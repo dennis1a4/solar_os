@@ -2,7 +2,28 @@
 
 The `teensy41_display` profile extends the synth/apps profile with two independent
 shell sessions: USB CDC and the Adafruit RA8875 LCD with a USB host keyboard.
-Temporary wiring: SPI0 MOSI 11, MISO 12, SCK 13, CS 37, reset 9. Panel preset:
+Updated wiring profile (2026-10-07): `teensy41_display_wiring` uses main-display
+SPI0 MOSI 11, MISO 12, SCK 13, CS 10, reset 14 and active-high backlight 15.
+WAIT is disconnected. Motor-enable GPIO10 is disabled in this profile because
+it is now display CS. Audio stays on AmpEn40 and Serial1 stays enabled.
+
+The small ST7735 shares SPI0: SCL/SCK 13, SDA/MOSI 11, reset 30, CMD/DC 31,
+CS 32 and backlight 33. These SCL/SDA labels mean SPI signals on this module.
+Pins 16/17 remain Wire1 SCL/SDA for the motor controller and other I2C devices.
+Both displays use the SPI0 mutex and separate chip selects. The small panel
+currently shows a startup message and red/green/blue bars using the 128x160
+ST7735 preset; it is not yet a second interactive terminal. The initial black-tab
+image produced a two-pixel strip at the right, a one-pixel strip at the bottom,
+and clipped top-left text. A green-tab test corrected the edges but swapped red
+and blue (user-confirmed 2026-10-08). The profile now keeps `INITR_BLACKTAB` RGB
+ordering and explicitly sets column offset 2 / row offset 1 with
+`setRowColStart(1, 2)`.
+The user confirmed clean edges and correct RGB colors on 2026-10-08. Rotation
+is now configured as `SK_SECONDARY_ROTATION=1` (90 degrees clockwise, 160x128);
+the driver swaps the address offsets for the rotated orientation.
+
+The preserved `teensy41_telnet_legacy` profile still uses the former wiring:
+SPI0 MOSI 11, MISO 12, SCK 13, CS 37, reset 9. Panel preset:
 `Adafruit_800x480`. Touch is intentionally out of scope.
 
 The LCD uses a 100x30 ANSI text terminal with the controller's 8x16 font, cursor,

@@ -155,16 +155,28 @@ extern "C" void *solar_os_memory_realloc(void *ptr, size_t size,
 extern "C" void solar_os_memory_get_status(solar_os_memory_status_t *status) {
     if (!status) return;
     xSemaphoreTake(mutex, portMAX_DELAY);
-    statistics.internal.total = reinterpret_cast<uintptr_t>(_g_heap_max) -
-                                reinterpret_cast<uintptr_t>(_g_heap_start) + ocram_pool.pool_size;
-    statistics.internal.free = internal_free();
-    statistics.external.total = size_t(external_psram_size) * 1024 * 1024;
+    statistics.dtcm.total = reinterpret_cast<uintptr_t>(_g_heap_max) -
+                            reinterpret_cast<uintptr_t>(_g_heap_start);
+    statistics.dtcm.free = dtcm_free();
+    statistics.ocram.total = ocram_pool.pool_size;
+    statistics.ocram.free = ocram_free();
+    statistics.internal.total = statistics.dtcm.total + statistics.ocram.total;
+    statistics.internal.free = statistics.dtcm.free + statistics.ocram.free;
+    statistics.external.total = external_psram_size ? extmem_smalloc_pool.pool_size : 0;
     if (external_psram_size) {
         size_t used = 0, user = 0, available = 0;
         sm_malloc_stats_pool(&extmem_smalloc_pool, &used, &user, &available, nullptr);
         statistics.external.free = available;
     }
-    // largest_free/minimum_free and DMA statistics are unavailable, left 0.
+    solar_os_memory_region_status_t *regions[] = {
+        &statistics.dtcm, &statistics.ocram, &statistics.internal, &statistics.external
+    };
+    for (auto *region : regions) {
+        if (!statistics.region_samples || region->free < region->minimum_free)
+            region->minimum_free = region->free;
+    }
+    if (statistics.region_samples != UINT32_MAX) ++statistics.region_samples;
+    // Largest contiguous blocks and DMA statistics are unavailable, left 0.
     *status = statistics;
     xSemaphoreGive(mutex);
 }

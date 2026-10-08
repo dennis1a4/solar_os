@@ -15,7 +15,10 @@ esp_err_t sk_resources_begin() {
     const Fixed fixed[]={
         {2,"board","shift clock"},{3,"board","NES latch"},{4,"board","NES data"},
         {5,"board","shift latch"},{6,"board","shift data"},
-        {motor_enable,"board","motor enable"},{relay,"board","relay"},
+#if SK_MOTOR_ENABLE_PIN >= 0
+        {motor_enable,"board","motor enable"},
+#endif
+        {relay,"board","relay"},
         {amplifier_shutdown,"board","amplifier enable"},{vin_sense,"board","VIN sense"},{volume,"board","volume"},
         {primary_mosi,"spi0","MOSI"},{primary_miso,"spi0","MISO"},{primary_sck,"spi0","SCK"},
         {shared_mosi,"spi1","MOSI"},{shared_miso,"spi1","MISO"},{shared_sck,"spi1","SCK"},
@@ -27,12 +30,22 @@ esp_err_t sk_resources_begin() {
 #endif
 #if SK_PRIMARY_RA8875
         {primary_cs,"primary-display","CS"},{primary_reset,"primary-display","reset"},
+#if SK_PRIMARY_WAIT >= 0
         {primary_wait,"primary-display","WAIT"},
+#endif
+#if SK_PRIMARY_BACKLIGHT >= 0
+        {primary_backlight,"primary-display","backlight"},
+#endif
 #endif
         // Preserve the board connector's dedicated secondary-panel/control pins,
         // even on builds where its optional panel driver is disabled.
+#if SK_SECONDARY_ST7735
+        {secondary_cs,"secondary-display","CS"},{secondary_reset,"secondary-display","reset"},
+        {secondary_dc,"secondary-display","DC"},{secondary_backlight,"secondary-display","backlight"},
+#else
         {secondary_cs,"board","secondary CS"},{secondary_reset,"board","secondary reset"},
         {secondary_dc,"board","secondary DC"},{secondary_backlight,"board","secondary backlight"},
+#endif
 #if SK_AUDIO_SGTL5000
         {audio_out,"audio","I2S TX"},{audio_in,"audio","I2S RX"},
         {audio_lrclk,"audio","I2S LRCLK"},{audio_bclk,"audio","I2S BCLK"},{audio_mclk,"audio","I2S MCLK"},

@@ -1301,12 +1301,32 @@ The IRAM and ERAM progress bars show the currently used share of the internal
 and external heaps. ERAM is shown as unavailable on boards without external
 RAM.
 
+On Teensy 4.1, `ltop` instead shows separate **DTCM**, **OCRAM**, and **PSRAM**
+heap bars, with free space and lowest sampled free space. DTCM is the fast RAM
+pool used by network allocations; abundant free PSRAM cannot replace it.
+The bars show used percentages of allocator pools, not physical chip capacity:
+static data, code, and reserved stacks are outside those pools. `min` is the
+lowest observation since the first memory sample this boot; brief dips between
+samples can be missed. `r` resets CPU sampling, not the memory minima.
+
+DTCM shows `LOW` below 16 KiB and `CRIT` (or `!!!` on narrow terminals) below
+8 KiB. These advisory thresholds
+are not allocation limits or safety guarantees. `Alloc fail` and `fallback`
+count SolarOS allocator events only, excluding direct library `malloc/new`.
+Run `mem` for exact byte counts, the last failed allocation and explanatory
+notes. Largest contiguous free blocks are not currently available.
+On narrow terminals, `F`/`M` mean free/sampled minimum, truncated to KiB.
+
 The task table is sorted by current CPU load and shows task state, priority,
 interval CPU percentage, and peak stack consumption since the task started.
 Peak stack consumption is the allocated stack size minus the minimum remaining
 stack reported by FreeRTOS. Idle tasks are omitted from the table because their
 counters drive the per-core progress bars. Columns expand across wide terminals
 and the priority column is hidden on narrow terminals.
+
+On Teensy, the task column is `FREE`: the minimum remaining stack since the
+task started, not current free space or used stack. The monitor needs at least
+24 columns and 13 rows on Teensy; smaller terminals show a size warning.
 
 Usage:
 

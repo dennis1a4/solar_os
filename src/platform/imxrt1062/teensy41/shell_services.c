@@ -67,9 +67,33 @@ void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv) {
         "Internal heap: %u free / %u bytes; PSRAM: %u free / %u bytes\n",
         (unsigned)status.internal.free, (unsigned)status.internal.total,
         (unsigned)status.external.free, (unsigned)status.external.total);
-    size_t df,dt,of,ot;sk_memory_internal_regions(&df,&dt,&of,&ot);
     solar_os_shell_io_printf(io,"  DTCM: %u free / %u; OCRAM: %u free / %u bytes\n",
-        (unsigned)df,(unsigned)dt,(unsigned)of,(unsigned)ot);
+        (unsigned)status.dtcm.free,(unsigned)status.dtcm.total,
+        (unsigned)status.ocram.free,(unsigned)status.ocram.total);
+    const solar_os_memory_region_status_t *regions[]={&status.dtcm,&status.ocram,&status.external};
+    const char *names[]={"DTCM (fast/network)","OCRAM (internal)","PSRAM (external)"};
+    for(unsigned i=0;i<3;++i) {
+        const solar_os_memory_region_status_t *r=regions[i];
+        const unsigned used=r->total>=r->free?(unsigned)(r->total-r->free):0;
+        solar_os_shell_io_printf(io,"%s: used=%u free=%u capacity=%u sampled-min=%u bytes\n",
+            names[i],used,(unsigned)r->free,(unsigned)r->total,(unsigned)r->minimum_free);
+    }
+    solar_os_shell_io_writeln(io,"Capacities are allocator pools, excluding static/reserved RAM; not chip totals.");
+    solar_os_shell_io_writeln(io,"Minima: lowest observed since first memory sample this boot; brief dips may be missed.");
+    if(status.dtcm.free<SOLAR_OS_MEMORY_DTCM_LOW_BYTES)
+        solar_os_shell_io_printf(io,"DTCM %s: low network allocation headroom, even if other RAM is free.\n",
+            status.dtcm.free<SOLAR_OS_MEMORY_DTCM_CRITICAL_BYTES?"CRITICAL":"LOW");
+    solar_os_shell_io_writeln(io,"DTCM advisory: LOW below 16 KiB; CRITICAL below 8 KiB (not safety guarantees).");
+    unsigned failures=0,fallbacks=0;
+    for(unsigned i=0;i<SOLAR_OS_MEMORY_CLASS_COUNT;++i) {
+        failures+=status.classes[i].failures;fallbacks+=status.classes[i].fallbacks;
+    }
+    solar_os_shell_io_printf(io,"SolarOS allocator: failures=%u fallbacks=%u (excludes direct malloc/new)\n",failures,fallbacks);
+    if(status.last_failure_valid)
+        solar_os_shell_io_printf(io,"Last failure: %s %u bytes tag=%s\n",
+            solar_os_memory_class_name(status.last_failure_class),
+            (unsigned)status.last_failure_size,status.last_failure_tag);
+    solar_os_shell_io_writeln(io,"Largest contiguous free blocks: unavailable; total free does not guarantee an allocation.");
     solar_os_shell_io_writeln(solar_os_context_shell_io(ctx), "PSRAM reserve: 128 KiB for system work; pipe buffers: 64 KiB total limit");
 }
 void solar_os_shell_cmd_uptime(solar_os_context_t *ctx, int argc, char **argv) {

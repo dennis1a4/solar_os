@@ -559,7 +559,11 @@ static void ltop_render_task_row(size_t row,
 
 static size_t ltop_table_first_row(void)
 {
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    return 10U + (size_t)configNUMBER_OF_CORES;
+#else
     return 4U + (size_t)configNUMBER_OF_CORES;
+#endif
 }
 
 static size_t ltop_visible_rows(void)
@@ -603,8 +607,7 @@ static void ltop_render(void)
 {
     const size_t rows = solar_os_tui_rows(&ltop.tui);
     const size_t cols = solar_os_tui_cols(&ltop.tui);
-    if (cols < 24U ||
-        rows < (size_t)configNUMBER_OF_CORES + 6U) {
+    if (cols < 24U || rows < ltop_table_first_row() + 2U) {
         solar_os_tui_draw_too_small(&ltop.tui, "ltop");
         solar_os_tui_refresh(&ltop.tui);
         return;
@@ -658,6 +661,47 @@ static void ltop_render(void)
     solar_os_memory_status_t memory;
     solar_os_memory_get_status(&memory);
     const size_t memory_row = 1U + (size_t)configNUMBER_OF_CORES;
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    const solar_os_memory_region_status_t *regions[] = {
+        &memory.dtcm, &memory.ocram, &memory.external
+    };
+    const char *dtcm_label = memory.dtcm.free < SOLAR_OS_MEMORY_DTCM_CRITICAL_BYTES ?
+        (cols < 27U ? "DTCM !!!" : "DTCM CRIT") :
+        memory.dtcm.free < SOLAR_OS_MEMORY_DTCM_LOW_BYTES ? "DTCM LOW" : "DTCM";
+    const char *labels[] = {dtcm_label, "OCRAM", "PSRAM"};
+    for (size_t i=0; i<3U; ++i) {
+        ltop_render_memory_bar(memory_row + i*2U, cols, labels[i], regions[i]);
+        char free_text[16], total_text[16], min_text[16], text[96];
+        // Keep PSRAM in KiB too, so small allocations remain visible.
+        const size_t values[] = {regions[i]->free, regions[i]->total, regions[i]->minimum_free};
+        char *texts[] = {free_text, total_text, min_text};
+        for (size_t j=0;j<3U;++j)
+            snprintf(texts[j],sizeof(free_text),"%u.%u KiB",
+                (unsigned)(values[j]/1024U),(unsigned)((values[j]%1024U)*10U/1024U));
+        if (cols >= 60U)
+            snprintf(text,sizeof(text),"free %s / %s | min %s",free_text,total_text,min_text);
+        else if (cols >= 40U)
+            snprintf(text,sizeof(text),"free %s min %s",free_text,min_text);
+        else
+            snprintf(text,sizeof(text),"F:%uK M:%uK (KiB)",
+                (unsigned)(regions[i]->free/1024U),(unsigned)(regions[i]->minimum_free/1024U));
+        (void)solar_os_tui_write_cell(&ltop.tui,memory_row+i*2U+1U,0U,cols,text,SOLAR_OS_TUI_ATTR_NORMAL);
+    }
+    (void)solar_os_tui_write_cell(&ltop.tui,memory_row+6U,0U,cols,
+        cols>=60U ? "Heap pools; min=lowest sampled this boot; stack FREE=min ever" : "Heap min=sampled; see mem",
+        SOLAR_OS_TUI_ATTR_NORMAL);
+    unsigned failures=0, fallbacks=0;
+    for (unsigned i=0;i<SOLAR_OS_MEMORY_CLASS_COUNT;++i) {
+        failures+=memory.classes[i].failures; fallbacks+=memory.classes[i].fallbacks;
+    }
+    char allocation_text[128];
+    snprintf(allocation_text,sizeof(allocation_text),"Alloc fail=%u fallback=%u%s%s",
+        failures,fallbacks,memory.last_failure_valid?" last=":" (SolarOS only)",
+        memory.last_failure_valid?memory.last_failure_tag:"");
+    (void)solar_os_tui_write_cell(&ltop.tui,memory_row+7U,0U,cols,
+        allocation_text,failures?SOLAR_OS_TUI_ATTR_INVERSE:SOLAR_OS_TUI_ATTR_NORMAL);
+    const size_t header_row = memory_row + 8U;
+#else
     ltop_render_memory_bar(memory_row,
                            cols,
                            "IRAM",
@@ -668,6 +712,7 @@ static void ltop_render(void)
                            &memory.external);
 
     const size_t header_row = memory_row + 2U;
+#endif
     const ltop_table_layout_t layout = ltop_table_layout(cols);
     ltop_render_table_header(header_row, cols, &layout);
 

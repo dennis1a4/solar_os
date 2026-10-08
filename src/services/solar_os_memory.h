@@ -9,6 +9,9 @@
 #define SOLAR_OS_MEMORY_TAG_MAX 24U
 #define SOLAR_OS_MEMORY_INTERNAL_RESERVE_BYTES SOLAR_OS_INTERNAL_RESERVE_BYTES
 #define SOLAR_OS_MEMORY_INTERNAL_FALLBACK_MAX_BYTES (4U * 1024U)
+// Advisory headroom thresholds, not admission limits or guarantees of safety.
+#define SOLAR_OS_MEMORY_DTCM_LOW_BYTES (16U * 1024U)
+#define SOLAR_OS_MEMORY_DTCM_CRITICAL_BYTES (8U * 1024U)
 
 typedef enum {
     SOLAR_OS_MEMORY_INTERNAL_CRITICAL = 0,
@@ -47,6 +50,11 @@ typedef struct {
     solar_os_memory_class_t last_failure_class;
     size_t last_failure_size;
     char last_failure_tag[SOLAR_OS_MEMORY_TAG_MAX];
+    // Optional separate internal heaps. Zero totals mean unavailable.
+    solar_os_memory_region_status_t dtcm;
+    solar_os_memory_region_status_t ocram;
+    // On Teensy, minima are observations at get_status(), not allocator minima.
+    uint32_t region_samples;
 } solar_os_memory_status_t;
 
 void *solar_os_memory_alloc(size_t size,

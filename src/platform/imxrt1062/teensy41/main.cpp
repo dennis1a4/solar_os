@@ -175,7 +175,13 @@ static void shell_task(void *) {
 }
 void setup() {
     // No LED heartbeat: pin 13 is the primary display's SPI clock.
+#if SK_MOTOR_ENABLE_PIN >= 0
     digitalWrite(superkeyboard::motor_enable, LOW); pinMode(superkeyboard::motor_enable, OUTPUT);
+#endif
+#if SK_PRIMARY_BACKLIGHT >= 0
+    digitalWrite(superkeyboard::primary_backlight, LOW);
+    pinMode(superkeyboard::primary_backlight, OUTPUT);
+#endif
     digitalWrite(superkeyboard::relay, LOW); pinMode(superkeyboard::relay, OUTPUT);
     // LM4871 shutdown is active HIGH; keep the loudspeaker amplifier off.
     digitalWrite(superkeyboard::amplifier_shutdown, HIGH); pinMode(superkeyboard::amplifier_shutdown, OUTPUT);

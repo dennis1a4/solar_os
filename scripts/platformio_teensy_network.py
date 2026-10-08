@@ -14,6 +14,9 @@ script = script.replace(marker, marker + "\n\t\t*libLittleFS.a:*(.text* .rodata*
 script = script.replace(marker, marker + "\n\t\t*libssh2.a:*(.text* .rodata*)\n\t\t*libmbedcrypto.a:*(.text* .rodata*)")
 script = script.replace(marker, marker + "\n\t\t*libminiz.a:*(.text* .rodata*)\n\t\t*solar_os_files.c.o(.text* .rodata*)\n\t\t*solar_os_zip.c.o(.text* .rodata*)")
 script = script.replace(marker, marker + "\n\t\t*libRA8875.a:*(.text* .rodata*)\n\t\t*libUSBHost_t36.a:*(.text* .rodata*)")
+# The small display uses synchronous SPI, not its optional DMA framebuffer.
+# Keep its drawing/font code in cached flash instead of taking another ITCM bank.
+script = script.replace(marker, marker + "\n\t\t*libST7735_t3.a:*(.text* .rodata*)")
 script = script.replace(marker, marker + "\n\t\t*libgfx_*.a:*(.text* .rodata*)")
 # Calendar conversion is not latency-critical. Keep newlib timezone helpers in
 # flash as well, avoiding a whole additional 32 KiB ITCM bank for the clock.
@@ -29,8 +32,8 @@ for obj in ("ftp_socket.cpp", "solar_os_ftp.c", "solar_os_ftp_app.c", "solar_os_
             "solar_os_ltop.c", "solar_os_webradio.c", "solar_os_player.c", "solar_os_recorder.c", "player_folder.c", "solar_os_storage_browser.c", "solar_os_media_widgets.c", "solar_os_signal_widgets.c", "solar_os_dsp.c", "solar_os_webradio_catalog.c", "sshkey_command.cpp", "midi_commands.cpp", "serial_terminal.cpp", "radio_audio.cpp", "pd_controller.cpp", "power_shutdown.cpp", "power_button.cpp", "solar_os_stusb4500.c", "solar_os_midi_codec.c", "solar_os_shell.c", "solar_os_shell_fs.c", "solar_os_shell_io.c", "solar_os_expr.c",
             "solar_os_net_session.c", "solar_os_network.c", "solar_os_shell_network_status.c"):
     script = script.replace(marker, marker + "\n\t\t*" + obj + ".o(.text* .rodata*)")
-# Keep enough DTCM for the dynamically allocated console stack, startup state,
-# and the 8 KiB core stack guard. Catch an ITCM-bank regression at link time.
+# Keep DTCM for startup/network allocations and the 8 KiB core stack guard.
+# The console stack is now in OCRAM. Catch an ITCM-bank regression at link time.
 script += '\nASSERT((_estack - _ebss) >= 73728, "Teensy RAM1 startup headroom below 72 KiB")\n'
 output = Path(env.subst("$BUILD_DIR")) / "teensy41_network.ld"
 output.parent.mkdir(parents=True, exist_ok=True)

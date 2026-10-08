@@ -57,8 +57,20 @@ extern "C" void sk_gfx_status(char *out,size_t size) { snprintf(out,size,"graphi
 #endif
 #if SK_SECONDARY_ST7735
 #include <ST7735_t3.h>
+#ifndef SK_SECONDARY_PANEL
+#define SK_SECONDARY_PANEL INITR_BLACKTAB
+#endif
+#ifndef SK_SECONDARY_ROW_OFFSET
+#define SK_SECONDARY_ROW_OFFSET 0
+#endif
+#ifndef SK_SECONDARY_COL_OFFSET
+#define SK_SECONDARY_COL_OFFSET 0
+#endif
+#ifndef SK_SECONDARY_ROTATION
+#define SK_SECONDARY_ROTATION 0
+#endif
 static ST7735_t3 secondary(superkeyboard::secondary_cs, superkeyboard::secondary_dc,
-    superkeyboard::shared_mosi, superkeyboard::shared_sck, superkeyboard::secondary_reset);
+    superkeyboard::secondary_mosi, superkeyboard::secondary_sck, superkeyboard::secondary_reset);
 #endif
 
 // All display calls are made by the console task. No framebuffer/DMA yet.
@@ -80,6 +92,10 @@ void sk_displays_begin() {
     if (primary_ready) {
         primary.setRotation(SK_PRIMARY_ROTATION);
         primary.displayOn(true);
+#if SK_PRIMARY_BACKLIGHT >= 0
+        // External backlight enable/PWM input, active high. Start at full brightness.
+        digitalWrite(superkeyboard::primary_backlight, HIGH);
+#endif
         primary.clearScreen(RA8875_BLACK);
         primary.setTextColor(RA8875_WHITE, RA8875_BLACK);
         primary.setCursor(0, 0);
@@ -99,15 +115,27 @@ void sk_displays_begin() {
     sk_spi_unlock(0);
 #endif
 #if SK_SECONDARY_ST7735
-    if (!sk_spi_lock(1)) return;
-    secondary.initR(INITR_BLACKTAB);
+    if (!sk_spi_lock(superkeyboard::secondary_spi)) return;
+    secondary.initR(SK_SECONDARY_PANEL);
+#if SK_SECONDARY_ROW_OFFSET || SK_SECONDARY_COL_OFFSET
+    // This panel needs green-tab address offsets but black-tab RGB ordering.
+    secondary.setRowColStart(SK_SECONDARY_ROW_OFFSET, SK_SECONDARY_COL_OFFSET);
+#endif
+    secondary.setRotation(SK_SECONDARY_ROTATION);
     secondary.fillScreen(ST7735_BLACK);
     secondary.setTextColor(ST7735_WHITE);
     secondary.setCursor(0, 0);
     secondary.print("SolarOS\nTeensy 4.1");
+    secondary.fillRect(0,32,40,16,ST7735_RED);
+    secondary.fillRect(40,32,40,16,ST7735_GREEN);
+    secondary.fillRect(80,32,40,16,ST7735_BLUE);
     pinMode(superkeyboard::secondary_backlight, OUTPUT);
     analogWrite(superkeyboard::secondary_backlight, 128);
-    sk_spi_unlock(1);
+    sk_spi_unlock(superkeyboard::secondary_spi);
+    sk_console_printf("ST7735 startup pattern sent: SPI%u SCK%u MOSI%u CS%u DC%u reset%u backlight%u\r\n",
+        superkeyboard::secondary_spi,superkeyboard::secondary_sck,superkeyboard::secondary_mosi,
+        superkeyboard::secondary_cs,superkeyboard::secondary_dc,
+        superkeyboard::secondary_reset,superkeyboard::secondary_backlight);
 #endif
 }
 

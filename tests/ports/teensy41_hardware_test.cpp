@@ -1,6 +1,7 @@
 #include <arduino_freertos.h>
 #include <Wire.h>
 #include <SPI.h>
+#include "board.h"
 #include "platform.h"
 extern "C" {
 #include "solar_os_resources.h"
@@ -16,8 +17,21 @@ static bool claimed(int pin,const char *owner) {
     return solar_os_resource_find_claim(SOLAR_OS_RESOURCE_GPIO_PIN,pin,-1,&c) && !strcmp(owner,c.owner);
 }
 int main() {
-    assert(sk_buses_begin()==ESP_OK);const size_t baseline=solar_os_resource_claim_count();
+    assert(sk_buses_begin()==ESP_OK);
+    assert(sk_slot_claim(2,"primary-display")==ESP_OK);
+    const size_t baseline=solar_os_resource_claim_count();
+#if SK_PRIMARY_CS == 10
+    assert(claimed(10,"primary-display") && claimed(14,"primary-display") && claimed(15,"primary-display"));
+    assert(!claimed(37,"primary-display") && !claimed(10,"board"));
+    assert(superkeyboard::primary_wait==-1 && superkeyboard::primary_backlight==15);
+    assert(superkeyboard::secondary_spi==0 && superkeyboard::secondary_mosi==11 && superkeyboard::secondary_sck==13);
+    assert(claimed(16,"i2c1") && claimed(17,"i2c1"));
+    for(unsigned pin=30;pin<=33;++pin)assert(claimed(pin,"secondary-display"));
+    assert(sk_slot_claim(0,"hw:usb")==ESP_OK);
+    assert(sk_slot_release(0,"hw:usb")==ESP_OK);
+#else
     assert(claimed(37,"primary-display") && claimed(9,"primary-display") && claimed(15,"primary-display"));
+#endif
     assert(claimed(0,"console") && claimed(40,"board") && claimed(13,"spi0") && claimed(49,"qspi"));
     assert(sk_uart_claim_format(1,"format-test",9600,0x102)==ESP_OK);
     assert(Serial8.format==0x102);
@@ -33,7 +47,9 @@ int main() {
     // UART3's second fixed pin must roll back its entire bundle.
     assert(sk_uart_claim(2,"app-com",115200)==ESP_ERR_INVALID_STATE);assert(Serial3.begins==0);
     assert(solar_os_resource_claim_count()==baseline);
+#if SK_PRIMARY_CS != 10
     assert(sk_slot_claim(0,"hw:usb")==ESP_ERR_INVALID_STATE);
+#endif
     assert(sk_slot_claim(2,"hw:usb")==ESP_ERR_INVALID_STATE);
     for(unsigned cycle=0;cycle<20;++cycle) {
         assert(sk_uart_claim(0,"app-com",115200)==ESP_OK);

@@ -782,3 +782,38 @@ the linked placement with `python3 scripts/ports/test_teensy41_console_stack_hos
 Successful device runs remove their unique SD fixtures; failures preserve evidence. Read the
 [investigation results](../../doc/ports/teensy41-multitask-testing.md) before
 repeating the failing combinations. No physical USB host keyboard is required.
+
+### RAM monitor
+
+`ltop` displays separate Teensy DTCM/OCRAM/PSRAM heaps, free capacity, sampled
+minima and SolarOS allocation failures. `mem` provides exact bytes and explains
+the pool boundaries, warning thresholds and sampling limits. See the
+[monitor manual](../../doc/manual/apps.md#ltop).
+
+```sh
+python3 tests/ports/test_teensy41_memory_monitor.py
+python scripts/ports/test_teensy41_memory_monitor.py \
+  --music /sd/music --log /tmp/teensy-memory-monitor.json
+```
+
+The host test injects independent heap readings, a zero minimum, recovery and
+allocation failures into the actual sampler. The live test requires idle
+consoles, `pyserial` and `pyte`; it checks accounting with a temporary 128 KiB
+RAM disk, USB layouts, the small-terminal warning, LCD rendering, and optional
+music coexistence. It restores USB geometry and removes its RAM disk. The
+minimum is sampled across the boot, not reset by closing the monitor.
+
+### Display wiring (2026-10-07)
+
+Use `pio run -e teensy41_display_wiring` for main CS10/reset14/backlight15 and
+the small ST7735 on shared SPI0 (SCK13/MOSI11, reset30/DC31/CS32/backlight33).
+Wire1 pins 16/17 retain I2C. See [display notes](../../doc/ports/teensy41-display.md).
+The hardware host test covers both wiring profiles. In restricted environments,
+run with `ASAN_OPTIONS=detect_leaks=0` because LeakSanitizer cannot run under ptrace;
+AddressSanitizer and UndefinedBehaviorSanitizer remain enabled.
+
+`python scripts/ports/test_teensy41_display_wiring.py --log REPORT.json` verifies
+pin ownership, GPIO conflict rejection and the main LCD console over USB.
+It cannot verify physical pixels; visually check the small panel's startup text
+and red/green/blue bars. The earlier legacy profile has different pin assignments
+and must not be flashed onto the updated wiring.

@@ -1,8 +1,77 @@
 # Teensy / SuperKeyboard handover
 
-Updated 2026-10-05. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
+Updated 2026-10-08. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
+
+## Current display wiring and installed image — 2026-10-08
+
+The user rewired the main display and added an ST7735 small display. Installed
+profile is now **`teensy41_display_wiring`**, not `teensy41_telnet_legacy`.
+Main: CS10, MOSI11, MISO12, SCK13, reset14, backlight15; WAIT is disconnected.
+Small: CS32, MOSI11 (module SDA), SCK13 (module SCL), reset30, DC31, backlight33.
+The user confirmed moving the small panel off pins 16/17 to the shared SPI0 bus.
+Wire1 remains on SDA17/SCL16 for the motor controller. GPIO10's former motor
+enable reservation/startup write is disabled. Audio/UART assignments are unchanged.
+
+The small panel currently shows a startup message and color bars, not an
+interactive console. It needs black-tab RGB ordering with column offset 2 and
+row offset 1. The green-tab trial fixed clipping but swapped red/blue; this
+revision separates the address offsets from color ordering. Its driver code
+is placed in cached flash to retain DTCM headroom; both panels use the SPI0 lock.
+The user confirmed clean edges, readable text and correct colors, then requested
+90 degrees clockwise rotation. `SK_SECONDARY_ROTATION=1` selects 160x128 landscape
+and preserves the corrected offsets and RGB order.
+
+Firmware HEX SHA-256:
+`c6ace9b123d362c29dc7b0102dace33370a238f355909e69871af6dfbb59b04a`.
+Build and console-stack/USB-DMA placement checks pass. Hardware host tests pass
+for old/new pin maps with ASan/UBSan (LSan disabled because of ptrace).
+`/home/dennis/teensy-display-wiring-rgb-final.json` passes pin reservations,
+protected GPIO rejection, main console/monitor, and two animated graphics runs
+with simultaneous USB echoes. An initial test expected `INVALID_STATE` instead
+of the actual `gpio: pin ... busy` diagnostic; this was a harness assertion issue.
+`/home/dennis/teensy-display-wiring-memory-final.json` also passes USB monitor
+layouts (80x24, 40x16, 24x13 and undersized-terminal handling), LCD monitor
+rendering, and temporary RAMFS allocation/recovery. Tests restore USB geometry,
+remove the RAM disk and close their apps. Idle DTCM is 71,504 bytes free.
+The user confirmed the final small-panel color order and absence of edge noise
+and clipping before the subsequent rotation update.
+The rotated image passes the same display/USB/graphics checks in
+`/home/dennis/teensy-display-rotation-final.json`; linked RAM usage is unchanged.
+
+On October 7 USB enumerated but commands timed out while the main screen showed
+a prompt. After the user removed the USB-host hub and audio shield, leaving the
+keyboard directly attached, USB tests pass. The exact cause is not isolated;
+do not claim the hub itself is defective. Keyboard enumeration is confirmed.
+Audio tests are intentionally skipped with the shield removed; the status
+correctly reports the codec missing. Motor firmware and motor outputs were not
+changed or exercised. See [display details](teensy41-display.md).
+
+## RAM monitoring — 2026-10-06
+
+The October 6 `teensy41_telnet_legacy` image retained the console stack in OCRAM from
+commit `6a5d2863` and adds separate DTCM/OCRAM/PSRAM bars in `ltop`, KiB free/
+capacity values, boot-wide sampled minima and SolarOS allocation-failure counts.
+`mem` gives exact bytes, allocation-failure details and explains pool boundaries.
+PSRAM capacity now reflects its actual allocator pool, excluding static storage.
+Minima are sampled, not exact allocator low-water marks; direct malloc/new
+failures are not included. Advisory DTCM LOW/CRIT thresholds are 16/8 KiB.
+See [the manual](../manual/apps.md#ltop) for controls and interpretation.
+
+Firmware HEX SHA-256:
+`80e23b0075c990f115c9c488f64cb77cdcf8e957d5d56f5b6c2e910a58565086`.
+Host sampler tests, existing ltop tests and console/USB ELF placement checks
+pass. Live evidence: `/home/dennis/teensy-memory-monitor-final.json` passes USB
+80x24, 40x16 and 24x13, the 24x10 size warning, LCD rendering, temporary 128 KiB
+RAMFS allocation/recovery, and MP3 coexistence with zero reported underruns.
+Temporary mounts/apps were closed and USB geometry restored. Final free memory:
+72,432 DTCM, 295,932 OCRAM and 8,123,292 PSRAM bytes. The initial test fixture
+name exceeded RAMFS's mount-name limit; shortening it resolved that harness
+setup error. No firmware fault was observed.
+
+Earlier concurrent SSH/FTP hangs and validation of the OCRAM stack fix are in
+[the concurrency report](teensy41-multitask-testing.md).
 
 ## FTP/player halt and audio scheduling fixes — 2026-10-05
 
