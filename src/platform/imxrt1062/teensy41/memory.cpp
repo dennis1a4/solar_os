@@ -1,6 +1,6 @@
 #include <arduino_freertos.h>
 #include <semphr.h>
-#include <smalloc.h>
+#include "pool_accounting.h"
 #include <malloc.h>
 #include <limits.h>
 #include "platform.h"
@@ -21,6 +21,7 @@ static SemaphoreHandle_t mutex;
 static solar_os_memory_status_t statistics;
 struct alignas(max_align_t) Header { size_t size; size_t external_charge; };
 static size_t external_charged;
+static size_t external_used, ocram_used;
 static smalloc_pool ocram_pool;
 // Conservative charge includes pinned smalloc's two metadata headers and
 // rounding. Keep admission O(1): scanning all PSRAM on every allocation stalls
@@ -55,10 +56,7 @@ static size_t dtcm_free() {
             reinterpret_cast<uintptr_t>(_g_current_heap_end)) + info.fordblks;
 }
 static size_t ocram_free() {
-    // The pinned smalloc implementation dereferences total/free unconditionally.
-    size_t used=0,user=0,available=0;
-    sm_malloc_stats_pool(&ocram_pool,&used,&user,&available,nullptr);
-    return available;
+    return ocram_pool.pool_size - ocram_used;
 }
 static bool is_ocram(const void *ptr) {
     const uintptr_t address=uintptr_t(ptr),begin=uintptr_t(ocram_pool.pool);
@@ -92,7 +90,7 @@ extern "C" void *solar_os_memory_alloc(size_t size, solar_os_memory_class_t kind
         const size_t available=external_charged<capacity ? capacity-external_charged : 0;
         const size_t reserve=kind==SOLAR_OS_MEMORY_EXTERNAL_SYSTEM ? 0 : 128U*1024U;
         if (available>=reserve && size+external_overhead<=available-reserve) {
-            header=static_cast<Header *>(sm_malloc_pool(&extmem_smalloc_pool,size+sizeof(Header)));
+            header=static_cast<Header *>(sk_pool_alloc(&extmem_smalloc_pool,size+sizeof(Header),external_used));
             if(header){header->external_charge=size+external_overhead;external_charged+=header->external_charge;}
         }
     }
@@ -103,7 +101,7 @@ extern "C" void *solar_os_memory_alloc(size_t size, solar_os_memory_class_t kind
         if (kind == SOLAR_OS_MEMORY_INTERNAL_CRITICAL) {
             header=static_cast<Header *>(malloc(size+sizeof(Header)));
         }
-        if (!header) header=static_cast<Header *>(sm_malloc_pool(&ocram_pool,size+sizeof(Header)));
+        if (!header) header=static_cast<Header *>(sk_pool_alloc(&ocram_pool,size+sizeof(Header),ocram_used));
         if (!header && kind != SOLAR_OS_MEMORY_INTERNAL_CRITICAL &&
             dtcm_free()>size+sizeof(Header)+statistics.internal_reserve)
             header=static_cast<Header *>(malloc(size+sizeof(Header)));
@@ -129,8 +127,8 @@ extern "C" void solar_os_memory_free(void *ptr) {
     if (!ptr) return;
     auto *header = static_cast<Header *>(ptr) - 1;
     xSemaphoreTake(mutex, portMAX_DELAY);
-    if (solar_os_memory_is_external(header)) {external_charged-=header->external_charge;sm_free_pool(&extmem_smalloc_pool, header);}
-    else if (is_ocram(header)) sm_free_pool(&ocram_pool,header);
+    if (solar_os_memory_is_external(header)) {external_charged-=header->external_charge;sk_pool_free(&extmem_smalloc_pool, header,external_used);}
+    else if (is_ocram(header)) sk_pool_free(&ocram_pool,header,ocram_used);
     else free(header);
     xSemaphoreGive(mutex);
 }
@@ -163,11 +161,7 @@ extern "C" void solar_os_memory_get_status(solar_os_memory_status_t *status) {
     statistics.internal.total = statistics.dtcm.total + statistics.ocram.total;
     statistics.internal.free = statistics.dtcm.free + statistics.ocram.free;
     statistics.external.total = external_psram_size ? extmem_smalloc_pool.pool_size : 0;
-    if (external_psram_size) {
-        size_t used = 0, user = 0, available = 0;
-        sm_malloc_stats_pool(&extmem_smalloc_pool, &used, &user, &available, nullptr);
-        statistics.external.free = available;
-    }
+    statistics.external.free = external_psram_size ? extmem_smalloc_pool.pool_size - external_used : 0;
     solar_os_memory_region_status_t *regions[] = {
         &statistics.dtcm, &statistics.ocram, &statistics.internal, &statistics.external
     };

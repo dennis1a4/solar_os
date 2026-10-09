@@ -11,6 +11,8 @@ bool sk_audio_cancelled(void);
 void sk_audio_worker_begin(bool (*cancel)(void *), bool (*pause)(void *), void *user);
 void sk_audio_worker_end(void);
 bool sk_audio_worker_active(void);
+// Whether the SGTL5000 initialized successfully at boot.
+bool sk_audio_output_ready(void);
 esp_err_t sk_audio_output_start(uint8_t volume);
 esp_err_t sk_audio_output_write(const int16_t *stereo, size_t frames);
 esp_err_t sk_audio_output_finish(bool drain);

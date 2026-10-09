@@ -312,8 +312,17 @@ static void player_worker(void *arg)
     player.playback_state = err == ESP_OK || player.stop_requested ?
         PLAYER_STOPPED : PLAYER_ERROR;
     if (err != ESP_OK && !player.stop_requested) {
-        snprintf(player.message, sizeof(player.message), "Playback failed: %s",
-                 esp_err_to_name(err));
+#if SOLAR_OS_PLATFORM_IMXRT1062
+        if (err == ESP_ERR_NOT_FOUND && !sk_audio_output_ready()) {
+            strlcpy(player.message,
+                    "Audio shield not detected. Check connection and reboot.",
+                    sizeof(player.message));
+        } else
+#endif
+        {
+            snprintf(player.message, sizeof(player.message), "Playback failed: %s",
+                     esp_err_to_name(err));
+        }
     }
     player.task_done = true;
     player.redraw = true;

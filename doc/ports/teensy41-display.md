@@ -11,8 +11,8 @@ The small ST7735 shares SPI0: SCL/SCK 13, SDA/MOSI 11, reset 30, CMD/DC 31,
 CS 32 and backlight 33. These SCL/SDA labels mean SPI signals on this module.
 Pins 16/17 remain Wire1 SCL/SDA for the motor controller and other I2C devices.
 Both displays use the SPI0 mutex and separate chip selects. The small panel
-currently shows a startup message and red/green/blue bars using the 128x160
-ST7735 preset; it is not yet a second interactive terminal. The initial black-tab
+shows a live CPU, RAM and storage dashboard using the 128x160
+ST7735 preset. The initial black-tab
 image produced a two-pixel strip at the right, a one-pixel strip at the bottom,
 and clipped top-left text. A green-tab test corrected the edges but swapped red
 and blue (user-confirmed 2026-10-08). The profile now keeps `INITR_BLACKTAB` RGB
@@ -22,6 +22,27 @@ The user confirmed clean edges and correct RGB colors on 2026-10-08. Rotation
 is now configured as `SK_SECONDARY_ROTATION=1` (90 degrees clockwise, 160x128);
 the driver swaps the address offsets for the rotated orientation.
 
+The dashboard samples CPU and DTCM/OCRAM/PSRAM used/total KiB once per second.
+CPU is interval non-idle FreeRTOS time, rather than a task-list/stack scan.
+OCRAM/PSRAM usage is tracked on allocation/free, including allocator overhead,
+so reading RAM totals no longer scans those pools. Totals describe allocator
+pools, excluding static/reserved RAM; they are not the chip capacities.
+DTCM text turns yellow below 16 KiB free and red below 8 KiB. SD, USB and flash
+used/total MiB are sampled every 30 updates; unavailable media are labeled.
+Values are rounded down to whole KiB/MiB. USB uses the filesystem's cached
+free-cluster count, without forcing a `df --refresh` scan. Storage queries run
+outside the SPI mutex, but use the normal filesystem lock.
+
+A priority-1 task uses a static 4 KiB OCRAM stack and no framebuffer. Changed
+text rows are redrawn under separate SPI locks; the DTCM row also refreshes its
+warning color. `lcd small` reports the displayed values, completed updates,
+last update elapsed microseconds (including waits), cumulative task runtime
+microseconds, SPI lock misses, and remaining stack high-water mark in bytes.
+`lcd small off` pauses sampling/rendering and leaves the last image visible;
+`lcd small on` resumes it. These settings last until reboot. Counters use
+32-bit wraparound. Runtime deltas divided by wall time measure the monitor's
+CPU cost; update elapsed time is not CPU time.
+
 The preserved `teensy41_telnet_legacy` profile still uses the former wiring:
 SPI0 MOSI 11, MISO 12, SCK 13, CS 37, reset 9. Panel preset:
 `Adafruit_800x480`. Touch is intentionally out of scope.
@@ -29,7 +50,10 @@ SPI0 MOSI 11, MISO 12, SCK 13, CS 37, reset 9. Panel preset:
 The LCD uses a 100x30 ANSI text terminal with the controller's 8x16 font, cursor,
 color, inverse/underline attributes, erase and scrolling regions. The cell buffer
 is allocated in PSRAM; dirty cells are rendered in bounded batches without a
-full pixel framebuffer. Shared TUI apps use their normal port terminal interface
+full pixel framebuffer. A mutex-protected pending flag skips both the dirty-cell
+scan and SPI acquisition when the terminal is unchanged. Writes mark pending
+work; font changes and return from graphics force a repaint. Batches retain the
+pending flag until a complete scan has drained dirty cells. Shared TUI apps use their normal port terminal interface
 and ASCII glyphs. This does not yet expose the upstream pixel graphics API or
 graphical app variants. Unsupported Unicode characters display as `?`; this is
 not a complete xterm implementation.

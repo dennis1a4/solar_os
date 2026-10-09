@@ -48,6 +48,8 @@ static LcdTerminal *lcd;
 static SemaphoreHandle_t lcd_mutex;
 static unsigned render_position;
 static bool lcd_repaint=true;
+// Protected by lcd_mutex, including the early-out before taking SPI.
+static bool lcd_pending=true;
 #if SK_PLOT
 static bool graphics_mode;
 static uint32_t graphics_frames,graphics_ms;
@@ -73,7 +75,9 @@ static ST7735_t3 secondary(superkeyboard::secondary_cs, superkeyboard::secondary
     superkeyboard::secondary_mosi, superkeyboard::secondary_sck, superkeyboard::secondary_reset);
 #endif
 
-// All display calls are made by the console task. No framebuffer/DMA yet.
+#include "small_monitor.h"
+
+// Display transfers share the SPI mutex. Neither display uses DMA here.
 void sk_displays_begin() {
 #if SK_PRIMARY_RA8875
     if (sk_slot_claim(2, "primary-display") != ESP_OK) return;
@@ -123,16 +127,11 @@ void sk_displays_begin() {
 #endif
     secondary.setRotation(SK_SECONDARY_ROTATION);
     secondary.fillScreen(ST7735_BLACK);
-    secondary.setTextColor(ST7735_WHITE);
-    secondary.setCursor(0, 0);
-    secondary.print("SolarOS\nTeensy 4.1");
-    secondary.fillRect(0,32,40,16,ST7735_RED);
-    secondary.fillRect(40,32,40,16,ST7735_GREEN);
-    secondary.fillRect(80,32,40,16,ST7735_BLUE);
     pinMode(superkeyboard::secondary_backlight, OUTPUT);
     analogWrite(superkeyboard::secondary_backlight, 128);
     sk_spi_unlock(superkeyboard::secondary_spi);
-    sk_console_printf("ST7735 startup pattern sent: SPI%u SCK%u MOSI%u CS%u DC%u reset%u backlight%u\r\n",
+    small_monitor_start();
+    sk_console_printf("ST7735 monitor started: SPI%u SCK%u MOSI%u CS%u DC%u reset%u backlight%u\r\n",
         superkeyboard::secondary_spi,superkeyboard::secondary_sck,superkeyboard::secondary_mosi,
         superkeyboard::secondary_cs,superkeyboard::secondary_dc,
         superkeyboard::secondary_reset,superkeyboard::secondary_backlight);
@@ -145,6 +144,7 @@ void sk_lcd_write(const char *text,size_t length) {
     if(!lcd) return;
     xSemaphoreTake(lcd_mutex,portMAX_DELAY);
     lcd->write(text,length);
+    if(length) lcd_pending=true;
     xSemaphoreGive(lcd_mutex);
 }
 void sk_lcd_row(unsigned row,char *out) {
@@ -172,7 +172,13 @@ void sk_lcd_flush() {
 #if SK_PLOT
     if(graphics_mode) return;
 #endif
-    if(!lcd || !sk_spi_lock(0)) return;
+    if(!lcd) return;
+    // Preserve SPI -> terminal lock order for rendering. Never retain the
+    // terminal mutex while waiting for SPI; writers can mark new work here.
+    xSemaphoreTake(lcd_mutex,portMAX_DELAY);
+    const bool pending=lcd_pending || lcd_repaint;
+    xSemaphoreGive(lcd_mutex);
+    if(!pending || !sk_spi_lock(0)) return;
     static const uint16_t colors[]={0x0000,0xa800,0x0540,0xad40,0x0015,0xa815,0x0555,0xad55,
                                    0x52aa,0xf800,0x07e0,0xffe0,0x001f,0xf81f,0x07ff,0xffff};
     xSemaphoreTake(lcd_mutex,portMAX_DELAY);
@@ -181,8 +187,8 @@ void sk_lcd_flush() {
         primary.clearScreen(colors[lcd->default_bg]);
         memset(lcd->dirty,1,sizeof(lcd->dirty)); lcd_repaint=false;
     }
-    unsigned drawn=0;
-    for(unsigned checked=0;checked<lcd->rows*lcd->cols && drawn<128;++checked) {
+    unsigned drawn=0,checked=0;
+    for(;checked<lcd->rows*lcd->cols && drawn<128;++checked) {
         unsigned pos=render_position++%(lcd->rows*lcd->cols);
         unsigned row=pos/lcd->cols,col=pos%lcd->cols;
         if(!lcd->dirty[row][col]) continue;
@@ -198,6 +204,9 @@ void sk_lcd_flush() {
         primary.write(cell.ch);
         if(cell.flags&2) primary.drawLine(col*8*lcd->scale,(row+1)*16*lcd->scale-1,(col+1)*8*lcd->scale-1,(row+1)*16*lcd->scale-1,fg);
     }
+    // A complete scan drained all dirty cells. A bounded batch may still
+    // have work left, so another flush must inspect the remaining cells.
+    lcd_pending=checked<lcd->rows*lcd->cols;
     xSemaphoreGive(lcd_mutex);
     sk_spi_unlock(0);
 }

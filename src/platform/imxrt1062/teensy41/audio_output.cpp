@@ -536,6 +536,8 @@ void sk_audio_player_tone(bool on) {
     __DMB();
     tone_on = on;
 }
+extern "C" bool sk_audio_output_ready() { return ready; }
+
 extern "C" void sk_audio_output_status() {
     sk_console_printf("Audio: SGTL5000=%s rate=44100 stereo blocks=%lu underruns=%lu\r\n",
         ready ? "ready" : "missing", (unsigned long)played, (unsigned long)underruns);

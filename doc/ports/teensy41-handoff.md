@@ -6,6 +6,22 @@ This is the current state. Older snapshots are in the
 
 ## Current display wiring and installed image — 2026-10-08
 
+Idle CPU optimization: `sk_lcd_flush()` now skips unchanged terminals before
+acquiring SPI or scanning the 3,000 cells. Pending work remains set across
+bounded redraw batches; writes, font changes and graphics exit still refresh.
+Idle CPU fell from 37.9% to 5.3–5.6% in live interval samples with the dashboard
+and Ethernet enabled. Evidence: `/home/dennis/teensy-cpu-before-idle-fix.json`,
+`/home/dennis/teensy-cpu-check.json`. Cumulative `top` figures after reboot include
+startup/storage scans and graphics tests, so use interval dashboard samples for
+this comparison. Host flush/ANSI tests and live display/graphics/USB acceptance
+pass (`/home/dennis/teensy-idle-fix-display.json`).
+
+The player now explains an uninitialized SGTL5000 as “Audio shield not detected.
+Check connection and reboot.” instead of the generic `Playback failed: NOT_FOUND`.
+Other errors retain their original diagnostics. Built/flashed and verified with
+the shield absent: `/home/dennis/teensy-player-missing-shield.json` captures the
+main-display error and clean player exit.
+
 The user rewired the main display and added an ST7735 small display. Installed
 profile is now **`teensy41_display_wiring`**, not `teensy41_telnet_legacy`.
 Main: CS10, MOSI11, MISO12, SCK13, reset14, backlight15; WAIT is disconnected.
@@ -14,8 +30,9 @@ The user confirmed moving the small panel off pins 16/17 to the shared SPI0 bus.
 Wire1 remains on SDA17/SCL16 for the motor controller. GPIO10's former motor
 enable reservation/startup write is disabled. Audio/UART assignments are unchanged.
 
-The small panel currently shows a startup message and color bars, not an
-interactive console. It needs black-tab RGB ordering with column offset 2 and
+The small panel shows a CPU/RAM/storage dashboard. RAM and disk figures use
+used/total, as requested by the user. CPU/RAM update once per second and storage
+every 30 updates. `lcd small [on|off]` provides diagnostics and pause/resume. It needs black-tab RGB ordering with column offset 2 and
 row offset 1. The green-tab trial fixed clipping but swapped red/blue; this
 revision separates the address offsets from color ordering. Its driver code
 is placed in cached flash to retain DTCM headroom; both panels use the SPI0 lock.
@@ -24,7 +41,21 @@ The user confirmed clean edges, readable text and correct colors, then requested
 and preserves the corrected offsets and RGB order.
 
 Firmware HEX SHA-256:
-`c6ace9b123d362c29dc7b0102dace33370a238f355909e69871af6dfbb59b04a`.
+`9e0e59e0a55151ded04a7f0b2b9908b96e86ea7090224af94e6742551114698e`.
+The dashboard uses a static 4 KiB OCRAM stack, priority 1, and no framebuffer.
+The first on-device measurement exposed roughly 25% CPU cost from the existing
+PSRAM statistics scan. OCRAM/PSRAM statistics now track actual rounded allocation
+charges under the memory mutex, eliminating those scans. All allocations in
+these pools must continue through the accounting helpers in `memory.cpp`.
+The host accounting test compares against the pinned allocator's full scan.
+The user confirmed that dashboard text is readable with no clipped/noisy edges.
+`/home/dennis/teensy-small-monitor.json` passes: steady-state monitor CPU is
+0.445% across a storage refresh, no SPI lock misses, 2,096 bytes of stack headroom,
+main-display graphics/USB coexistence, pause/resume and used/total agreement with
+`mem` and `df`. This timing excludes the first filesystem count after boot;
+initial SD free-cluster discovery can take considerably longer. Idle DTCM is
+70,928 bytes free. USB is unavailable with only the keyboard attached; mounted
+USB storage is not covered by this run.
 Build and console-stack/USB-DMA placement checks pass. Hardware host tests pass
 for old/new pin maps with ASan/UBSan (LSan disabled because of ptrace).
 `/home/dennis/teensy-display-wiring-rgb-final.json` passes pin reservations,
@@ -34,7 +65,7 @@ of the actual `gpio: pin ... busy` diagnostic; this was a harness assertion issu
 `/home/dennis/teensy-display-wiring-memory-final.json` also passes USB monitor
 layouts (80x24, 40x16, 24x13 and undersized-terminal handling), LCD monitor
 rendering, and temporary RAMFS allocation/recovery. Tests restore USB geometry,
-remove the RAM disk and close their apps. Idle DTCM is 71,504 bytes free.
+remove the RAM disk and close their apps. Before the dashboard, idle DTCM was 71,504 bytes free.
 The user confirmed the final small-panel color order and absence of edge noise
 and clipping before the subsequent rotation update.
 The rotated image passes the same display/USB/graphics checks in

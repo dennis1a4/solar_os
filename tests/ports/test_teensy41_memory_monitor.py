@@ -23,16 +23,13 @@ static uint8_t heap[80000];
 static uint8_t *_g_heap_start=heap, *_g_heap_max=heap+sizeof(heap);
 static struct { size_t pool_size; } ocram_pool{300000}, extmem_smalloc_pool{8200000};
 static unsigned external_psram_size=8;
-static size_t df=70000, of=280000, ef=8000000;
+static size_t df=70000, of=280000, external_used=200000;
 static int mutex, locks;
 static const int portMAX_DELAY=0;
 static void xSemaphoreTake(int,int){assert(!locks);++locks;}
 static void xSemaphoreGive(int){assert(locks==1);--locks;}
 static size_t dtcm_free(){return df;}
 static size_t ocram_free(){return of;}
-static void sm_malloc_stats_pool(void*,size_t *used,size_t *user,size_t *free,void*) {
-    *used=0;*user=0;*free=ef;
-}
 '''
         checks = r'''
 int main() {
@@ -44,14 +41,14 @@ int main() {
     assert(s.internal.total==380000 && s.internal.free==350000);
     assert(s.dtcm.minimum_free==70000 && s.external.minimum_free==8000000);
     assert(s.region_samples==1 && s.dtcm.largest_free==0);
-    df=0;of=290000;ef=7900000;
+    df=0;of=290000;external_used=300000;
     statistics.classes[0].failures=1;statistics.last_failure_valid=true;
     statistics.last_failure_size=1024;
     solar_os_memory_get_status(&s);
     assert(s.dtcm.minimum_free==0 && s.ocram.minimum_free==280000);
     assert(s.external.minimum_free==7900000 && s.internal.minimum_free==290000);
     assert(s.classes[0].failures==1 && s.last_failure_size==1024);
-    df=70000;of=300000;ef=8000000;
+    df=70000;of=300000;external_used=200000;
     solar_os_memory_get_status(&s);
     assert(s.dtcm.minimum_free==0 && s.internal.free==370000);
     assert(s.external.minimum_free==7900000 && s.region_samples==3);

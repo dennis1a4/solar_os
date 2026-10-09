@@ -515,6 +515,16 @@ static int lcd_color(const char *name) {
 }
 extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);
+    if(argc>=2 && !strcmp(argv[1],"small")) {
+        int enabled=-1;
+        if(argc==3 && !strcmp(argv[2],"on")) enabled=1;
+        else if(argc==3 && !strcmp(argv[2],"off")) enabled=0;
+        else if(argc!=2) { io->command_status=2; solar_os_shell_io_writeln(io,"usage: lcd small [on|off]"); return; }
+        char status[640];
+        sk_small_monitor_status(status,sizeof(status),enabled);
+        solar_os_shell_io_writeln(io,status);
+        return;
+    }
     unsigned size,fg,bg; sk_lcd_appearance(size,fg,bg);
     if(argc>=2 && (!strcmp(argv[1],"font") || !strcmp(argv[1],"color") || !strcmp(argv[1],"reset"))) {
         io->command_status=1;

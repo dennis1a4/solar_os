@@ -814,6 +814,17 @@ AddressSanitizer and UndefinedBehaviorSanitizer remain enabled.
 
 `python scripts/ports/test_teensy41_display_wiring.py --log REPORT.json` verifies
 pin ownership, GPIO conflict rejection and the main LCD console over USB.
-It cannot verify physical pixels; visually check the small panel's startup text
-and red/green/blue bars. The earlier legacy profile has different pin assignments
+It cannot verify physical pixels; visually check the small panel's dashboard. The earlier legacy profile has different pin assignments
 and must not be flashed onto the updated wiring.
+
+`python scripts/ports/test_teensy41_small_monitor.py --log REPORT.json` checks
+CPU/RAM/storage dashboard updates, measures task CPU cost across a storage
+refresh (must stay below 2%), checks stack headroom and animated main-display
+coexistence, and tests pause/resume. `python3 tests/ports/test_teensy41_pool_accounting.py`
+compares incremental RAM accounting with real allocator scans through allocation,
+fragmentation, failure and recovery using the installed Teensy core sources.
+
+`python3 tests/ports/test_teensy41_lcd_flush.py` exercises the production bounded
+flush with a mock display and the real ANSI terminal. It checks idle SPI bypass,
+full redraw completion, cursor visibility/movement, erase/scroll, font resize,
+SPI lock retry and return from graphics.

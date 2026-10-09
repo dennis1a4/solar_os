@@ -35,6 +35,7 @@ void sk_sd_cat(const char *path);
 void sk_memory_begin();
 void sk_memory_print();
 void sk_displays_begin();
+void sk_small_monitor_status(char *out, size_t size, int enabled = -1);
 void sk_display_write(const char *text, size_t length);
 void sk_usb_begin();
 void sk_usb_poll();
