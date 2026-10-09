@@ -12,6 +12,7 @@ public:
     uint32_t presses=0, repeats=0, releases=0, disconnects=0, dropped=0;
     uint32_t generation=0;
     uint8_t modifiers=0, leds=0;
+    bool is_down(uint8_t usage) const { return down(usage); }
     uint8_t repeat_key() const { return candidate; }
     size_t queued() const { return (head+capacity-tail)%capacity; }
     void press(uint8_t key,uint32_t now) {

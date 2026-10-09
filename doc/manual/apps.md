@@ -1219,9 +1219,16 @@ Controls:
 Original Game Boy (DMG) emulator selected by the `gameboy` group on boards with
 PSRAM, SD storage, graphics, and a streaming display. Current integrated
 targets are SolarTerm, Freenove IPS, CL-32, T-LoRa-Pager, T-Deck Plus,
-ODROID-GO, Freenove PAL, and TTGO VGA32. The application loads a user-supplied
+ODROID-GO, Freenove PAL, TTGO VGA32, and the Teensy 4.1 display-wiring profile. The application loads a user-supplied
 ROM into PSRAM and writes battery-backed cartridge RAM beside it as a `.sav`
 file. Game Boy Color-only ROMs and ROMs larger than 4 MiB are rejected.
+
+On Teensy, launch from the main LCD console: the game appears on the small
+ST7735, replacing its dashboard until exit. The complete image is scaled to
+142x128 with side borders. This initial port runs without audio. Measured with
+2048 homebrew: about 59.7 emulated FPS and 29.9 displayed FPS. Use
+`lcd small gameboy` from USB to read current statistics. See the
+[Teensy display notes](../ports/teensy41-display.md) for setup and the free test ROM.
 
 The emulator runs Peanut-GB at its fixed native frame frequency in a dedicated
 worker. Peanut-GB renders alternate LCD frames, producing a compact 160x144

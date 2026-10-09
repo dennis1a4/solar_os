@@ -828,3 +828,20 @@ fragmentation, failure and recovery using the installed Teensy core sources.
 flush with a mock display and the real ANSI terminal. It checks idle SPI bypass,
 full redraw completion, cursor visibility/movement, erase/scroll, font resize,
 SPI lock retry and return from graphics.
+
+`python3 tests/ports/test_teensy41_gameboy_input.py` checks rapid physical
+keypress/release handling, stale/repeat characters and terminal input pulses.
+`python3 tests/ports/test_teensy41_gameboy_presenter.py` checks small-panel
+scaling, black borders, allocation/SPI failures and display ownership cleanup.
+`python scripts/ports/test_teensy41_gameboy.py --log REPORT.json` requires the
+homebrew ROM `/sd/roms/2048.gb` (override with `--rom`), its license text fixture,
+an idle main console and Ethernet. It benchmarks the display, runs two emulator
+lifecycles with FPS checks and FTP transfer, checks memory recovery and dashboard
+restoration, then exercises invalid ROMs, pause and reset. `--controls-only`
+skips the FPS/FTP runs; `--leave-running` leaves the game open for visual testing.
+
+`python3 tests/ports/test_teensy41_2048_rom.py --original ORIGINAL.gb --fixed FIXED.gb`
+compares the original public-domain 2048 ROM with the source-corrected build.
+It checks all 96 selected moves are legal and accepted at five taps/second,
+using the production Peanut-GB core. ROM files are external fixtures; the
+source patch and build instructions are in `doc/ports/teensy41-display.md`.

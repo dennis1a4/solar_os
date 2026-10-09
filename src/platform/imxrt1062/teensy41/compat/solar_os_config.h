@@ -78,3 +78,7 @@
 #if SK_SYNTH
 #define SOLAR_OS_PACKAGE_APP_SYNTH 1
 #endif
+
+#if SK_GAMEBOY
+#define SOLAR_OS_PACKAGE_APP_GAMEBOY 1
+#endif

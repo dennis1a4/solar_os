@@ -1,4 +1,5 @@
 #include "solar_os_gameboy_audio.h"
+#include <stddef.h>
 
 #include "solar_os_config.h"
 

@@ -53,6 +53,35 @@ These commands work while an app or graphics is active. `lcd small off` pauses
 the dashboard; it does not change its backlight. A dark screen can be restored
 from USB with the same brightness command.
 
+The small display also runs the Game Boy app in `teensy41_display_wiring`:
+enter `gameboy /sd/roms/2048.gb` at the main-screen keyboard. From USB, use
+`lcd send "gameboy /sd/roms/2048.gb"`. The complete 160x144 Game Boy image is
+scaled to 142x128 with black side borders. This initial Teensy port is silent;
+the shared audio backend remains disabled. Arrows are the D-pad, Z/X are A/B,
+Enter is Start, Backspace is Select, P pauses, R resets, and Q/Escape exits.
+Held USB keyboard keys are sampled directly; injected/terminal keys use short
+button pulses. The main LCD remains the owning console; USB stays independent.
+The dashboard pauses while graphics owns the panel and returns on exit, retaining
+its prior on/off setting. Backlight settings remain independent.
+
+`lcd small benchmark` draws 120 moving RGB frames and reports elapsed/transfer
+time and FPS. It refuses to run while the game owns the display. The measured
+full-screen benchmark was 62.5 FPS at 24 MHz SPI (13.8 ms transfer per frame).
+`lcd small gameboy` reports the latest emulator statistics. With the public-domain
+[2048 homebrew](https://github.com/mmuszkow/2048-gb), the Teensy measured
+59.73–59.76 emulated FPS and 29.86–29.88 displayed FPS, with no dropped frames.
+Presentation includes scaling and takes approximately 15.4 ms per displayed
+frame. The presenter runs synchronously in the emulator worker; alternate
+emulated frames do not transfer a display frame. Other ROMs may perform differently.
+ROM, emulator, display buffers and the worker stack are allocated on demand;
+code is placed in cached flash to preserve DTCM headroom.
+
+The test ROM and its Unlicense text are installed at `/sd/roms/2048.gb` and
+`/sd/roms/2048-LICENSE.txt`. ROM SHA-256:
+`f7e9a462df94d03a1248cc8ce1166df1aaa384b07e2f3ddc70bf81a88d78017b`.
+This ROM has no cartridge save RAM. Battery-backed save handling is inherited
+from the shared app but has not been exercised by this ROM.
+
 The preserved `teensy41_telnet_legacy` profile still uses the former wiring:
 SPI0 MOSI 11, MISO 12, SCK 13, CS 37, reset 9. Panel preset:
 `Adafruit_800x480`. Touch is intentionally out of scope.
@@ -150,3 +179,39 @@ The current display profile also includes native RA8875 Plot graphics and the
 Playground browser/download service. See [Plot/Playground](teensy41-plot-playground.md)
 for commands, RTC setup, memory policy and validation. The original display
 checkpoint above remains available as a rollback baseline.
+
+### 2048 homebrew input correction
+
+The public-domain [mmuszkow/2048-gb](https://github.com/mmuszkow/2048-gb)
+ROM's `play()` function samples `joypad()` for the move and again in an
+unconditional release-wait. A press arriving between those checks is swallowed.
+The patch in `scripts/ports/fixtures/2048-input.patch` samples once and returns
+on zero input, only waiting for release after processing a nonzero sample.
+This is a ROM fix, not a change to emulated Game Boy timing or button semantics.
+
+Rebuild from upstream commit `c7e25ee10e0e1abea043dc44be11ac32ea543553`, using
+[GBDK 4.5.0](https://github.com/gbdk-2020/gbdk-2020/releases/tag/4.5.0):
+
+```sh
+# In the upstream 2048-gb checkout:
+git apply /path/to/solar_os/scripts/ports/fixtures/2048-input.patch
+/path/to/gbdk/bin/lcc -Wa-l -Wl-m -Wl-j -Wm-yc -Wm-yn2048 -o 2048-fixed.gb 2048.c
+# In the SolarOS checkout, with original and corrected ROM files:
+python3 tests/ports/test_teensy41_2048_rom.py --original /path/to/original/2048.gb --fixed /path/to/2048-fixed.gb
+```
+
+The lowercase `-Wm-yc` marks DMG/Color compatibility; uppercase `-Wm-yC`
+marks Color-only and SolarOS correctly rejects it. Keep the upstream LICENSE.
+The test boots 12 games and checks 96 legal moves at five taps per second:
+original 67 accepted/29 missed, corrected 96 accepted/0 missed. An unmodified
+source rebuild with the same compiler accepted 62/96, confirming the source
+change fixes the missed input.
+
+The SD card now contains the corrected `/sd/roms/2048.gb` and the preserved
+`/sd/roms/2048-original.gb`. Both were verified by FTP readback.
+Corrected ROM SHA-256: `a433fdc9befe3b2b5b8b6d862c4fae4ce9ef61cfc714be067150e70a78584ed1`.
+
+`lcd small input` reports a bounded 32-event timing trace: `I` is the mask sent
+by the app, `E` the mask sampled for emulation, and `D` a changed image completed
+on the display. Times are milliseconds since boot; masks use Peanut-GB button
+bits. Maximum input/frame gaps reset on game launch and include pauses.

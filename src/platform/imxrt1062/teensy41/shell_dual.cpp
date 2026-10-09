@@ -2,6 +2,7 @@
 #include <arduino_freertos.h>
 #include <semphr.h>
 #include "platform.h"
+#include "small_display.h"
 #include "power_shutdown.h"
 #if SK_HW_RESOURCES
 #include "serial_terminal.h"
@@ -304,6 +305,11 @@ extern "C" bool solar_os_shell_completion_runtime(const solar_os_completion_requ
 #endif
     return true;
 }
+#if SK_GAMEBOY
+extern "C" bool sk_gameboy_keyboard_event() {
+    return active().local && sk_usb_last_read_physical();
+}
+#endif
 static bool emit_key(char ch, void *) {
     if(ch==26 && foreground) { suspend_app(); return true; }
     solar_os_event_t event{};
@@ -515,6 +521,36 @@ static int lcd_color(const char *name) {
 }
 extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);
+#if SK_GAMEBOY
+    if(argc==3 && !strcmp(argv[1],"small") && !strcmp(argv[2],"input")) {
+        char status[1024];sk_gameboy_input_status(status,sizeof(status));solar_os_shell_io_writeln(io,status);return;
+    }
+    if(argc==3 && !strcmp(argv[1],"small") && !strcmp(argv[2],"gameboy")) {
+        char status[256];sk_gameboy_status(status,sizeof(status));solar_os_shell_io_writeln(io,status);return;
+    }
+#endif
+    if(argc==3 && !strcmp(argv[1],"small") && !strcmp(argv[2],"benchmark")) {
+        auto *pixels=static_cast<uint16_t *>(solar_os_memory_alloc(160*128*2,SOLAR_OS_MEMORY_INTERNAL_PREFERRED,"small.benchmark"));
+        if(!pixels) { io->command_status=1; solar_os_shell_io_writeln(io,"No memory for display benchmark."); return; }
+        if(!sk_small_acquire()) { solar_os_memory_free(pixels); io->command_status=1; solar_os_shell_io_writeln(io,"Small display busy or unavailable."); return; }
+        unsigned frames=0; uint32_t transfer=0;
+        const uint32_t start=micros();
+        for(unsigned frame=0;frame<120;++frame) {
+            for(unsigned y=0;y<128;++y) for(unsigned x=0;x<160;++x)
+                pixels[y*160+x]=((x+frame)%160<53)?0xf800:((x+frame)%160<106)?0x07e0:0x001f;
+            const uint32_t sent=micros();
+            if(!sk_small_frame(pixels)) break;
+            transfer+=micros()-sent; ++frames;
+            if(sk_console_poll_cancel(true)) break;
+        }
+        const uint32_t elapsed=micros()-start;
+        sk_small_release();solar_os_memory_free(pixels);
+        solar_os_shell_io_printf(io,"Small display: frames=%u elapsed-us=%lu transfer-us=%lu fps=%lu.%lu\n",frames,
+            (unsigned long)elapsed,(unsigned long)transfer,
+            elapsed?(unsigned long)(uint64_t(frames)*10000000/elapsed/10):0UL,
+            elapsed?(unsigned long)(uint64_t(frames)*10000000/elapsed%10):0UL);
+        io->command_status=frames==120?0:1;return;
+    }
     const bool small=argc>=2 && !strcmp(argv[1],"small");
     const int option=small?2:1;
     if(argc>option && !strcmp(argv[option],"brightness")) {

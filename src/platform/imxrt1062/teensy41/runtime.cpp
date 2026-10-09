@@ -1,4 +1,5 @@
 #include <arduino_freertos.h>
+#include "small_display.h"
 #include "platform.h"
 extern "C" {
 #include "solar_os.h"
@@ -50,6 +51,13 @@ extern "C" esp_err_t solar_os_log_write(solar_os_log_level_t level,
     va_start(args, fmt);
     vsnprintf(message, sizeof(message), fmt, args);
     va_end(args);
+#if SK_GAMEBOY
+    if(tag && !strcmp(tag,"solar_os_gameboy")) {
+        extern void sk_gameboy_log(const char *);
+        sk_gameboy_log(message);
+        return ESP_OK;
+    }
+#endif
     sk_console_printf("[%u] %s: %s\r\n", unsigned(level), tag ? tag : "", message);
     return ESP_OK;
 }

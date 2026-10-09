@@ -28,6 +28,9 @@
 #include "solar_os_memory.h"
 #include "solar_os_storage.h"
 #include "solar_os_task.h"
+#if SOLAR_OS_PLATFORM_IMXRT1062
+#include "small_display.h"
+#endif
 
 #if SOLAR_OS_PACKAGE_SERVICE_SYNTH
 #define audio_read solar_os_gameboy_audio_read
@@ -390,10 +393,12 @@ static esp_err_t gameboy_start(solar_os_context_t *ctx) {
   if (gameboy.control_mutex == NULL) {
     return gameboy_start_error(ctx, NULL, "emulator control allocation failed");
   }
+  #if !SOLAR_OS_PLATFORM_IMXRT1062
   solar_os_input_source_info_t buttons = {0};
   if (solar_os_input_source_find("buttons", &buttons)) {
     gameboy.buttons_source = buttons.source;
   }
+  #endif
   const char *path_arg = solar_os_context_argv(ctx, 1);
   if (path_arg == NULL) {
     return gameboy_start_error(ctx, NULL, "usage: gameboy <file.gb>");
@@ -583,6 +588,10 @@ static uint8_t gameboy_button_for_char(uint8_t ch) {
   return 0;
 }
 
+#if SOLAR_OS_PLATFORM_IMXRT1062
+static uint8_t gameboy_input_pressed_mask(void) { return sk_gameboy_buttons(); }
+static uint8_t gameboy_board_buttons_pressed_mask(void) { return 0; }
+#else
 static uint8_t gameboy_button_for_input_key(
     const solar_os_input_key_event_t *key) {
   if (key == NULL) {
@@ -644,6 +653,8 @@ static uint8_t gameboy_board_buttons_pressed_mask(void) {
   return pressed;
 }
 
+#endif
+
 static uint8_t gameboy_pulse_pressed_mask(int64_t now_us) {
   uint8_t pressed = 0;
   for (size_t bit = 0; bit < 8U; bit++) {
@@ -666,6 +677,9 @@ static void gameboy_refresh_inputs(int64_t now_us) {
   gameboy_control_lock();
   gameboy.pressed_mask = pressed;
   gameboy_control_unlock();
+#if SOLAR_OS_PLATFORM_IMXRT1062
+  sk_gameboy_trace('I', pressed);
+#endif
 }
 
 static void gameboy_press(uint8_t mask, int64_t now_us) {
@@ -711,6 +725,14 @@ static bool gameboy_handle_char(solar_os_context_t *ctx, uint8_t ch) {
   }
   const uint8_t mask = gameboy_button_for_char(ch);
   if (mask != 0) {
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    // HID already provides held/released state. Synthesizing a terminal pulse
+    // as well would extend a released key and merge consecutive quick taps.
+    if (sk_gameboy_keyboard_event()) {
+      gameboy_refresh_inputs(esp_timer_get_time());
+      return true;
+    }
+#endif
     gameboy_press(mask, esp_timer_get_time());
   }
   return true;
@@ -792,6 +814,9 @@ static void gameboy_emulator_worker(void *arg) {
       due = GAMEBOY_MAX_CATCH_UP_FRAMES;
     }
     bool frame_ok = true;
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    sk_gameboy_trace('E', pressed);
+#endif
     for (uint32_t frame = 0U; frame < due; frame++) {
       if (!gameboy_run_frame()) {
         frame_ok = false;

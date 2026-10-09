@@ -6,6 +6,45 @@ This is the current state. Older snapshots are in the
 
 ## Current display wiring and installed image — 2026-10-08
 
+Game Boy is enabled in the display-wiring profile (`SK_GAMEBOY`). It uses the
+small display with 142x128 aspect-preserving downscaling; the dashboard pauses
+under exclusive SPI-protected ownership and restores on exit. The first port
+is silent (no Game Boy audio backend). Keyboard controls and commands are in
+[display notes](teensy41-display.md). `lcd small benchmark` measured 62.5 FPS;
+2048 measured 59.7 emulated / 29.9 displayed FPS with no frame drops. Two game
+start/stop cycles recovered OCRAM/PSRAM, and USB/FTP remained responsive during
+play. Evidence: `/home/dennis/teensy-gameboy-performance.json`.
+The public-domain ROM and license were downloaded from `mmuszkow/2048-gb` and
+installed in `/sd/roms/`; USB readback verified every byte. Ethernet initially
+had no link; the user reconnected it and the live FTP coexistence check passed.
+Pause/resume, reset, missing/invalid ROMs and busy-display rejection also pass
+(`/home/dennis/teensy-gameboy.json`). The final test leaves 2048 running for the
+user; Q/Escape returns to the dashboard. The user confirmed the game image
+looks good, with the complete image visible/readable and correct graphics.
+Host emulator/ROM/video tests, presenter scaling/ownership/error tests, keyboard
+regressions and console-stack/USB-buffer placement checks pass. 2048 has no save
+RAM, so cartridge battery persistence remains untested.
+
+Game Boy input follow-up: physical HID characters now bypass terminal-style
+140 ms button pulses, so actual key releases are respected. The rapid-tap host
+regression passes. The remaining missed moves were reproduced in the original
+2048 ROM on the host: its unconditional release-wait can swallow a new press
+when the preceding move check sampled zero. The corrected source samples once
+and returns immediately for zero input, before entering the release-wait.
+At five taps/second, the original ROM missed 29/96 legal moves and the corrected
+ROM accepted 96/96. Rebuilding the unmodified source with the same GBDK 4.5.0
+compiler still missed 34/96, isolating the source fix from compiler changes.
+The corrected ROM is installed at `/sd/roms/2048.gb`; the original is preserved
+at `/sd/roms/2048-original.gb`. FTP readback verified both byte-for-byte.
+Evidence: `/home/dennis/teensy-gb-rom-fix.json`. The game is running at 59.73
+emulated / 29.86 displayed FPS, no drops/rebases. On 2026-10-09 the user confirmed
+that quick physical arrow taps now respond consistently. The live timing command
+`lcd small input` shows the last
+32 input/emulator/display-change events and maximum polling gaps since launch
+(pause time is included). Before the ROM fix the physical trace showed timely
+input delivery but missing board changes, matching the host reproduction.
+Rebuild instructions and source patch are in the display notes.
+
 Backlight commands: `lcd brightness [0-100]` and `lcd small brightness [0-100]`
 read/set hardware PWM duty on pins 15 and 33. Zero turns the backlight off.
 Settings persist in `/flash/.solar-settings/lcd_backlight.bin` with independent
@@ -52,7 +91,7 @@ The user confirmed clean edges, readable text and correct colors, then requested
 and preserves the corrected offsets and RGB order.
 
 Firmware HEX SHA-256:
-`2e481187ba16f04594cab39d88577650889481784b2b72b80608e0c3e71fba12`.
+`8e503c46454b0a7f62f4c99c2e5a212d91be9b5c089994ef75ceb06d21a36241`.
 The dashboard uses a static 4 KiB OCRAM stack, priority 1, and no framebuffer.
 The first on-device measurement exposed roughly 25% CPU cost from the existing
 PSRAM statistics scan. OCRAM/PSRAM statistics now track actual rounded allocation

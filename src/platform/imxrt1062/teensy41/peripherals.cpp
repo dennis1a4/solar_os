@@ -454,6 +454,19 @@ void sk_usb_poll() {
 #endif
 #endif
 }
+#if SK_GAMEBOY
+extern "C" uint8_t sk_gameboy_buttons() {
+#if SK_USB_HOST
+    KeyboardIrqGuard guard;
+    const uint8_t usages[]={0x1d,0x1b,0x2a,0x28,0x4f,0x50,0x52,0x51};
+    uint8_t mask=0;
+    for(unsigned i=0;i<8;++i) if(keyboard_input.is_down(usages[i])) mask|=1U<<i;
+    return mask;
+#else
+    return 0;
+#endif
+}
+#endif
 int sk_usb_read() {
 #if SK_USB_HOST
     KeyboardIrqGuard guard;

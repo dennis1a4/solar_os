@@ -1,0 +1,24 @@
+--- a/2048.c
++++ b/2048.c
+@@ -361,8 +361,11 @@
+ 
+ /* main game routine, please change flags only here */
+ void play(void) {
++    /* Only wait for release after handling a nonzero input sample. */
++    UINT8 jp = joypad();
++    if(!jp) return;
+     if(flags & FLAG_WAIT_ACK) {
+-        if(joypad()&(J_START|J_A)) {
++        if(jp&(J_START|J_A)) {
+             if(flags & FLAG_RESTART) {
+                 new_game();
+                 flags &= ~FLAG_RESTART;
+@@ -371,7 +374,7 @@
+             flags &= ~FLAG_WAIT_ACK;
+             flags |= FLAG_REDRAW;
+         }
+-    } else if(move(joypad())) {
++    } else if(move(jp)) {
+         add_new_tile();
+         fill_framebuffer();
+         if(no_move_possible()) {

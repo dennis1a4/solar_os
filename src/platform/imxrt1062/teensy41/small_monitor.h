@@ -1,5 +1,6 @@
 // Included by peripherals.cpp so the display driver and monitor live in flash.
 #pragma once
+#include "small_display.h"
 #if SK_SECONDARY_ST7735
 extern "C" {
 #include "solar_os_memory.h"
@@ -11,6 +12,8 @@ DMAMEM static StackType_t small_stack[1024];
 static StaticTask_t small_tcb;
 static TaskHandle_t small_task;
 static bool small_enabled=true;
+static bool small_owned; // Protected by SPI mutex for rendering.
+static uint32_t small_generation;
 static uint32_t small_updates, small_cpu, small_elapsed, small_misses;
 static char small_lines[9][27];
 
@@ -20,10 +23,12 @@ static void small_monitor_run(void *) {
     uint32_t last_idle=ulTaskGetIdleRunTimeCounter();
     TickType_t wake=xTaskGetTickCount();
     unsigned storage_age=30;
+    uint32_t generation=0;
     for (;;) {
         vTaskDelayUntil(&wake,pdMS_TO_TICKS(1000));
         taskENTER_CRITICAL();
-        const bool enabled=small_enabled;
+        const bool enabled=small_enabled && !small_owned;
+        const uint32_t current_generation=small_generation;
         taskEXIT_CRITICAL();
         if(!enabled) {
             memset(previous,0,sizeof(previous));
@@ -32,6 +37,7 @@ static void small_monitor_run(void *) {
             storage_age=30;
             continue;
         }
+        if(generation!=current_generation) memset(previous,0,sizeof(previous));
         const uint32_t started=micros();
         taskENTER_CRITICAL();
         const uint32_t now=portGET_RUN_TIME_COUNTER_VALUE();
@@ -68,6 +74,12 @@ static void small_monitor_run(void *) {
             // Include DTCM alarm changes even when rounded KiB are unchanged.
             if(i!=2 && !strcmp(previous[i],lines[i])) continue;
             if(!sk_spi_lock(superkeyboard::secondary_spi)) { ++misses; continue; }
+            if(small_owned) { sk_spi_unlock(superkeyboard::secondary_spi); break; }
+            if(generation!=small_generation) {
+                secondary.fillScreen(ST7735_BLACK);
+                generation=small_generation;
+                memset(previous,0,sizeof(previous));
+            }
             const unsigned y=i*14;
             secondary.fillRect(0,y,secondary.width(),12,ST7735_BLACK);
             uint16_t color=(i==1 || i==5)?ST7735_CYAN:ST7735_WHITE;
@@ -112,5 +124,39 @@ void sk_small_monitor_status(char *out,size_t size,int enabled) {
 #else
     (void)enabled;
     snprintf(out,size,"Small display unavailable in this build");
+#endif
+}
+
+extern "C" bool sk_small_acquire() {
+#if SK_SECONDARY_ST7735
+    if(!small_task || !sk_spi_lock(superkeyboard::secondary_spi)) return false;
+    const bool available=!small_owned;
+    if(available) {
+        taskENTER_CRITICAL(); small_owned=true; taskEXIT_CRITICAL();
+        secondary.fillScreen(ST7735_BLACK);
+    }
+    sk_spi_unlock(superkeyboard::secondary_spi);
+    return available;
+#else
+    return false;
+#endif
+}
+extern "C" void sk_small_release() {
+#if SK_SECONDARY_ST7735
+    // No in-flight graphics producer may remain when its owner releases.
+    while(!sk_spi_lock(superkeyboard::secondary_spi)) vTaskDelay(1);
+    taskENTER_CRITICAL(); small_owned=false; ++small_generation; taskEXIT_CRITICAL();
+    sk_spi_unlock(superkeyboard::secondary_spi);
+#endif
+}
+extern "C" bool sk_small_frame(const uint16_t *pixels) {
+#if SK_SECONDARY_ST7735
+    if(!pixels || !sk_spi_lock(superkeyboard::secondary_spi)) return false;
+    const bool ok=small_owned;
+    if(ok) secondary.writeRect(0,0,160,128,pixels);
+    sk_spi_unlock(superkeyboard::secondary_spi);
+    return ok;
+#else
+    (void)pixels; return false;
 #endif
 }
