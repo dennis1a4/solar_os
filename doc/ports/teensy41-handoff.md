@@ -6,6 +6,17 @@ This is the current state. Older snapshots are in the
 
 ## Current display wiring and installed image — 2026-10-08
 
+Backlight commands: `lcd brightness [0-100]` and `lcd small brightness [0-100]`
+read/set hardware PWM duty on pins 15 and 33. Zero turns the backlight off.
+Settings persist in `/flash/.solar-settings/lcd_backlight.bin` with independent
+`main` and `small` keys; defaults are 100% and 50%. Commands restore the global
+PWM resolution after applying an 8-bit duty and do not change PWM frequency.
+The live check uses temporary 37%/23% levels for reboot verification, then
+restores the original levels; evidence is `/home/dennis/teensy-brightness-check.json`.
+Range validation and reboot persistence passed. The user visually confirmed both
+displays dim correctly after three 80%/10% cycles. Final levels are main 100%
+and small 50%.
+
 Idle CPU optimization: `sk_lcd_flush()` now skips unchanged terminals before
 acquiring SPI or scanning the 3,000 cells. Pending work remains set across
 bounded redraw batches; writes, font changes and graphics exit still refresh.
@@ -41,7 +52,7 @@ The user confirmed clean edges, readable text and correct colors, then requested
 and preserves the corrected offsets and RGB order.
 
 Firmware HEX SHA-256:
-`9e0e59e0a55151ded04a7f0b2b9908b96e86ea7090224af94e6742551114698e`.
+`2e481187ba16f04594cab39d88577650889481784b2b72b80608e0c3e71fba12`.
 The dashboard uses a static 4 KiB OCRAM stack, priority 1, and no framebuffer.
 The first on-device measurement exposed roughly 25% CPU cost from the existing
 PSRAM statistics scan. OCRAM/PSRAM statistics now track actual rounded allocation

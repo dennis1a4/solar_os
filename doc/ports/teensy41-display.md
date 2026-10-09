@@ -43,6 +43,16 @@ microseconds, SPI lock misses, and remaining stack high-water mark in bytes.
 32-bit wraparound. Runtime deltas divided by wall time measure the monitor's
 CPU cost; update elapsed time is not CPU time.
 
+Backlight levels are controlled independently with `lcd brightness [0-100]`
+and `lcd small brightness [0-100]`. Omitting the value reads the current level.
+Zero turns the backlight off; 100 is full brightness. Both pins use hardware PWM.
+Defaults are main 100%, small 50%; changes persist in flash under
+`lcd_backlight` settings and are restored at boot. Invalid values are rejected.
+A save failure is reported separately from the already-applied brightness.
+These commands work while an app or graphics is active. `lcd small off` pauses
+the dashboard; it does not change its backlight. A dark screen can be restored
+from USB with the same brightness command.
+
 The preserved `teensy41_telnet_legacy` profile still uses the former wiring:
 SPI0 MOSI 11, MISO 12, SCK 13, CS 37, reset 9. Panel preset:
 `Adafruit_800x480`. Touch is intentionally out of scope.

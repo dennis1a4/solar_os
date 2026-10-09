@@ -515,11 +515,48 @@ static int lcd_color(const char *name) {
 }
 extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);
+    const bool small=argc>=2 && !strcmp(argv[1],"small");
+    const int option=small?2:1;
+    if(argc>option && !strcmp(argv[option],"brightness")) {
+        io->command_status=0;
+        const char *label=small?"Small":"Main";
+        const int current=sk_lcd_brightness(small);
+        if(current<0) { io->command_status=1; solar_os_shell_io_writeln(io,"Backlight control unavailable in this build."); return; }
+        if(argc==option+1) { solar_os_shell_io_printf(io,"%s brightness: %d%%\n",label,current); return; }
+        unsigned level=0;
+        bool valid=argc==option+2 && argv[option+1][0];
+        if(valid) for(const char *p=argv[option+1];*p;++p) {
+            if(*p<'0' || *p>'9' || level>100) { valid=false; break; }
+            level=level*10+unsigned(*p-'0');
+        }
+        if(!valid || level>100) {
+            io->command_status=2;
+            solar_os_shell_io_writeln(io,"usage: lcd [small] brightness [0-100]"); return;
+        }
+        if(!sk_lcd_set_brightness(small,level)) { io->command_status=1; return; }
+        solar_os_shell_io_printf(io,"%s brightness: %u%%\n",label,level);
+#if SK_SETTINGS
+        nvs_handle_t h;
+        esp_err_t saved=nvs_open("lcd_backlight",NVS_READWRITE,&h);
+        if(saved==ESP_OK) {
+            saved=nvs_set_u8(h,small?"small":"main",level);
+            if(saved==ESP_OK) saved=nvs_commit(h);
+            nvs_close(h);
+        }
+        if(saved!=ESP_OK) {
+            io->command_status=1;
+            solar_os_shell_io_writeln(io,"Applied for this boot; saving brightness failed.");
+        }
+#else
+        solar_os_shell_io_writeln(io,"Applied for this boot; persistent settings unavailable.");
+#endif
+        return;
+    }
     if(argc>=2 && !strcmp(argv[1],"small")) {
         int enabled=-1;
         if(argc==3 && !strcmp(argv[2],"on")) enabled=1;
         else if(argc==3 && !strcmp(argv[2],"off")) enabled=0;
-        else if(argc!=2) { io->command_status=2; solar_os_shell_io_writeln(io,"usage: lcd small [on|off]"); return; }
+        else if(argc!=2) { io->command_status=2; solar_os_shell_io_writeln(io,"usage: lcd small [on|off|brightness [0-100]]"); return; }
         char status[640];
         sk_small_monitor_status(status,sizeof(status),enabled);
         solar_os_shell_io_writeln(io,status);

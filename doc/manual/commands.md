@@ -334,6 +334,7 @@ These controls affect only the LCD; USB/Telnet geometry is independent.
 | `schedule` | `schedule stop [name]` | Stop the active ringing alarm, optionally only when its name matches. |
 | `setterm` | `setterm` | Open the terminal settings TUI from the display shell. |
 | `lcd` | `lcd [dump\|send "COMMAND"\|key exit\|key ctrlc\|key esc]` | Teensy display profile: show status, dump LCD text, or queue local input from USB. |
+| `lcd brightness` | `lcd brightness [0-100]`, `lcd small brightness [0-100]` | Read/set display backlight levels; 0 is off, 100 is full. Levels are saved in flash on the Teensy display-wiring profile. |
 | `setterm` | `setterm --display <target> [orientation\|font\|textsize\|palette\|statusbar] [value]` | Show or change the volatile terminal profile of a named display target. |
 | `setterm` | `setterm orientation [0\|90\|180\|270]` | Show or set primary-display orientation. |
 | `setterm` | `setterm font [mono\|compact]`; `setterm textsize [10\|12\|14\|16\|18\|20]` | Show or set the terminal font and text size. |

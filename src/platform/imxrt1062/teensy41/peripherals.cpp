@@ -77,8 +77,53 @@ static ST7735_t3 secondary(superkeyboard::secondary_cs, superkeyboard::secondary
 
 #include "small_monitor.h"
 
+static unsigned backlight_levels[2]={100,50};
+static int backlight_pin(bool small) {
+    if(small) {
+#if SK_SECONDARY_ST7735
+        return superkeyboard::secondary_backlight;
+#else
+        return -1;
+#endif
+    }
+#if SK_PRIMARY_RA8875 && SK_PRIMARY_BACKLIGHT >= 0
+    return superkeyboard::primary_backlight;
+#else
+    return -1;
+#endif
+}
+int sk_lcd_brightness(bool small) {
+    return backlight_pin(small)<0 ? -1 : int(backlight_levels[small]);
+}
+bool sk_lcd_set_brightness(bool small,unsigned percent) {
+    const int pin=backlight_pin(small);
+    if(pin<0 || percent>100) return false;
+    // Hardware PWM: no refresh task or software PWM interrupt. Restore the
+    // global resolution so this command does not change other PWM clients.
+    taskENTER_CRITICAL();
+    const unsigned resolution=analogWriteResolution(8);
+    pinMode(pin,OUTPUT);
+    analogWrite(pin,(percent*255+50)/100);
+    analogWriteResolution(resolution);
+    backlight_levels[small]=percent;
+    taskEXIT_CRITICAL();
+    return true;
+}
+static void load_backlight_levels() {
+#if SK_SETTINGS
+    nvs_handle_t h;
+    if(nvs_open("lcd_backlight",NVS_READONLY,&h)==ESP_OK) {
+        uint8_t level;
+        if(nvs_get_u8(h,"main",&level)==ESP_OK && level<=100) backlight_levels[0]=level;
+        if(nvs_get_u8(h,"small",&level)==ESP_OK && level<=100) backlight_levels[1]=level;
+        nvs_close(h);
+    }
+#endif
+}
+
 // Display transfers share the SPI mutex. Neither display uses DMA here.
 void sk_displays_begin() {
+    load_backlight_levels();
 #if SK_PRIMARY_RA8875
     if (sk_slot_claim(2, "primary-display") != ESP_OK) return;
     // Temporary CS wiring may reuse another expansion connector's select pin.
@@ -97,8 +142,7 @@ void sk_displays_begin() {
         primary.setRotation(SK_PRIMARY_ROTATION);
         primary.displayOn(true);
 #if SK_PRIMARY_BACKLIGHT >= 0
-        // External backlight enable/PWM input, active high. Start at full brightness.
-        digitalWrite(superkeyboard::primary_backlight, HIGH);
+        sk_lcd_set_brightness(false,backlight_levels[0]);
 #endif
         primary.clearScreen(RA8875_BLACK);
         primary.setTextColor(RA8875_WHITE, RA8875_BLACK);
@@ -127,8 +171,7 @@ void sk_displays_begin() {
 #endif
     secondary.setRotation(SK_SECONDARY_ROTATION);
     secondary.fillScreen(ST7735_BLACK);
-    pinMode(superkeyboard::secondary_backlight, OUTPUT);
-    analogWrite(superkeyboard::secondary_backlight, 128);
+    sk_lcd_set_brightness(true,backlight_levels[1]);
     sk_spi_unlock(superkeyboard::secondary_spi);
     small_monitor_start();
     sk_console_printf("ST7735 monitor started: SPI%u SCK%u MOSI%u CS%u DC%u reset%u backlight%u\r\n",
