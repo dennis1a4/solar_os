@@ -5,6 +5,9 @@
 extern "C" {
 #include "solar_os_memory.h"
 #include "solar_os_storage.h"
+#if SK_CLOCK
+#include "solar_os_time.h"
+#endif
 }
 
 // Keep the permanent stack out of scarce DTCM; no framebuffer or heap allocation.
@@ -47,15 +50,24 @@ static void small_monitor_run(void *) {
         const unsigned cpu=elapsed ? uint64_t(elapsed-(idle_delta>elapsed?elapsed:idle_delta))*1000/elapsed : 0;
         last_time=now; last_idle=idle;
         char lines[9][27]{};
-        snprintf(lines[0],27,"SolarOS  CPU %u.%u%%",cpu/10,cpu%10);
-        strcpy(lines[1],"RAM used/total KiB");
+        snprintf(lines[1],27,"CPU %u.%u%%",cpu/10,cpu%10);
         solar_os_memory_status_t memory{};
         solar_os_memory_get_status(&memory);
         const solar_os_memory_region_status_t *regions[]={&memory.dtcm,&memory.ocram,&memory.external};
         const char *names[]={"DTCM","OCRAM","PSRAM"};
         for(unsigned i=0;i<3;++i)
-            snprintf(lines[i+2],27,"%-5s %lu/%lu",names[i],(unsigned long)((regions[i]->total-regions[i]->free)/1024),(unsigned long)(regions[i]->total/1024));
-        strcpy(lines[5],"Disk used/total MiB");
+            snprintf(lines[i+2],27,"%-5s %lu/%lu KiB",names[i],(unsigned long)((regions[i]->total-regions[i]->free)/1024),(unsigned long)(regions[i]->total/1024));
+#if SK_CLOCK
+        // Time and date share the top row of the 26-column display.
+        solar_os_datetime_t date{};
+        strcpy(lines[0],"--:--:-- --  ----/--/--");
+        if(solar_os_time_get_datetime(&date)==ESP_OK) {
+            const unsigned hour=date.hour%12 ? date.hour%12 : 12;
+            snprintf(lines[0],27,"%2u:%02u:%02u %s  %04u-%02u-%02u",
+                hour,date.minute,date.second,date.hour<12?"am":"pm",
+                date.year,date.month,date.day);
+        }
+#endif
         static char disks[3][27];
         if(++storage_age>=30) {
             storage_age=0;
@@ -64,11 +76,11 @@ static void small_monitor_run(void *) {
             for(unsigned i=0;i<3;++i) {
                 solar_os_storage_usage_t usage{};
                 if(solar_os_storage_get_usage_for_path(paths[i],&usage)==ESP_OK)
-                    snprintf(disks[i],27,"%-5s %llu/%llu",labels[i],(unsigned long long)(usage.used_bytes/1048576),(unsigned long long)(usage.total_bytes/1048576));
+                    snprintf(disks[i],27,"%-5s %llu/%llu MiB",labels[i],(unsigned long long)(usage.used_bytes/1048576),(unsigned long long)(usage.total_bytes/1048576));
                 else snprintf(disks[i],27,"%-5s unavailable",labels[i]);
             }
         }
-        for(unsigned i=0;i<3;++i) strcpy(lines[6+i],disks[i]);
+        for(unsigned i=0;i<3;++i) strcpy(lines[5+i],disks[i]);
         unsigned misses=0;
         for(unsigned i=0;i<9;++i) {
             // Include DTCM alarm changes even when rounded KiB are unchanged.
@@ -82,7 +94,7 @@ static void small_monitor_run(void *) {
             }
             const unsigned y=i*14;
             secondary.fillRect(0,y,secondary.width(),12,ST7735_BLACK);
-            uint16_t color=(i==1 || i==5)?ST7735_CYAN:ST7735_WHITE;
+            uint16_t color=(i==0 || i==1)?ST7735_CYAN:ST7735_WHITE;
             if(i==2 && memory.dtcm.free<SOLAR_OS_MEMORY_DTCM_LOW_BYTES) color=ST7735_YELLOW;
             if(i==2 && memory.dtcm.free<SOLAR_OS_MEMORY_DTCM_CRITICAL_BYTES) color=ST7735_RED;
             secondary.setTextColor(color);

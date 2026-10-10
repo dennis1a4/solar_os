@@ -1,8 +1,23 @@
 # Teensy / SuperKeyboard handover
 
-Updated 2026-10-08. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
+Updated 2026-10-10. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
+
+## Small-display date and time — 2026-10-10
+
+The flashed dashboard shows local 12-hour time with seconds and am/pm beside
+`YYYY-MM-DD` on the top row, then CPU percentage on the second row. SolarOS
+branding and RAM/storage section headers are removed. DTCM/OCRAM/PSRAM rows
+show used/total KiB; SD/USB/Flash rows show used/total MiB or unavailable.
+It uses the shared RTC/timezone service and existing one-second refresh;
+storage readings still refresh every 30 seconds. Invalid RTC values show
+placeholders. Rows fit the 26-character grid.
+Build and USB readback passed: clock advances and matches shell date/time,
+zero SPI misses, 1,408 bytes monitor stack headroom, about 0.53% monitor CPU
+in the short live sample. The first read preceded completion of the initial
+storage scan; the subsequent check passed. Evidence:
+`/home/dennis/teensy-small-clock.json`.
 
 ## Current display wiring and installed image — 2026-10-08
 
