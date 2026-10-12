@@ -1,6 +1,8 @@
 #include <arduino_freertos.h>
 #include "small_display.h"
 #include "platform.h"
+#include "motor_module.h"
+#include "usb_host_power.h"
 extern "C" {
 #include "solar_os.h"
 #include "solar_os_log.h"
@@ -27,6 +29,10 @@ extern "C" const char *esp_err_to_name(esp_err_t error) {
 extern "C" bool sk_console_history_flush();
 #endif
 extern "C" void esp_restart() {
+#if SK_MOTOR_MODULE
+    sk_motor_shutdown(); // Lost link still stops through the AVR lease; never re-arm.
+#endif
+    sk_usb_host_power_off();
 #if SK_SETTINGS && SK_LCD_CONSOLE
     sk_console_history_flush();
 #endif

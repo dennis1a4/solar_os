@@ -890,3 +890,13 @@ TCP/UDP against temporary host echo fixtures. Enable the bridge, connect Wi-Fi,
 and stop Ethernet first. Reports may contain local network metadata; keep them
 outside Git. ESP32 protocol tests live in the separate solaros-wifi-bt-bridge
 project (`scripts/test_profiles_host.sh`).
+
+
+`bash scripts/ports/test_teensy41_motor_host.sh` tests the actual motor-module
+command/worker code with mock I2C on both existing slot buses, ownership conflicts,
+identity and command sequence validation, bounded moves, heartbeat cadence,
+wraparound, dropped transactions, controller reset and shutdown. It also checks
+EN5/FAULT_N6 reset state, pulse latch, explicit fault clear/re-enable and preserved
+interrupt masking in the direct USB power driver. These are host tests, not
+physical motor or USB fault tests. The standalone motor-controller project has
+`make all test` for the AVR logic and real ISR code against mock registers.

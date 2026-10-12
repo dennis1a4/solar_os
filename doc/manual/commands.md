@@ -1502,3 +1502,55 @@ arbitrary pin remapping and automatic module-profile detection are not implement
 The bridge and MeshCore remain separate firmware projects. Keyboard validation
 is pending; V20i audio connected and played, but reported left-ear choppiness is
 unresolved despite clean firmware underrun counters.
+
+
+## Teensy motor expansion module and main-board USB power
+
+The motor module is interchangeable between the two existing connectors,
+slot0 and slot1. It does not add another slot. Its ATmega8L drives the TB6612
+and speaks custom SK I2C protocol v1 (three-byte writes, 16-byte status), at
+100 kHz. Address straps select 0x10–0x1f; all open is 0x10. Firmware minor 1
+reports motor-only capabilities 0x0c; USB host power now belongs to the Teensy.
+
+| Command | Usage | Description |
+| --- | --- | --- |
+| `motor` | `motor attach slot0\|slot1 [ADDRESS]` | Claim the selected bus/address, verify identity and capabilities, and disarm the module. Default address 0x10. |
+| `motor` | `motor status slotN` | Read controller status, PWM, remaining steps, lease, and host operation state. |
+| `motor` | `motor arm slotN` | Explicitly arm an idle controller. Send the move within two seconds. |
+| `motor` | `motor drive slotN DUTY_A DUTY_B DURATION_MS` | Start both DC channels with signed duties -255..255 for 1..60000 ms, then disarm. Sign selects polarity. |
+| `motor` | `motor step slotN DIRECTION PERIOD_MS COUNT` | Run 1..254 half-steps; direction 0/1, period 1..255 ms. Disarm when completion is observed. |
+| `motor` | `motor stop slotN` | Stop/disarm and stop heartbeats. |
+| `motor` | `motor detach slotN` | Confirm stop before releasing the bus/address claim. |
+| `usbpower` | `usbpower status\|on\|off\|clear` | Main-board TPS25820 control in the new module-board profile: EN pin5, active-low FAULT_N pin6. Boot defaults off; clear never enables power. |
+
+Slot0 uses I2C2: SDA25/SCL24. Slot1 uses I2C1: SDA17/SCL16. Wire the module's
+SDA/SCL to the selected slot, with common ground and compatible logic power.
+I2C pull-ups on the Teensy side must be 3.3 V. Keep motor supply wiring separate
+from signal power; do not power motors from Teensy GPIO or its 3.3 V rail.
+No SPI, UART or dedicated Teensy motor-enable pin is needed for this module.
+Stop and power off before moving the module. Address ownership is enforced per
+bus; the same address can be used on the two different I2C buses.
+
+The driver sends heartbeats only during a bounded move. The AVR disarms after
+2,000 ms without a valid motor command or heartbeat. Commands are not blindly
+retried after an ambiguous write; failures retire the operation and require
+explicit re-arming. Step completion is checked every 20 ms, so a finite stepper
+move may briefly hold its final phase before disarming. This is a voltage-driven
+bridge with no current regulation, acceleration, homing or endstop support.
+There is no automatic motor arming or motion at boot. To attach on boot, add only
+`motor attach slot0` (or slot1) to the selected startup script.
+
+Build `teensy41_display_wiring` for the existing bench wiring with motor-module
+commands, or `teensy41_module_board` for the revised main board with direct
+TPS25820 control. The latter enables pin5/6 ownership and fault interrupts;
+use it only after the USB wiring is changed. FAULT_N needs a pull-up to 3.3 V,
+and EN needs its hardware pull-down to stay off during reset. Confirm a suitable
+USB 5 V supply and power budget before `usbpower on`; this command does not
+measure supply adequacy. A fault pulse immediately deasserts EN and latches an
+error; after the fault clears, `usbpower clear` then `usbpower on` is required.
+Unmount USB storage before manual `usbpower off`; shutdown cuts host power after
+storage cleanup. USB remains independent of the presence of a motor module.
+
+This integration has host tests and build validation; the revised module and
+USB-power wiring still require physical bring-up. The firmware has not been
+flashed to the ATmega controller.

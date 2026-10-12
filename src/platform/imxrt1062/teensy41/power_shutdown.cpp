@@ -1,3 +1,4 @@
+#include "motor_module.h"
 #if SK_WIRELESS_BRIDGE
 #include "wireless_bridge.h"
 #endif
@@ -56,6 +57,10 @@ static void shutdown_step() {
             else if(result>0) {status="waiting for Python and console cleanup";cleaning=true;}
         } else if(sk_shutdown_ready()) {
             status="draining serial logs";
+#if SK_MOTOR_MODULE
+            if(!sk_motor_shutdown())finish("motor stop unconfirmed; power remains on");
+            else
+#endif
             if(
 #if SK_MESH_CLIENT
                !sk_mesh_shutdown() ||

@@ -4,6 +4,37 @@ Updated 2026-10-11. Branch: `teensy41` (upstream integration retained as `teensy
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
 
+## Motor-module and USB power revision — 2026-10-11
+
+The motor controller becomes an interchangeable module for slot0 or slot1;
+there are still two physical expansion slots. Its custom I2C v1 protocol stays
+unchanged (3-byte commands/16-byte status); the new AVR motor-only build reports
+firmware 1.1, capabilities 0x0c. The separate motor-controller project retains
+legacy combined-board tests but defaults to no USB control.
+
+SolarOS motor commands support identity/sequence validation, bus/address claims,
+explicit arm, bounded dual-DC and finite half-step moves, heartbeat/timeout and
+shutdown stop. No module is auto-attached or armed. Main-board TPS25820 EN is
+Teensy5; FAULT_N is Teensy6 with a 3.3 V pull-up. The new
+`teensy41_module_board` profile adds direct power control and a latched fault
+interrupt; USB defaults off. Existing `teensy41_display_wiring` retains current
+USB wiring and adds motor commands only. Both profiles leave motors off until
+explicit control. The Teensy module-board profile was flashed on 2026-10-11. The AVR has not
+been flashed: no ISP programmer was detected. Module/USB electrical bring-up
+and revised schematic audit remain outstanding.
+
+Validation: both Teensy profiles build; motor/USB host tests, resource-ownership
+regressions, shutdown-coordinator tests and all 18 embedded-manual tests pass.
+The AVR motor-only image builds and its motor, legacy compatibility and actual
+ISR/mock-register tests pass. Logs: /tmp/motor-final-build.log.
+Live Teensy smoke checks passed: EN5/FAULT_N6, USB disabled with no fault,
+no motor module attached to either slot, discoverable motor/usbpower help, and
+zero allocator failures. No USB power-enable or motor-motion commands were sent.
+HEX SHA256: `000a88a6ead54001ea8aea7ece512f0a2791a1adb43f0d7a3202528a40520bd5`.
+Upload log: /tmp/motor-module-upload.log; status report:
+/home/dennis/teensy-motor-module-smoke.json. USB serial re-enumerated as ttyACM0;
+use /dev/serial/by-id/usb-Teensyduino_USB_Serial_8920080-if00 for a stable path.
+
 ## Current wireless status — 2026-10-11
 
 The separate ESP32 profiles firmware and Teensy image implement Wi-Fi networking

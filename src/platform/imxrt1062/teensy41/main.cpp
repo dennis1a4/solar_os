@@ -2,6 +2,7 @@
 #include <queue.h>
 #include "board.h"
 #include "platform.h"
+#include "usb_host_power.h"
 extern "C" {
 #include "solar_os.h"
 #include "solar_os_queue.h"
@@ -174,6 +175,7 @@ static void shell_task(void *) {
 #endif
 }
 void setup() {
+    sk_usb_host_power_begin();
     // No LED heartbeat: pin 13 is the primary display's SPI clock.
 #if SK_MOTOR_ENABLE_PIN >= 0
     digitalWrite(superkeyboard::motor_enable, LOW); pinMode(superkeyboard::motor_enable, OUTPUT);

@@ -14,7 +14,10 @@ esp_err_t sk_resources_begin() {
     using namespace superkeyboard;
     const Fixed fixed[]={
         {2,"board","shift clock"},{3,"board","NES latch"},{4,"board","NES data"},
-        {5,"board","shift latch"},{6,"board","shift data"},
+        #if SK_USB_HOST_POWER
+        {usb_host_enable,"usb-host-power","TPS25820 EN"},
+        {usb_host_fault,"usb-host-power","TPS25820 FAULT_N"},
+#endif
 #if SK_MOTOR_ENABLE_PIN >= 0
         {motor_enable,"board","motor enable"},
 #endif

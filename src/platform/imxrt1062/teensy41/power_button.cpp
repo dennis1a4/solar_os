@@ -1,6 +1,7 @@
 #if SK_UPSTREAM_SHELL && SK_HW_RESOURCES && SK_LCD_CONSOLE
 #include <Arduino.h>
 #include "small_display.h"
+#include "usb_host_power.h"
 extern "C" void sk_power_button_event();
 static void button_isr() {
     if(SNVS_HPSR & 0x40) {
@@ -22,6 +23,7 @@ extern "C" void sk_power_button_init() {
 extern "C" void sk_power_cut() {
     __disable_irq();
     sk_small_input_stop();
+    sk_usb_host_power_off();
 #if defined(SK_AMPLIFIER_SHUTDOWN_PIN) && SK_AMPLIFIER_SHUTDOWN_PIN >= 0
     digitalWrite(SK_AMPLIFIER_SHUTDOWN_PIN,LOW);
 #endif

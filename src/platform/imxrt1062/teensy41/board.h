@@ -31,7 +31,7 @@ static_assert(!SK_UART_CONSOLE || SK_AMPLIFIER_SHUTDOWN_PIN != 0, "AmpEn pin 0 c
 namespace superkeyboard {
 constexpr uint8_t console_rx = 0, console_tx = 1;
 constexpr uint8_t shift_clock = 2, nes_latch = 3, nes_data = 4;
-constexpr uint8_t shift_latch = 5, shift_data = 6;
+constexpr uint8_t usb_host_enable = 5, usb_host_fault = 6;
 constexpr uint8_t audio_out = 7, audio_in = 8;
 constexpr uint8_t primary_cs = SK_PRIMARY_CS, primary_reset = SK_PRIMARY_RESET;
 constexpr int primary_wait = SK_PRIMARY_WAIT, primary_backlight = SK_PRIMARY_BACKLIGHT;

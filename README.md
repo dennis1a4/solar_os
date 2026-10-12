@@ -36,8 +36,10 @@ highlighting, then `python /sd/example.py` to run them. `Ctrl+S` saves and
 `Ctrl+]` exits the editor. The interactive Python REPL is separate and does not
 have syntax highlighting. See [Python editing notes](doc/ports/teensy41-syntax.md).
 
-The installed profile builds with `pio run -e teensy41_display_wiring` for the
-current main/small display wiring. Older display profiles use different pins;
+The installed profile builds with `pio run -e teensy41_module_board` for the
+current displays plus TPS25820 USB host EN5/FAULT_N6 control. USB host power
+defaults off; `usbpower on` explicitly enables it after supply checks.
+`teensy41_display_wiring` retains the earlier USB wiring. Older display profiles use different pins;
 check the [current handover](doc/ports/teensy41-handoff.md) before uploading.
 
 This profile includes runtime-selectable MeshCore and Meshtastic UART companion

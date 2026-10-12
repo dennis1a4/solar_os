@@ -29,8 +29,8 @@ with the secondary backlight; do not interpret it as deliberate signal sharing.
 | 2 | 74595/NES Clock | shiftClk | Shared shift/NES clock |
 | 3 | NES Latch | NESlatch | NES |
 | 4 | NES Data | NESdata | NES |
-| 5 | Unassigned | — | Previously shift latch in firmware; PCB assignment blank |
-| 6 | Unassigned | — | Previously shift data in firmware; PCB assignment blank |
+| 5 | USB host EN | Output | Revised main-board TPS25820 enable; hardware pull-down, off at boot |
+| 6 | USB host FAULT_N | Input | Revised main-board TPS25820 fault; pull up to 3.3 V |
 | 7 | Audio Data Out | audioOut | Audio |
 | 8 | Audio Data In | audioIn | Audio |
 | 9 | Display Light PWM | slot2CS | Main-display backlight PWM; net name denotes standard header position |
@@ -115,3 +115,11 @@ not need a separate PCB syntax.
 
 No PCB firmware profile, pin remapping, wiring change or flash has been performed
 as part of recording this pinout.
+
+
+2026-10-11 module revision: ATmega8L + TB6612 move to a module for either of the
+two existing slots. Main-board TPS25820 EN/FAULT_N move to Teensy5/6. These are
+confirmed design assignments; the older schematic/netlist has not been updated
+or electrically validated by this code change. Use `teensy41_module_board` only
+with revised wiring. See the motor/USB section of the command manual for buses,
+protocol, explicit startup control, and validation limits.

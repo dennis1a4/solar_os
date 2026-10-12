@@ -586,7 +586,19 @@ void sk_shell_cmd_bridge_wifi(solar_os_context_t *, int, char **);
 #define solar_os_shell_cmd_wifi sk_shell_cmd_bridge_wifi
 void sk_shell_cmd_bridge_bt(solar_os_context_t *, int, char **);
 #endif
+#if SK_MOTOR_MODULE
+void sk_shell_cmd_motor(solar_os_context_t *, int, char **);
+#endif
+#if SK_USB_HOST_POWER
+void sk_shell_cmd_usbpower(solar_os_context_t *, int, char **);
+#endif
 static const shell_command_t shell_builtin_commands[] = {
+#if SK_MOTOR_MODULE
+    {"motor", "I2C motor module on slot0 or slot1", sk_shell_cmd_motor},
+#endif
+#if SK_USB_HOST_POWER
+    {"usbpower", "TPS25820 USB host power and fault latch", sk_shell_cmd_usbpower},
+#endif
 #if SK_WIRELESS_BRIDGE || (SOLAR_OS_PACKAGE_SERVICE_WIFI && !SK_UPSTREAM_SHELL)
     {"wifi", "Wi-Fi station control", solar_os_shell_cmd_wifi},
 #endif

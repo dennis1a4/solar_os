@@ -237,7 +237,7 @@ Hardware documents and existing sketches were not edited.
 | Function | Teensy pins / bus |
 | --- | --- |
 | Console | Serial1 RX 0, TX 1; USB device CDC also available |
-| NES / shift registers | CLK 2, NES latch 3, NES data 4; shift latch 5/data 6 are connected in schematic although blank in spreadsheet |
+| NES / shift registers | CLK 2, NES latch 3, NES data 4; old shift latch/data assignments 5/6 are replaced by USB host EN5/FAULT_N6 in the planned module-board revision |
 | Primary display / slot 2 | SPI0 MOSI 11, MISO 12, SCK 13; CS candidate 9; reset candidate 14; wait candidate 15; Wire2 24/25 |
 | Audio | SGTL5000, I2S OUT 7, IN 8, LRCLK 20, BCLK 21, MCLK 23; Wire SDA 18/SCL 19 |
 | Expansion slot 0 | SPI1 CS 37, Serial7 RX 28/TX 29, Wire2 SDA 25/SCL 24 |
