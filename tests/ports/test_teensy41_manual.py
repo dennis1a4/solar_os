@@ -14,6 +14,28 @@ class ManualTest(unittest.TestCase):
     def setUpClass(cls):
         cls.pages=PORT.select_pages(GEN.load_pages(ROOT/'doc/manual',ROOT/'packages/solar_os_packages.toml'),GEN.markdown_to_terminal_text)
         cls.by_id={p['id']:p for p in cls.pages}
+    def test_wireless_topics(self):
+        for name in ('wifi', 'bt', 'wbridge'):
+            self.assertIn('command.' + name, self.by_id)
+        self.assertIn('hidden password', self.by_id['command.wifi']['body'])
+        self.assertIn('bt audio INDEX', self.by_id['command.bt']['body'])
+        self.assertIn('wait 15', self.by_id['command.ntp']['body'])
+
+    def test_gameboy_discoverable_with_teensy_controls(self):
+        page = self.by_id['app.gameboy']
+        self.assertIn('gameboy', page['aliases'])
+        for phrase in ('gameboy /sd/roms/2048.gb', 'small ST7735',
+                       'lcd send', 'Z/X', 'Backspace', 'silent', 'dashboard'):
+            self.assertIn(phrase, page['body'])
+
+    def test_mesh_companion_topics(self):
+        for name in ('mesh', 'meshstatus', 'meshlog', 'meshbridge'):
+            self.assertIn('command.' + name, self.by_id)
+        for name in ('chat', 'meshmon'):
+            self.assertIn('app.' + name, self.by_id)
+        for phrase in ('115200', 'slot0', 'slot1', 'MeshCore', 'Meshtastic', 'pending'):
+            self.assertIn(phrase, self.by_id['command.mesh']['body'])
+
     def test_workstation_topics(self):
         for name in ('man','watch','session','sessions','fg','close','df','top','pwd','date','time','zip','unzip','ping','netscan','ntp'):
             self.assertIn('command.'+name,self.by_id)
@@ -37,7 +59,7 @@ class ManualTest(unittest.TestCase):
             self.assertIn(phrase,text)
 
     def test_excludes_unavailable_services(self):
-        for name in ('wifi','espnow','ota','nvs'):
+        for name in ('espnow','ota','nvs'):
             self.assertNotIn('command.'+name,self.by_id)
     def test_sessions_document_retention_and_limits(self):
         text=self.by_id['command.session']['body']
@@ -107,6 +129,8 @@ class ManualTest(unittest.TestCase):
     def test_no_esp_instructions_in_selected_pages(self):
         for page in self.pages:
             for stale in ('ESP32', 'NVS', 'Alt+Tab', 'help update', 'connect Wi-Fi', 'dual-core'):
+                if stale == 'ESP32' and page['id'] in ('command.mesh', 'app.meshmon', 'command.wifi', 'command.bt', 'command.wbridge', 'command.network'):
+                    continue  # External companion radio, not the Teensy's own CPU.
                 self.assertNotIn(stale, page['body'], page['id'])
             self.assertNotRegex(page['body'], r'(?<!/flash)/\.ssh/')
 
@@ -119,7 +143,7 @@ class ManualTest(unittest.TestCase):
             'app.ssh': ('/flash/.ssh', 'Ctrl+Z'),
             'command.sshkey': ('/flash/.ssh/id_rsa',),
             'command.lcd': ('lcd font 1|2|3', 'lcd color FG BG'),
-            'command.network': ('/flash/.shell/startup', 'Wi-Fi is not integrated'),
+            'command.network': ('/flash/.shell/startup', 'wifi0'),
             'app.clock': ('No RTC alarm interrupt',),
             'app.scope': ('legacy bench firmware disables',),
         }.items():

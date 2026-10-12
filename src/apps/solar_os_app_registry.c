@@ -1,3 +1,6 @@
+#if SK_MESH_CLIENT
+#include "solar_os_mesh_view.h"
+#endif
 #include "solar_os_app_registry.h"
 
 #include <stddef.h>
@@ -172,6 +175,9 @@
      .min_argc = app_min, .max_argc = app_max}
 
 static const solar_os_app_registry_entry_t registered_apps[] = {
+#if SK_MESH_CLIENT
+    APP_ENTRY("meshmon", "Mesh companion packet monitor", &solar_os_mesh_monitor_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "meshmon slotN", 2, 2),
+#endif
 #if SOLAR_OS_PACKAGE_APP_APLAY
     APP_ENTRY("aplay", "play WAV/MP3 audio", &solar_os_aplay_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "aplay [-v volume] <file.wav|file.mp3>", 2, 4),
 #endif
@@ -181,7 +187,9 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #if SOLAR_OS_PACKAGE_APP_RECORDER
     APP_ENTRY("recorder", "interactive WAV recorder", &solar_os_recorder_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "recorder [--tui] [file.wav]", 1, 3),
 #endif
-#if SOLAR_OS_PACKAGE_APP_CHAT
+#if SK_MESH_CLIENT
+    APP_ENTRY("chat", "Mesh companion channel chat", &solar_os_mesh_chat_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "chat slotN [CHANNEL]", 2, 3),
+#elif SOLAR_OS_PACKAGE_APP_CHAT
     APP_ENTRY("chat", "provider-neutral conversation client", &solar_os_chat_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "chat [gateway|meshcore|link|conversation-id]", 1, 2),
 #endif
 #if SOLAR_OS_PACKAGE_APP_CONTACTS

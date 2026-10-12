@@ -1,0 +1,5 @@
+solar_mesh.User.name max_size:40
+solar_mesh.User.short_name max_size:8
+solar_mesh.Data.payload max_size:256
+solar_mesh.Metadata.firmware max_size:40
+solar_mesh.ChannelSettings.name max_size:16

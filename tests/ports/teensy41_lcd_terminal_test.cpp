@@ -19,6 +19,19 @@ int main() {
     put(t,"\033[2K"); for(auto c:t.cells[1]) assert(c.ch==' ');
     t.reset(); put(t,"\033]0;title\007OK"); assert(t.cells[0][0].ch=='O');
     put(t,"\xe2\x94\x80!"); assert(t.cells[0][2].ch=='?' && t.cells[0][3].ch=='!');
+    // Help can open while a selected menu row has inverse styling active.
+    // Erased space must not inherit that highlight; explicitly drawn space must.
+    t.reset(); put(t,"\033[7m\033[2J\033[H ");
+    assert(t.cells[0][0].flags&4);
+    assert(t.cells[1][0].ch==' ' && t.cells[1][0].flags==0);
+    put(t,"\033[27m\033[2;1HHelp text");
+    assert(t.cells[1][9].flags==0 && t.cells[29][99].flags==0);
+    // Erase-line and newly scrolled-in rows also discard text decorations,
+    // while retaining explicitly selected foreground/background colors.
+    put(t,"\033[1;4;7;31;44m\033[3;1H\033[2K");
+    assert(t.cells[2][0].flags==0 && t.cells[2][0].fg==1 && t.cells[2][0].bg==4);
+    put(t,"\033[30;1H\n");
+    assert(t.cells[29][0].flags==0 && t.cells[29][0].bg==4);
     // Malformed/random input must never index outside the terminal buffer.
     unsigned rnd=123456;
     for(unsigned i=0;i<200000;++i) { rnd=rnd*1664525u+1013904223u; t.feed(rnd>>24); }

@@ -2,6 +2,12 @@
 #include <arduino_freertos.h>
 #include <queue.h>
 #include <QNEthernet.h>
+#if SK_WIRELESS_BRIDGE
+#include "wifi_network.h"
+#include "wireless_bridge.h"
+#include <lwip/timeouts.h>
+#include <lwip/netif.h>
+#endif
 
 #include <cstdlib>
 #include "network_socket.h"
@@ -42,10 +48,27 @@ static void status(Reply &reply) {
 void sk_network_registry_begin();
 void sk_network_registry_poll(bool started);
 static void network_task(void *) {
+#if SK_WIRELESS_BRIDGE
+    bool initialized=false;
+#endif
     for (;;) {
         if (running) Ethernet.loop();
+#if SK_WIRELESS_BRIDGE
+        if(running) initialized=true;
+        // Initialize QNEthernet's shared lwIP once, even for Wi-Fi-only use.
+        if(!initialized && sk_wireless_wifi_available()) {
+            if(Ethernet.begin()) { Ethernet.end(); initialized=true; }
+        }
+        if(initialized && !running) sys_check_timeouts();
+        sk_wifi_network_poll(initialized);
+#endif
         sk_network_registry_poll(running);
+        #if SK_WIRELESS_BRIDGE
+        sk_net_transport_poll(netif_default && netif_is_up(netif_default) &&
+            netif_is_link_up(netif_default) && !ip4_addr_isany_val(*netif_ip4_addr(netif_default)));
+#else
         sk_net_transport_poll(running && Ethernet.linkState() && uint32_t(Ethernet.localIP()));
+#endif
         Request request;
         if (xQueueReceive(requests,&request,0)==pdTRUE) {
             Reply reply{}; reply.id=request.id;
@@ -54,7 +77,9 @@ static void network_task(void *) {
                 if (!running) snprintf(reply.text,sizeof(reply.text),"Ethernet start failed (check fitted PHY)\n");
                 else status(reply);
             } else if (request.op==Operation::Down) {
+#if !SK_WIRELESS_BRIDGE
                 sk_net_transport_reset();
+#endif
                 Ethernet.end(); running=false; status(reply);
             } else if (request.op==Operation::Status) status(reply);
             xQueueOverwrite(replies,&reply);

@@ -3,14 +3,29 @@
 #include <queue.h>
 #include <semphr.h>
 #include <QNEthernet.h>
+#include <qnethernet/lwip_driver.h>
+#if SK_WIRELESS_BRIDGE
+#include "wifi_network.h"
+#include <lwip/dns.h>
+#endif
 extern "C" {
 #include "solar_os_network.h"
 }
 using namespace qindesign::network;
 struct sk_netif { esp_netif_ip_info_t ip; esp_netif_dns_info_t dns; struct netif *impl; int priority; };
 static sk_netif ethernet_netif;
+#if SK_WIRELESS_BRIDGE
+static sk_netif wifi_netif;
+static bool wifi_registered, wifi_last_ready, wifi_last_connecting;
+#endif
 static bool registered, last_ready, last_connecting;
-extern "C" esp_netif_t *esp_netif_get_default_netif() { return &ethernet_netif; }
+extern "C" esp_netif_t *esp_netif_get_default_netif() {
+#if SK_WIRELESS_BRIDGE
+return netif_default && netif_default==wifi_netif.impl?&wifi_netif:&ethernet_netif;
+#else
+return &ethernet_netif;
+#endif
+ }
 extern "C" void *esp_netif_get_netif_impl(esp_netif_t *n) { return n ? n->impl : nullptr; }
 extern "C" int esp_netif_set_route_prio(esp_netif_t *n,int p) { if (!n) return -1; n->priority=p; return p; }
 extern "C" esp_err_t esp_netif_get_dns_info(esp_netif_t *n,int which,esp_netif_dns_info_t *dns) {
@@ -38,7 +53,13 @@ void sk_network_registry_poll(bool started) {
     state.ip.netmask.addr=uint32_t(Ethernet.subnetMask());
     state.ip.gw.addr=uint32_t(Ethernet.gatewayIP());
     state.dns.ip.u_addr.ip4.addr=uint32_t(Ethernet.dnsServerIP());
-    state.impl=started ? netif_default : nullptr;
+#if SK_WIRELESS_BRIDGE
+    // lwIP's DNS table is global; retain each path's DHCP-provided resolver.
+    if(state.ip.ip.addr && state.ip.ip.addr==ethernet_netif.ip.ip.addr &&
+       ethernet_netif.dns.ip.u_addr.ip4.addr)
+        state.dns=ethernet_netif.dns;
+#endif
+    state.impl=started ? qindesign::network::enet::netif() : nullptr;
     const bool ready=started && Ethernet.linkState() && state.ip.ip.addr;
     const bool connecting=started && !ready;
     const bool changed=memcmp(&state.ip,&ethernet_netif.ip,sizeof(state.ip)) ||
@@ -55,7 +76,60 @@ void sk_network_registry_poll(bool started) {
         if (connecting) solar_os_network_path_set_connecting(&ethernet_netif,true);
         last_ready=ready; last_connecting=connecting;
     }
+#if SK_WIRELESS_BRIDGE
+    struct netif *wn=sk_wifi_netif();
+    if(wn) {
+        sk_netif w{}; w.impl=wn;
+        w.ip.ip.addr=ip4_addr_get_u32(netif_ip4_addr(wn));
+        w.ip.netmask.addr=ip4_addr_get_u32(netif_ip4_netmask(wn));
+        w.ip.gw.addr=ip4_addr_get_u32(netif_ip4_gw(wn));
+        w.dns.ip.u_addr.ip4.addr=sk_wifi_dns();
+        bool wr=netif_is_up(wn) && netif_is_link_up(wn) && w.ip.ip.addr;
+        bool wc=sk_wifi_connecting();
+        bool change=memcmp(&w.ip,&wifi_netif.ip,sizeof(w.ip)) || memcmp(&w.dns,&wifi_netif.dns,sizeof(w.dns));
+        taskENTER_CRITICAL();
+        wifi_netif.ip=w.ip; wifi_netif.dns=w.dns; wifi_netif.impl=wn;
+        taskEXIT_CRITICAL();
+        if(!wifi_registered) {
+            wifi_registered=solar_os_network_path_register("wifi0",&wifi_netif,5)==ESP_OK;
+            configASSERT(wifi_registered);
+        }
+        if(change || wr!=wifi_last_ready || wc!=wifi_last_connecting) {
+            solar_os_network_path_set_ready(&wifi_netif,wr);
+            if(wc) solar_os_network_path_set_connecting(&wifi_netif,true);
+            wifi_last_ready=wr; wifi_last_connecting=wc;
+        }
+    }
+    // Registry preferences become the actual lwIP route on its owner task.
+    struct netif *preferred=solar_os_network_lwip_preferred();
+    if(netif_default!=preferred) netif_set_default(preferred);
+    uint32_t resolver=preferred==wifi_netif.impl?wifi_netif.dns.ip.u_addr.ip4.addr:
+        (preferred==ethernet_netif.impl?ethernet_netif.dns.ip.u_addr.ip4.addr:0);
+    if(resolver && resolver!=ip4_addr_get_u32(ip_2_ip4(dns_getserver(0)))) {
+        ip_addr_t address; IP_ADDR4(&address,0,0,0,0);
+        ip4_addr_set_u32(ip_2_ip4(&address),resolver); dns_setserver(0,&address);
+    }
+#endif
 }
+#if SK_WIRELESS_BRIDGE
+extern "C" struct netif *sk_network_route(const ip4_addr_t *src,const ip4_addr_t *dest) {
+    struct netif *n;
+    if(src && !ip4_addr_isany(src)) {
+        NETIF_FOREACH(n) {
+            if(netif_is_up(n) && netif_is_link_up(n) && ip4_addr_cmp(src,netif_ip4_addr(n))) return n;
+        }
+        return nullptr;
+    }
+    struct netif *preferred=solar_os_network_lwip_preferred();
+    if(!preferred || !netif_is_up(preferred) || !netif_is_link_up(preferred)) return nullptr;
+    if(ip4_addr_netcmp(dest,netif_ip4_addr(preferred),netif_ip4_netmask(preferred))) return preferred;
+    NETIF_FOREACH(n) {
+        if(netif_is_up(n) && netif_is_link_up(n) && !ip4_addr_isany(netif_ip4_addr(n)) &&
+           ip4_addr_netcmp(dest,netif_ip4_addr(n),netif_ip4_netmask(n))) return n;
+    }
+    return preferred;
+}
+#endif
 // Deliver registry events away from the lwIP owner task. Handlers can query
 // services without re-entering Ethernet.loop or blocking packet processing.
 struct Handler { esp_event_base_t base; int32_t id; esp_event_handler_t fn; void *arg; };

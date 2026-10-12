@@ -4,7 +4,9 @@
 
 void LcdTerminal::blank(unsigned row,unsigned first,unsigned end) {
     for(unsigned col=first;col<end;++col) {
-        cells[row][col]={' ',fg,bg,flags}; dirty[row][col]=true;
+        // Erasure keeps the selected colors, not text decorations. Inheriting
+        // inverse from a menu selection paints cleared help-page space white.
+        cells[row][col]={' ',fg,bg,0}; dirty[row][col]=true;
     }
 }
 bool LcdTerminal::configure(unsigned size,unsigned foreground,unsigned background) {

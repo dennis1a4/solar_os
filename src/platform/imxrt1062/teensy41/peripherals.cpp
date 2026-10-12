@@ -1,3 +1,6 @@
+#if SK_WIRELESS_BRIDGE
+#include "wireless_bridge.h"
+#endif
 #include <arduino_freertos.h>
 #include "board.h"
 #include "platform.h"
@@ -409,7 +412,11 @@ void sk_usb_inject(const char *text) {
     if(length>free)return; // Never enqueue a partial escape sequence/command.
     while(*text) { keys[head]=*text++;head=(head+1)%sizeof(keys); }
 }
-void sk_usb_input_boundary() { KeyboardIrqGuard guard;keyboard_input.boundary(); }
+void sk_usb_input_boundary() { KeyboardIrqGuard guard;keyboard_input.boundary();
+#if SK_WIRELESS_BRIDGE
+    sk_wireless_key_boundary();
+#endif
+}
 uint32_t sk_usb_input_generation() { KeyboardIrqGuard guard;return keyboard_input.generation; }
 static void key_pressed(int) {
     KeyboardIrqGuard guard;
@@ -437,6 +444,7 @@ void sk_usb_begin() {
 #endif
 }
 void sk_usb_poll() {
+    sk_small_input_poll();
 #if SK_USB_HOST
 #if SK_USB_STORAGE
     StorageLock lock;
@@ -460,8 +468,13 @@ extern "C" uint8_t sk_gameboy_buttons() {
     KeyboardIrqGuard guard;
     const uint8_t usages[]={0x1d,0x1b,0x2a,0x28,0x4f,0x50,0x52,0x51};
     uint8_t mask=0;
+#if SK_SECONDARY_ST7735
+    mask=nes_held;
+#endif
     for(unsigned i=0;i<8;++i) if(keyboard_input.is_down(usages[i])) mask|=1U<<i;
     return mask;
+#elif SK_SECONDARY_ST7735
+    return nes_held;
 #else
     return 0;
 #endif
@@ -473,6 +486,10 @@ int sk_usb_read() {
     keyboard_input.leds=keyboard.LEDS();
     // Finish a physical escape sequence before allowing another producer in.
     if(keyboard_input.in_sequence()) { last_read_physical=true;return keyboard_input.read(millis()); }
+#if SK_WIRELESS_BRIDGE
+    int wireless_key=sk_wireless_key_read();
+    if(wireless_key>=0){last_read_physical=true;return wireless_key;}
+#endif
     if(head!=tail) { last_read_physical=false;int key=keys[tail];tail=(tail+1)%sizeof(keys);return key; }
     last_read_physical=true;
     return keyboard_input.read(millis());

@@ -334,6 +334,7 @@ These controls affect only the LCD; USB/Telnet geometry is independent.
 | `schedule` | `schedule stop [name]` | Stop the active ringing alarm, optionally only when its name matches. |
 | `setterm` | `setterm` | Open the terminal settings TUI from the display shell. |
 | `lcd` | `lcd [dump\|send "COMMAND"\|key exit\|key ctrlc\|key esc]` | Teensy display profile: show status, dump LCD text, or queue local input from USB. |
+| `lcd small page` | `lcd small page system|network|music|mesh` | Select the small-dashboard page. NES Left/Right switches pages; Select returns home. A toggles playback on Music while player is active; Up increases and Down decreases the radio slot number on Mesh, wrapping between 0 and 2. Selection is retained while an app owns the display, until reboot. |
 | `lcd brightness` | `lcd brightness [0-100]`, `lcd small brightness [0-100]` | Read/set display backlight levels; 0 is off, 100 is full. Levels are saved in flash on the Teensy display-wiring profile. |
 | `setterm` | `setterm --display <target> [orientation\|font\|textsize\|palette\|statusbar] [value]` | Show or change the volatile terminal profile of a named display target. |
 | `setterm` | `setterm orientation [0\|90\|180\|270]` | Show or set primary-display orientation. |
@@ -1384,3 +1385,120 @@ shell working directory for relative paths.
 | Command | Usage | Description |
 | --- | --- | --- |
 | `poweroff` | `poweroff [--check\|status]` | Stop jobs and sync storage before powering off. `--check` leaves power on after cleanup. Close active or retained apps other than Python/COM first. |
+
+## Teensy mesh companion radios
+
+| Command | Usage | Description |
+| --- | --- | --- |
+| `mesh` | `mesh drivers`; `mesh connect slotN meshcore\|meshtastic`; `mesh disconnect slotN`; `mesh status [slotN]`; `mesh nodes\|channels\|refresh slotN`; `mesh send slotN CHANNEL TEXT...`; `mesh dm slotN CHANNEL NODE_ID TEXT...` | Runtime-selectable UART companion clients in the Teensy display-wiring profile. Baud is 115200 8N1. |
+| `meshstatus` | `meshstatus [slotN]` | Radio identity, firmware, connection state, counters, and available signal metrics. |
+| `meshlog` | `meshlog start slotN /sd/NEWFILE.tsv`; `meshlog stop\|status slotN` | Record new events on SD with independent history and loss accounting. Existing files are never overwritten. |
+| `meshbridge` | `meshbridge on SOURCE_SLOT SOURCE_CHANNEL DEST_SLOT DEST_CHANNEL`; `meshbridge off\|status` | Experimental explicit one-way relay between different protocols; excludes direct messages, labels relayed text, suppresses duplicates, limits forwarding to once per ten seconds. Requires two connected radios. |
+
+`chat slotN [CHANNEL]` is the channel messaging screen; `meshmon slotN` is a
+read-only event monitor. Radios continue receiving after these screens close.
+Stop logging and disconnect before removing an expansion board. Connection,
+logging, and bridge settings are intentionally not restored automatically.
+
+Slot 0: UART7 RX28/TX29. Slot 1: UART8 RX34/TX35. Slot 2: UART3 RX15/TX14;
+these pins conflict with the current main display and its resource claims refuse
+connection. Use crossed 3.3 V TX/RX and a common ground. The ESP32 must run a
+UART-enabled companion/API firmware at 115200 baud; a BLE-only build or the
+Meshtastic text serial module is insufficient. Radio region, modem, channels,
+and keys remain configured on the radio using its native tools.
+
+MeshCore uses 64-hex-digit contact public keys (12-digit prefixes also accepted)
+for direct messages. Meshtastic uses `!1234abcd` node IDs. Channel indices are
+0 through 7. Text limits are 160 bytes for MeshCore and 233 for Meshtastic.
+`mesh send slot0 0 "Hello from SolarOS"` queues a channel message. Monitor events
+distinguish local queuing, radio acceptance, and remote delivery acknowledgement;
+broadcasts do not provide proof of delivery. Radio status `ready` means a
+completed handshake, not a guarantee that the radio remains physically attached.
+
+History retains 32 events per radio and at most 32 nodes. Each reader tracks its
+own cursor and missed events. MeshCore message events expose SNR where available;
+RSSI is available in raw reception events, not reserved text-message bytes.
+Unavailable metrics display `--`/`unavailable`. The bridge drops busy, oversized,
+duplicate, and rate-limited messages instead of silently truncating or retrying
+them. Logging writes plaintext TSV, flushes four times per second, and records
+loss/write-error counters in `meshlog status`. Both drivers have host simulation
+tests; the SparkFun MeshCore UART handshake and channel refresh passed on hardware.
+Over-the-air delivery remains untested.
+
+## Teensy ESP32 wireless bridge
+
+| Command | Usage | Description |
+| --- | --- | --- |
+| `wbridge` | `wbridge on`, `wbridge off`, `wbridge status` | Claim/release slot0 and the ESP32 SPI bridge. Disabled at boot. Requires the profiles firmware; the earlier ESP-Hosted controller firmware is incompatible. |
+| `bt` | `bt scan [ble]`, `bt status` | Discover Classic Bluetooth or BLE peers and show indexed results and pending pairing requests. |
+| `bt` | `bt keyboard INDEX`, `bt keyboard disconnect` | Connect/disconnect a Classic or BLE keyboard from the most recent scan. Supports eight-byte boot-compatible keyboard reports; other HID layouts are reported as unsupported. |
+| `bt` | `bt audio INDEX`, `bt audio disconnect` | Connect/disconnect a Classic Bluetooth A2DP speaker or headphones. |
+| `bt` | `bt confirm yes\|no`, `bt passkey NNNNNN`, `bt pin DIGITS` | Answer the current pairing request within 30 seconds. A displayed passkey may instead need typing on the keyboard. |
+| `bt` | `bt output local\|bluetooth` | Select audio output before starting playback. Bluetooth PCM is 44.1 kHz, stereo, signed 16-bit. |
+
+On this Teensy build, `wifi scan` lists SSID, RSSI, security mode and channel
+from the ESP32. `wifi connect "SSID"` prompts for a password without echoing
+or recording it in shell history. Use `wifi connect "SSID" --open` for an open
+network. The bridge must be on. WPA2/WPA3 Personal networks are supported;
+enterprise authentication is not supported.
+
+`wifi status` shows association and packet counters; `network status` shows
+the DHCP address and route. `wifi disconnect` stops reconnect attempts, while
+`wifi reconnect` retries the current credentials. After a successful connection,
+`wifi save` stores the profile in ESP32 NVS and enables reconnect on ESP32 boot.
+`wifi forget` disconnects and erases that saved profile. Unsaved credentials
+last only until ESP32 reset. Start `wbridge on` after a Teensy reboot.
+
+`wifi0` uses the existing SolarOS TCP/IP stack, including DHCP, DNS, TCP, UDP,
+HTTP and network services. Ethernet has priority 10 and Wi-Fi priority 5 by
+default. Use the existing network route controls to change preference, or
+`network down` to stop Ethernet when testing Wi-Fi alone. Existing TCP sessions
+bound to a lost interface need reconnecting; they do not migrate between IPs.
+
+Turn both boards off before wiring: Teensy26 to ESP13, Teensy39 to ESP25,
+Teensy27 to ESP14, Teensy37 to ESP27, Teensy29 to ESP18, Teensy28 to ESP19,
+and GND to GND. Power each by USB; do not join power rails. The bridge owns
+slot0 CS and pins28/29, so disconnect a slot0 MeshCore session first. The
+separate MeshCore firmware/project is unchanged.
+
+SPI uses 1024-byte CRC-checked packets in
+mode3 at 6 MHz. Scan operations are refused while Bluetooth audio is active to avoid
+radio contention. Bluetooth buffering underruns and unsupported keyboard
+reports are visible through `bt status`. Device pairing and end-to-end audio
+must be tested with the target peripherals before relying on this feature.
+
+
+MicroPython TCP sockets and `solaros.net` UDP use the same connected `wifi0`
+interface. Live checks passed byte-exact 16 KiB TCP and UDP payloads through
+4096 bytes with Ethernet stopped. HTTPS still requires correct RTC time and a
+certificate chain supported by the embedded CA bundle.
+
+For startup synchronization using a saved Wi-Fi profile, add these separate
+lines to the existing startup script (run `setterm` to see its selected path):
+
+```text
+wbridge on
+wait 15
+ntp pool.ntp.org
+```
+
+`wait 15` pauses that shell for 15 seconds, yielding to other tasks; it does
+not busy-wait or suspend networking. This is one NTP attempt per boot, not a
+network-ready check or automatic retry. Slow DHCP or an unavailable server can
+cause failure; `ntp` can be run again after connectivity is established.
+
+For headphones/speakers, enter pairing mode, run `bt scan`, then `bt audio INDEX`
+using the index from that scan. Check `bt status`, answer any pairing request,
+and select `bt output bluetooth` before starting playback. For keyboards use
+`bt scan` or `bt scan ble`, then `bt keyboard INDEX`. Some keyboards require the
+displayed passkey to be typed on the keyboard followed by Enter. Stop playback
+before switching back with `bt output local`.
+
+Expansion modules on the current wiring are not hot-swappable. Power off both
+boards before changing modules, then power on and start the appropriate driver.
+A software reboot or driver release alone does not isolate power or signals.
+Drivers can reconfigure supported pin functions after releasing resource claims;
+arbitrary pin remapping and automatic module-profile detection are not implemented.
+The bridge and MeshCore remain separate firmware projects. Keyboard validation
+is pending; V20i audio connected and played, but reported left-ear choppiness is
+unresolved despite clean firmware underrun counters.

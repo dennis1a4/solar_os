@@ -1,8 +1,34 @@
 """Select accurate embedded documentation for the Teensy workstation shell."""
-APP_NAMES = set('recorder ftp player synth ltop webradio io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders mqttx obd clock pdpower scope help curl'.split())
-COMMAND_NAMES = set('poweroff serial sshkey midi pd grep head wc ramfs gpio i2c spi uart expansion help man commands echo wait watch apps mem uptime clear setterm identity network audio cd ls cat sh mkdir rm mv cp exit reboot version board status top port df pwd session sessions fg bg tail close ping netscan ntp jobs job schedule zip unzip rtc date time flash sd usb lcd telnetd'.split())
+APP_NAMES = set('chat meshmon recorder ftp player synth ltop webradio io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders gameboy mqttx obd clock pdpower scope help curl'.split())
+COMMAND_NAMES = set('wifi bt wbridge mesh meshstatus meshlog meshbridge poweroff serial sshkey midi pd grep head wc ramfs gpio i2c spi uart expansion help man commands echo wait watch apps mem uptime clear setterm identity network audio cd ls cat sh mkdir rm mv cp exit reboot version board status top port df pwd session sessions fg bg tail close ping netscan ntp jobs job schedule zip unzip rtc date time flash sd usb lcd telnetd'.split())
 # Audited Teensy contracts. Hardware-neutral shared app pages remain upstream.
 OVERRIDES = {
+    'wbridge': ('Control the ESP32 Wi-Fi/Bluetooth SPI bridge.', 'wbridge on|off|status\nEnable after each Teensy reboot. Uses SPI1 slot0 and pins28/29; cannot share with slot0 MeshCore. Wiring: Teensy26->ESP13, Teensy39<-ESP25, Teensy27->ESP14, Teensy37->ESP27, Teensy29<-ESP18, Teensy28<-ESP19, GND-GND. Use 3.3 V signals. Power both boards off before wiring or changing modules; reboot alone is not power isolation.'),
+    'wifi': ('Connect SolarOS through the ESP32 Wi-Fi bridge.', 'wifi scan|status\nwifi connect "SSID" [--open]\nwifi disconnect|reconnect|save|forget\nRun wbridge on first. connect prompts for a hidden password; --open selects an open network. save stores credentials on the ESP32 and enables reconnect after ESP restart. forget disconnects and erases the saved profile. network status shows DHCP and the default route. Ethernet priority 10; Wi-Fi priority 5. network down stops Ethernet for Wi-Fi-only use. MicroPython TCP sockets and solaros.net UDP share this connection. No enterprise authentication, AP mode or IPv6 support.'),
+    'bt': ('Pair keyboards and audio devices through the ESP32 bridge.', 'wbridge on\nbt scan [ble]\nbt keyboard INDEX|disconnect\nbt audio INDEX|disconnect\nbt status\nbt confirm yes|no\nbt passkey NNNNNN\nbt pin DIGITS\nbt output local|bluetooth\nPut the device into pairing mode, scan, and use its index from the latest scan. Classic scan for A2DP headphones/speakers; Classic or BLE for keyboards. status shows pending pairing requests; respond within 30 seconds. Some keyboards require typing the displayed code on the keyboard and pressing Enter. Connect audio, then select bluetooth output before playback. Stop playback before changing output. Audio is 44.1 kHz stereo. Scan is refused while Bluetooth audio is active. Keyboard hardware validation is pending; V20i left-ear choppiness remains unresolved.'),
+
+    'chat': ('Chat through an expansion-slot mesh radio.',
+        'chat slotN [CHANNEL]\n'
+        'Connect first: mesh connect slot0 meshcore or mesh connect slot1 meshtastic. Enter sends; Tab changes channel 0-7; Escape exits. Radio reception and logging continue after exit.\n'
+        'MeshCore text limit 160 bytes; Meshtastic 233. Received direct messages are visible, but this screen sends to the selected channel; use mesh dm for direct replies. Queued and accepted do not mean delivered. See man mesh for wiring and commands.'),
+    'mesh': ('Use MeshCore or Meshtastic companion radios over UART.',
+        'mesh drivers | status [slotN]\nmesh connect slotN meshcore|meshtastic\nmesh disconnect|refresh|nodes|channels slotN\nmesh send slotN CHANNEL TEXT...\nmesh dm slotN CHANNEL NODE_ID TEXT...\n'
+        '115200 8N1. slot0: UART7 RX28/TX29; slot1: UART8 RX34/TX35. slot2: UART3 RX15/TX14 conflicts with the main display. Cross TX/RX and connect ground; use 3.3 V signals. Requires UART companion/API firmware, not BLE-only or text serial mode.\n'
+        'chat slotN [CHANNEL] opens messaging; meshmon slotN monitors events. meshstatus, meshlog, meshbridge share the same radio service. Channels 0-7; MeshCore text 160 bytes, Meshtastic 233. Direct IDs: MeshCore 64 hex digits or 12-digit prefix; Meshtastic !1234abcd.\n'
+        'Example: mesh send slot0 0 "Hello from SolarOS". Ready means handshake completed. Queued/accepted messages are not confirmed delivered. Unknown RSSI/SNR is shown as unavailable.\n'
+        'The UART reader is a background service; apps subscribe to new-event notifications and have independent queue cursors. History: 32 events and 32 nodes per radio; missed-event counters report overrun. Logging and bridge are opt-in and not restored on reboot. Use native radio tools to configure region, channels and keys. Drivers tested with simulated serial data; SparkFun MeshCore UART handshake and channel refresh also passed on hardware. Over-the-air delivery validation remains pending.'),
+    'meshlog': ('Log new mesh events to an SD file.',
+        'meshlog start slotN /sd/NEWFILE.tsv\nmeshlog stop|status slotN\n'
+        'Connect the slot first. Existing files are refused. Stores plaintext TSV with timestamps, message scope, sender, available RSSI/SNR and packet IDs. Separate writer task flushes every 250 ms. status reports lost events and write failures; stop flushes remaining retained events. Stop before ejecting SD.'),
+    'meshbridge': ('Experimental one-way relay between mesh networks.',
+        'meshbridge on SOURCE_SLOT SOURCE_CHANNEL DEST_SLOT DEST_CHANNEL\nmeshbridge off|status\n'
+        'Requires two ready radios using different drivers. Forwards only new channel text, never direct messages. Adds a bridge marker, suppresses loops/duplicates and limits forwarding to one message every 10 seconds. Busy, oversized and rate-limited messages are counted as dropped. Disabled on disconnect and reboot. Physical radio testing pending.'),
+    'gameboy': ('Play original Game Boy ROMs on the small display.',
+        'gameboy <file.gb>\n'
+        'Requires the Teensy display-wiring firmware and small ST7735 display. Start from the main LCD console: gameboy /sd/roms/2048.gb. From USB or Telnet, queue it with lcd send "gameboy /sd/roms/2048.gb".\n'
+        'Arrows: D-pad; Z/X: A/B; Enter: Start; Backspace: Select. P pauses/resumes, R resets, Q or Escape exits. The system dashboard returns when the game exits.\n'
+        'This Teensy port is silent. The 160x144 image is scaled to 142x128; 2048 runs at about 60 emulated frames and 30 displayed frames per second. Game Boy Color-only ROMs are unsupported. Use ROMs you are entitled to run.\n'
+        'The installed public-domain 2048 ROM has a corrected input loop; the original is backed up at /sd/roms/2048-original.gb. lcd small gameboy shows performance; lcd small input shows recent input timings.'),
     'recorder': ('Record and replay microphone WAV files interactively.',
         'recorder [--tui] [DIRECTORY|FILE.wav]\n'
         'Example: recorder /sd/take.wav. Default folder /sd; automatic names when no filename is set. Native SGTL5000 microphone format: 44100 Hz, mono, 16-bit WAV. Existing files are never overwritten.\n'
@@ -11,7 +37,7 @@ OVERRIDES = {
     'ftp': ('Browse and transfer files over FTP.',
         'ftp [HOST [PORT] [--user USER --password PASSWORD] [--remote PATH] [--local PATH]]\n'
         'network up first. With no host, F2 opens connection setup. Default port 21; default login anonymous. Tab switches the local and remote panes; Enter opens a directory/file, F5 copies, F7 creates a directory, F8 deletes. Use the displayed footer for other keys.\n'
-        'Passive IPv4 FTP over Ethernet, with binary transfers and staged local downloads. FTP sends credentials and files without encryption. One FTP app at a time; its worker uses the shared foreground worker slot. Stop another worker app before starting FTP.\n'
+        'Passive IPv4 FTP over Ethernet or Wi-Fi, with binary transfers and staged local downloads. FTP sends credentials and files without encryption. One FTP app at a time; its worker uses the shared foreground worker slot. Stop another worker app before starting FTP.\n'
         'To serve a directory: job start ftpd /sd/share 2121 --user USER --password PASSWORD. job status ftpd and job stop ftpd inspect/stop it. Omit both credential options for anonymous access. The server exports one directory, supports one control client, and uses passive data ports. It can run alongside Telnet and Python jobs. The 16 KiB PSRAM server stack allocates on start and releases after stop. Restart the job after network loss.'),
     'player': ('Play MP3/WAV files from a folder.',
         'player [--tui] [--shuffle] [--repeat off|all|one] [FOLDER]\n'
@@ -19,10 +45,10 @@ OVERRIDES = {
         'Starts playback of visible MP3/WAV files directly in the folder (current directory if omitted). Filename order by default; no recursive scan or saved playlist. Up to 512 tracks; oversized folders/path names fail rather than silently truncate. Shuffle visits each track once per cycle. Repeat defaults to off; all repeats the folder, one repeats the current track.\n'
         'Space pauses/resumes (plays the selected track when stopped); n/p or Right/Left select next/previous; Up/Down select a row, Enter plays it or stops the current track; s toggles shuffle, r cycles off/all/one, +/- changes volume; q, Esc, Ctrl+C or Ctrl+] exits. No seek controls. The terminal interface works on LCD, USB and Telnet. Ctrl+Z suspends the interface while playback and automatic track changes continue. Open edit or another non-audio app, suspend it with Ctrl+Z, then use sessions and fg ID to return to the player. Pause before suspending if you want silence. Stop/exit the owning session to release audio.\n'
         'Track paths, ordering, the 32 KiB decoder-worker stack and a 128 KiB playback buffer use PSRAM on demand. A separate feeder with a 2 KiB internal stack supplies the 16 KiB internal PCM ring during brief decoder/storage/UI stalls. Audio is exclusive with aplay, arecord, synth and WebRadio. Exit frees the folder and playback allocations; pause retains them. Folder membership refreshes when reopened. Unsupported/corrupt files stop with an error; next skips manually.'),
-    'aplay': ('Play WAV or MP3 through the SGTL5000 shield.',
+    'aplay': ('Play WAV or MP3 through the selected audio output.',
         'aplay [-v volume] FILE.wav|FILE.mp3\n'
         'Example: aplay -v 20 /sd/music.wav\n'
-        'Volume is 0-100 percent. Uses the SGTL5000 headphone/output hardware; audio and the foreground worker must be free. Files may be on mounted SD, flash or USB. Playback ends at EOF; Esc or Ctrl+] stops early and releases audio. No Bluetooth audio output is integrated.'),
+        'Volume is 0-100 percent. Uses local SGTL5000 or selected Bluetooth output; audio and the foreground worker must be free. Files may be on mounted SD, flash or USB. Playback ends at EOF; Esc or Ctrl+] stops early and releases audio. For Bluetooth, connect an A2DP device and select bt output bluetooth before playback.'),
     'apps': ('List installed foreground apps.',
         'apps\n'
         'Lists apps compiled into this firmware. Use man APP for usage and help for the manual browser. Graphical apps require the LCD console; text apps also run over USB/Telnet.'),
@@ -77,13 +103,13 @@ OVERRIDES = {
         'cp SOURCE|PATTERN DEST\n'
         'Example: cp /sd/readme.txt /flash/readme.txt\n'
         'Mounted SD, flash, USB and RAMFS paths use the same adapter. Multiple sources require a destination directory. Files uses an interactive copy/progress interface.'),
-    'curl': ('Download HTTP/HTTPS content over Ethernet.',
+    'curl': ('Download HTTP/HTTPS content over Ethernet or Wi-Fi.',
         'curl [-L] [-o FILE] URL\n'
         'Example: curl -L -o /sd/page.txt https://example.com/\n'
-        'Ethernet must be up. -L follows supported redirects; -o writes a file instead of terminal output. The Teensy adapter supports GET requests. HTTPS checks hostname, chain and certificate dates using the UTC RTC and embedded CA roots; an unsupported CA fails validation. HTTPS redirects cannot downgrade to HTTP. Esc or Ctrl+] cancels. Shares the foreground worker with other network/audio apps.'),
+        'A network interface must be connected. -L follows supported redirects; -o writes a file instead of terminal output. The Teensy adapter supports GET requests. HTTPS checks hostname, chain and certificate dates using the UTC RTC and embedded CA roots; an unsupported CA fails validation. HTTPS redirects cannot downgrade to HTTP. Esc or Ctrl+] cancels. Shares the foreground worker with other network/audio apps.'),
     'date': ('Show or set the local calendar date.',
         'date [YYYY-MM-DD]\n'
-        'Uses setterm timezone. Setting the date preserves the local time and writes the corresponding UTC RTC value. date; time prints both. rtc reports UTC; ntp can synchronize the RTC over Ethernet.'),
+        'Uses setterm timezone. Setting the date preserves the local time and writes the corresponding UTC RTC value. date; time prints both. rtc reports UTC; ntp can synchronize the RTC over Ethernet or Wi-Fi.'),
     'df': ('Show space on mounted volumes.',
         'df [--refresh]\n'
         'Lists total, used and free KiB for mounted SD, flash, USB and RAMFS. FAT usage is cached after its first scan and maintained as clusters are allocated/freed. --refresh resets USB accounting and recounts; close USB files/apps first. Reconnect starts a fresh count. USB reads use bounded 4 KiB batches; the first scan can still take time on large drives.'),
@@ -210,20 +236,20 @@ OVERRIDES = {
         'netscan HOST|A.B.C.D-E|CIDR [PORTS]\n'
         'PORTS is a comma list or range, at most 128 unique ports. IPv4 CIDR supports /24 through /32.\n'
         'Defaults: 22,23,53,80,443,1883,8080. Sequential TCP connects; 350 ms per port. Ctrl+C/Esc stops.\n'
-        'Reports open ports and probe count; no UDP scanning or service fingerprinting. Ethernet must be up.'),
-    'network': ('Inspect or start Teensy wired Ethernet.',
+        'Reports open ports and probe count; no UDP scanning or service fingerprinting. A network interface must be connected.'),
+    'network': ('Inspect Teensy networking or start/stop Ethernet.',
         'network up\n'
         'network down\n'
         'network status\n'
         'network routes\n'
-        'Uses the Teensy Ethernet hardware and DHCP. Wi-Fi is not integrated. Connect the Ethernet hardware/cable before network up.\n'
+        'Uses the Teensy Ethernet hardware and DHCP. The display-wiring profile also supports wifi0 through wbridge on and saved ESP32 credentials. Connect the Ethernet hardware/cable before network up.\n'
         'For boot startup, put network up on its own line in /flash/.shell/startup and select setterm startup flash. setterm shows the selected startup path. Startup scripts run at boot; there is no periodic NTP synchronization unless explicitly arranged.'),
     'ntp': ('Query network time or synchronize the UTC RTC.',
         'ntp [-q] [SERVER [PORT]]\n'
         'Defaults: pool.ntp.org, UDP 123, five-second reply timeout. -q queries without changing the clock.\n'
         'Validates server address/port, response mode/version, stratum, synchronization, echoed request token and RTC range, including the 2036 NTP era rollover.\n'
         'Failed, rejected or cancelled requests leave the RTC unchanged. Successful sync preserves the display timezone.\n'
-        'Plain NTP is unauthenticated; use a trusted server. No automatic periodic synchronization is started.'),
+        'Plain NTP is unauthenticated; use a trusted server. For saved Wi-Fi at boot, add separate startup lines: wbridge on; wait 15; ntp pool.ntp.org. wait uses seconds and yields to other tasks. This makes one attempt; slow association or an unavailable server can fail. No automatic periodic synchronization is started.'),
     'pd': ('Monitor an STUSB4500 USB-PD controller.',
         'pd status\n'
         'pd open i2cN ADDRESS BOARD_MAX_MV BOARD_MAX_MA\n'
@@ -232,7 +258,7 @@ OVERRIDES = {
         'No hardware access until open. Explicit open requests 5 V discovery. Set limits from the actual board ratings. Requests require an advertised fixed profile. Status distinguishes pending from confirmed contracts. Close stops monitoring; it does not change voltage. No NVM writes or boot restore. Hardware validation pending.'),
     'ping': ('Send bounded ICMP echo requests.',
         'ping HOST [1..999]\n'
-        'Defaults to four probes, one second timeout/interval, 16 data bytes. Ctrl+C/Esc stops. Ethernet must be up. Reports replies, TTL, RTT and packet loss. Only one ICMP probe can be active at a time.'),
+        'Defaults to four probes, one second timeout/interval, 16 data bytes. Ctrl+C/Esc stops. A network interface must be connected. Reports replies, TTL, RTT and packet loss. Only one ICMP probe can be active at a time.'),
     'playground': ('Browse and install compatible Python community apps.',
         'playground\n'
         'playground search QUERY...\n'
@@ -243,7 +269,7 @@ OVERRIDES = {
         'playground source [repository-or-catalog-url|reset]\n'
         'playground storage [flash|sd]\n'
         'playground delete\n'
-        'Uses Ethernet for downloads; network up first. HTTPS verifies certificates against the UTC RTC and embedded CA roots; use ntp to set time if needed.\n'
+        'Uses connected Ethernet or Wi-Fi for downloads. HTTPS verifies certificates against the UTC RTC and embedded CA roots; use ntp to set time if needed.\n'
         'Refresh downloads the catalog; reload and normal browsing use its saved offline copy. / searches; Enter opens details; i installs; u uninstalls after confirmation; q/Esc exits the top-level tree. Scripts install under /sd/playground or /flash/playground according to the saved selection (auto prefers mounted SD). delete removes the entire Playground directory on selected storage, including installed apps; source/storage preferences remain.\n'
         'Python is the available runtime; Lua is not integrated. Requirements for unsupported devices/APIs can prevent a catalog app from running. Installed apps run with normal Python filesystem and hardware permissions, without a sandbox. Package size/hash verification does not establish that a community program is trustworthy.'),
     'plot': ('Plot CSV data or registered scalar streams on the LCD.',
@@ -331,10 +357,10 @@ OVERRIDES = {
         'spi [list]\n'
         'spi xfer slot0|slot1|slot2 MODE HZ HEX\n'
         'Claim the expansion slot first. Mode 0..3, 100000..12000000 Hz, up to 128 bytes. Returns received bytes as hex; MSB first. Display chip selects cannot be claimed.'),
-    'ssh': ('Connect to an SSH server over Ethernet.',
+    'ssh': ('Connect to an SSH server over Ethernet or Wi-Fi.',
         'ssh [user@]HOST [PORT]\n'
         'Example: ssh dennis@192.168.1.100\n'
-        'Requires Ethernet (network up). Default port 22; omitted user uses identity user. Supports password and RSA-key authentication. Configuration, host aliases, known hosts and keys live under /flash/.ssh; flash must be mounted. Host aliases are in /flash/.ssh/hosts. See sshkey for key generation/public keys.\n'
+        'Requires connected Ethernet or Wi-Fi. Default port 22; omitted user uses identity user. Supports password and RSA-key authentication. Configuration, host aliases, known hosts and keys live under /flash/.ssh; flash must be mounted. Host aliases are in /flash/.ssh/hosts. See sshkey for key generation/public keys.\n'
         'Keys are sent to the remote terminal. Ctrl+] closes the connection; Ctrl+Z suspends the app and fg resumes it. Console disconnect closes its sessions. SSH shares the foreground worker with audio and other network apps; a busy worker rejects a conflicting launch.'),
     'sshkey': ('Manage the default RSA SSH key pair in flash.',
         'sshkey [status]\n'
@@ -347,21 +373,21 @@ OVERRIDES = {
         'Firmware, processor, uptime, memory, mounted-volume count and FreeRTOS task count.'),
     'synth': ('Play the eight-voice SGTL5000 terminal synthesizer.',
         'synth [--headless]\n'
-        'Requires the SGTL5000 audio shield and free audio/foreground worker resources. Stereo output at 44100 Hz; initial volume 20 percent.\n'
+        'Requires local SGTL5000 or connected Bluetooth output and free audio/foreground worker resources. Stereo output at 44100 Hz; initial volume 20 percent.\n'
         'a w s e d f t g y h u j k plays chromatic C4-C5. Notes pulse for 220 ms; H toggles hold, where pressing a note again releases it. Space releases all notes. z/x changes octave (2-6); 1-5 selects square, triangle, saw, sine or noise; -/+ changes volume.\n'
         '[/] selects attack, decay, sustain, release, cutoff, resonance or oscillator-2 mix; comma/period adjusts it; ? shows controls and performance. q, Ctrl+C or Ctrl+] exits.\n'
         'Eight simultaneous voices; no physical key-up tracking. No graphical preset editor, MIDI-to-synth routing or persistent presets in this port. midi is a separate recording/replay command.'),
     'tail': ('Show the last lines of a file.',
         'tail [-n 1..10000] FILE\n'
         'Defaults to ten lines. Reads a snapshot while a logger may continue writing; no -f mode yet. Ctrl+C cancels.'),
-    'telnetd': ('Serve one authenticated terminal over Ethernet.',
+    'telnetd': ('Serve one authenticated terminal over Ethernet or Wi-Fi.',
         'telnetd start /absolute/password-file [PORT]\n'
         'telnetd status\n'
         'telnetd stop\n'
-        'Default port 23; off until started. Its 40 KiB internal stack is allocated at start and released after stop finishes session cleanup. status shows stack bytes; cleanup may be pending briefly. exit disconnects a client but keeps the server and stack available. Requires Ethernet. Password file: one line of 1-63 printable ASCII characters. One remote shell; client window size is negotiated. exit disconnects the remote shell. Telnet carries passwords/data unencrypted; use it only on a trusted network.'),
+        'Default port 23; off until started. Its 40 KiB internal stack is allocated at start and released after stop finishes session cleanup. status shows stack bytes; cleanup may be pending briefly. exit disconnects a client but keeps the server and stack available. Requires connected Ethernet or Wi-Fi. Password file: one line of 1-63 printable ASCII characters. One remote shell; client window size is negotiated. exit disconnects the remote shell. Telnet carries passwords/data unencrypted; use it only on a trusted network.'),
     'time': ('Show or set the local clock time.',
         'time [HH:MM[:SS]]\n'
-        'Uses setterm timezone. Setting the time preserves the local date and writes the corresponding UTC RTC value. date; time prints both. rtc reports UTC; ntp can synchronize the RTC over Ethernet.'),
+        'Uses setterm timezone. Setting the time preserves the local date and writes the corresponding UTC RTC value. date; time prints both. rtc reports UTC; ntp can synchronize the RTC over Ethernet or Wi-Fi.'),
     'top': ('Snapshot FreeRTOS tasks.',
         'top\n'
         'Task state, priority, stack high-water headroom in bytes and cumulative CPU utilization.\n'
@@ -395,13 +421,13 @@ OVERRIDES = {
     'wc': ('Count piped lines, words and bytes.',
         '... | wc [-l|-w|-c]\n'
         'Without an option prints newline, whitespace-separated word and byte counts. Requires pipe input.'),
-    'webradio': ('Play MP3 internet radio over Ethernet.',
+    'webradio': ('Play MP3 internet radio over Ethernet or Wi-Fi.',
         'webradio [--tui] [URL]\n'
         'webradio list\n'
         'webradio add NAME URL\n'
         'webradio remove NAME\n'
         'webradio reset\n'
-        'Requires Ethernet (network up), a valid UTC RTC for HTTPS, and the SGTL5000 audio shield. Direct HTTP/HTTPS MP3 streams only; no playlists, HLS or AAC. Teensy always uses the text station list, including on the LCD.\n'
+        'Requires connected Ethernet or Wi-Fi, a valid UTC RTC for HTTPS, and a ready local or Bluetooth audio output. Direct HTTP/HTTPS MP3 streams only; no playlists, HLS or AAC. Teensy always uses the text station list, including on the LCD.\n'
         'Up/Down or j/k selects; Enter plays; Space stops; R reconnects; +/- changes volume. A adds, E edits, Delete removes a station; Enter advances/saves a dialog and Esc cancels it. Q, Esc or Ctrl+] exits and stops playback.\n'
         'Catalog changes are saved in /flash/.solar/webradio/catalog.bin; flash must be mounted. Audio uses a bounded 128 KiB PSRAM buffer. Playback continues while suspended with Ctrl+Z; fg resumes. Audio and the foreground network worker must be available; conflicting launches are rejected.'),
     'zip': ('Create a ZIP archive on mounted storage.',
@@ -484,7 +510,7 @@ def select_pages(pages, render_text):
             'invaders': 'Requires the LCD console and USB host keyboard; USB serial and Telnet cannot acquire graphics.',
             'scope': 'The current legacy bench firmware disables hardware ADC capture because pin 40 drives AmpEn. Use scope --demo. The display candidate uses ADC40/AmpEn0 only after the documented wiring change. Never attach a scope input to the current AmpEn pin.',
             'pdpower': 'This app remains a simulator. The separate pd command implements the STUSB4500 I2C driver with explicit board limits; the controller is not wired on the current bench and hardware testing remains pending.',
-            'mqttx': 'Requires wired Ethernet: network up. Credentials and MQTT payloads travel over plain TCP; use a trusted network. No wireless interface is required.',
+            'mqttx': 'Requires connected Ethernet or Wi-Fi. Credentials and MQTT payloads travel over plain TCP; use a trusted network. No wireless interface is required.',
         }
         if kind == 'app' and name in notes:
             page['markdown'] += '\n' + notes[name] + '\n'

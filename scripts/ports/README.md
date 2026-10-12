@@ -829,6 +829,41 @@ flush with a mock display and the real ANSI terminal. It checks idle SPI bypass,
 full redraw completion, cursor visibility/movement, erase/scroll, font resize,
 SPI lock retry and return from graphics.
 
+`bash scripts/ports/test_teensy41_small_pages_host.sh` checks NES navigation
+and the small dashboard's partial row rendering. Rendering checks compare against
+full redraws for clock rollovers, shorter/empty text, memory warning color changes,
+and cache invalidation. Unchanged rows skip SPI; changed text redraws only its
+changed span. Clock refresh and NES polling intervals remain unchanged.
+
+The small display's NES reader now defaults to FlexIO1 plus one receive DMA
+channel on the existing pins (clock 2, latch 3, data 4). `lcd small` reports
+`nes=flexio-dma`, `nes-scans`, and `nes-faults`. Three shifters and one timer
+generate a 32-slot waveform (192 us at the default 30 MHz root); DMA records
+the input samples without per-edge interrupts or CPU delays. The caller collects
+the result on a later input poll. Scan starts remain spaced at least 10 ms apart,
+with the existing 20 ms debounce. No extra FreeRTOS task is allocated.
+
+`python3 tests/ports/test_teensy41_nes_flexio.py` exercises all 256 button
+combinations with a controller model, and the actual driver against register/DMA
+stubs: asynchronous completion, delayed consumption, timer wrap, resource failures,
+transfer errors/timeouts, and shutdown isolation. This requires the installed
+Teensy core headers. It does not validate physical FlexIO timing.
+
+Allocation/clock failure or a stalled/errored transfer falls back to the original
+GPIO scan; `nes=gpio-*` identifies the reason. `-DSK_NES_FLEXIO=0` selects the
+original reader for an A/B firmware comparison. Hardware reservations persist
+until reboot, including after fallback: the bundled FlexIO_t4 resource-release
+helpers clear the wrong allocation bit for nonzero indices. The driver never
+uses those helpers or retunes an already configured block. Final power-off
+stops DMA and returns clock/latch low before requesting the power cut.
+
+Hardware acceptance is pending: with an idle console, check `nes=flexio-dma`,
+increasing scan count and zero faults; verify all buttons, page changes, held keys,
+music toggle and Game Boy input. With a logic analyzer, verify a >=12 us latch,
+eight clock pulses with >=6 us high/low times, correct first-bit capture, and
+idle-low outputs between scans. Compare `top` CPU over equal idle intervals
+against a GPIO build, then repeat with audio and display activity and power-off.
+
 `python3 tests/ports/test_teensy41_gameboy_input.py` checks rapid physical
 keypress/release handling, stale/repeat characters and terminal input pulses.
 `python3 tests/ports/test_teensy41_gameboy_presenter.py` checks small-panel
@@ -845,3 +880,13 @@ compares the original public-domain 2048 ROM with the source-corrected build.
 It checks all 96 selected moves are legal and accepted at five taps/second,
 using the production Peanut-GB core. ROM files are external fixtures; the
 source patch and build instructions are in `doc/ports/teensy41-display.md`.
+
+
+Wireless bridge checks: `bash scripts/ports/test_teensy41_wireless_host.sh`
+validates the real Teensy driver against mock SPI, including PCM, keyboard and
+fragmented Ethernet frames. `scripts/ports/test_teensy41_wifi_network.py --port
+/dev/ttyACM1 --board-ip BOARD_IP --log /tmp/wifi-network.json` checks MicroPython
+TCP/UDP against temporary host echo fixtures. Enable the bridge, connect Wi-Fi,
+and stop Ethernet first. Reports may contain local network metadata; keep them
+outside Git. ESP32 protocol tests live in the separate solaros-wifi-bt-bridge
+project (`scripts/test_profiles_host.sh`).

@@ -30,6 +30,7 @@
 #if SOLAR_OS_PLATFORM_IMXRT1062
 #include "audio_output.h"
 #include "player_folder.h"
+#include "small_display.h"
 #define PLAYER_TASK_STACK 32768U
 #else
 #define PLAYER_TASK_STACK 28672U
@@ -993,6 +994,9 @@ static void player_stop(solar_os_context_t *ctx)
 {
     if (!player_state) return;
     player_stop_playback();
+#if SOLAR_OS_PLATFORM_IMXRT1062
+    sk_small_music_publish(NULL);
+#endif
     if (player.mode == PLAYER_MODE_GRAPHICS) {
         player_disable_high_refresh();
         solar_os_cassette_widget_destroy(player.cassette);
@@ -1070,6 +1074,22 @@ static bool player_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     if (event->type == SOLAR_OS_EVENT_TICK) {
         player_reap_finished();
         player_refresh_playlist();
+#if SOLAR_OS_PLATFORM_IMXRT1062
+        if (sk_small_music_take_toggle()) {
+            if (player.task && !player.task_done) player_toggle_pause();
+            else player_toggle_play_stop();
+            player.redraw = true;
+        }
+        sk_small_music_t small = { .active = true, .volume = player.volume };
+        portENTER_CRITICAL(&player_lock);
+        small.playing = player.task != NULL && !player.task_done;
+        small.paused = player.paused;
+        small.elapsed_ms = player.elapsed_ms;
+        small.total_ms = player.total_ms;
+        portEXIT_CRITICAL(&player_lock);
+        snprintf(small.track, sizeof(small.track), "%.52s", player_basename(player.active_path));
+        sk_small_music_publish(&small);
+#endif
         const bool playing = player.task != NULL && !player.paused;
         solar_os_cassette_widget_update(player.cassette, playing,
             player.elapsed_ms, player.total_ms, event->data.tick_ms);

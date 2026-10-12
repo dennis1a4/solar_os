@@ -1,8 +1,62 @@
 # Teensy / SuperKeyboard handover
 
-Updated 2026-10-10. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
+Updated 2026-10-11. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
+
+## Current wireless status — 2026-10-11
+
+The separate ESP32 profiles firmware and Teensy image implement Wi-Fi networking
+via SPI1 and Classic/BLE keyboard plus A2DP audio support. Commands and current
+wiring are in [the manual](../manual/commands.md#teensy-esp32-wireless-bridge).
+The older entries below are dated checkpoints, not the current validation state.
+
+Wi-Fi-only hardware tests passed DHCP, DNS, ping, HTTP, byte-exact MicroPython
+16 KiB TCP and 1/512/1400/4096-byte UDP echoes, saved-profile ESP restart recovery,
+and explicit disconnect/reconnect. Playground HTTPS passed with certificate
+verification; example.com HTTPS failed on both Ethernet and Wi-Fi with the
+existing TLS configuration. No certificate checks were disabled. Ethernet wins
+when both interfaces are up; existing sessions do not migrate between addresses.
+
+The soundcore V20i connected and played audio; user-reported left-ear choppiness
+remains unresolved. Keyboard pairing/input still needs a physical-device test.
+The SparkFun gateway is a separate MeshCore project; its SolarOS UART handshake
+and channel refresh passed, but over-the-air delivery is untested. NES physical
+navigation was confirmed; precise FlexIO waveform timing remains unmeasured.
+
+Power off before module swaps. A reboot alone is not power isolation. Slot0
+MeshCore and the wireless bridge conflict on pins28/29. Enable the desired driver
+after startup; there is no automatic module detection/profile selection.
+
+## Small-display navigation — 2026-10-10
+
+Dashboard pages: System, Network, Music, Mesh. A fixed bottom-row footer shows
+page-specific NES controls. Left/Right switches pages; Select returns to System;
+Music A requests play/pause in the player's own event loop; Mesh Up/Down selects
+slot0/1/2. `lcd small page system|network|music|mesh` also switches pages.
+The current page survives Game Boy ownership and monitor off/on, but not reboot.
+NES clock/latch/data use reserved pins 2/3/4. Polling is limited to every 10 ms,
+with 20 ms debounce and press edges (no hold-repeat). Missing or grounded input
+is ignored. GPIO sampling is serialized between USB polling callers. Game Boy
+gets NES plus USB keyboard buttons while owning the screen; the dashboard then
+ignores NES navigation. Footer uses the existing ninth row without a framebuffer.
+
+Network reads cached registry metadata, never QNEthernet from the display task.
+Music reads a copied snapshot, expires stale snapshots, and sends a coalesced
+request to the owning player task; it never dereferences the app's state pointer.
+Mesh uses the service's locked status API. Dashboard redraws on page navigation
+and otherwise once per second; disk scans remain every 30 seconds on System.
+Host navigation and existing player transition regressions pass. The firmware is
+flashed. USB tests passed twice through all four pages, all row lengths, active
+player snapshots and cleanup, and Game Boy ownership/dashboard restoration.
+No missed SPI transfers; at least 1,040 bytes monitor stack headroom in this run.
+The initial player test used `/` and failed to scan; corrected to `/sd/music`.
+Report: `/home/dennis/teensy-small-pages.json`. Controller is not connected yet
+(user confirmed); physical NES input and playback toggling need hardware testing.
+Both sessions returned to shell, dashboard on System. Run the host navigation
+test with `bash scripts/ports/test_teensy41_small_pages_host.sh`, and live checks
+with `scripts/ports/test_teensy41_small_pages.py --log REPORT.json` (requires idle
+sessions, `/sd/music`, and `/sd/roms/2048.gb`).
 
 ## Small-display date and time — 2026-10-10
 
@@ -18,6 +72,53 @@ zero SPI misses, 1,408 bytes monitor stack headroom, about 0.53% monitor CPU
 in the short live sample. The first read preceded completion of the initial
 storage scan; the subsequent check passed. Evidence:
 `/home/dennis/teensy-small-clock.json`.
+
+## Mesh companion service installed — 2026-10-10
+
+Both MeshCore and Meshtastic UART companion drivers are implemented in the
+`teensy41_display_wiring` profile (`SK_MESH_CLIENT`). ESP32 expansion radios are
+not attached yet. Runtime commands select the driver and slot at 115200 8N1:
+`mesh connect slot0 meshcore` / `mesh connect slot1 meshtastic`.
+Slot0 UART7 RX28/TX29 and slot1 UART8 RX34/TX35 are available. Slot2 UART3
+RX15/TX14 is rejected because those pins belong to the main display.
+
+The shared background task owns each UART, parses both protocols, and publishes
+to a 32-event per-radio PSRAM history. Consumers have independent cursors and
+lost-event counters. `solar_os_mesh_service.h` exposes slot-mask subscriptions
+and coalesced FreeRTOS event-group notifications. Chat/monitor and the separate
+SD logger subscribe; closing a view does not disconnect its radio. Up to eight
+subscriptions and three configured slots are supported (two currently usable).
+Node cache: 32 entries. MeshCore text: 160 bytes; Meshtastic: 233 bytes. Radio
+settings/keys remain managed by native radio tools; no automatic connection,
+logging or bridging is restored on boot. See [API notes](../../src/services/mesh/README.md).
+
+Commands: `mesh drivers|connect|disconnect|status|nodes|channels|refresh|send|dm`,
+`chat slotN [CHANNEL]`, `meshmon slotN`, `meshstatus [slotN]`,
+`meshlog start slotN /sd/NEWFILE.tsv` / `stop|status slotN`, and explicit one-way
+`meshbridge on SOURCE_SLOT SOURCE_CHANNEL DEST_SLOT DEST_CHANNEL` / `off|status`.
+Bridge excludes direct messages, labels relays, suppresses duplicates/loops, and
+limits forwarding to once per ten seconds. Busy/oversized messages are dropped
+with counters rather than retried or truncated. Accepted does not mean delivered.
+
+Validation: ASan/UBSan host tests cover both handshakes, fragmented/short UART
+I/O, malformed/truncated/random packets, radio errors/reboot/timeouts, node and
+channel discovery, text and ACK events, independent queues, notification ordering,
+bridge filtering and separate chat/monitor state with wrapped messages. All 17
+manual tests pass. Firmware builds and is flashed; live tests passed simultaneous
+MeshCore/Meshtastic attempts, resource conflicts, LCD chat + USB monitor, timeout
+notification to the app and SD log, disconnect cleanup and repeated driver swaps.
+There was no measured heap growth over four reconnect/disconnect cycles.
+
+Warm idle after using both workers: DTCM free 68,816 B; OCRAM used 16,464 B
+(two retained 8 KiB stacks plus allocator overhead); PSRAM extra 84 B for the
+logger's retained subscription. Radio buffers and view/subscription memory are
+released on disconnect/close. No allocator failures/fallbacks. Workers block when
+idle. Firmware size: RAM1 437,728 B; RAM2 232,312 B; flash 1,626,536 B.
+HEX SHA256: `0f95a9e7278c1ce2d934b95cefabc71cebe30a98d8c0d40cc39f93d43afc8250`.
+Evidence: `/home/dennis/teensy-mesh-live.json`; SD fixture `/sd/_mesh_701fb251.tsv`.
+Both consoles were returned to the shell; radios, logging and bridge are stopped.
+Physical UART reception, RF delivery and cross-network bridging still need radio
+hardware; the live board checks use missing-radio timeouts, not simulated RF.
 
 ## Current display wiring and installed image — 2026-10-08
 
@@ -39,6 +140,20 @@ looks good, with the complete image visible/readable and correct graphics.
 Host emulator/ROM/video tests, presenter scaling/ownership/error tests, keyboard
 regressions and console-stack/USB-buffer placement checks pass. 2048 has no save
 RAM, so cartridge battery persistence remains untested.
+
+On 2026-10-10 the Teensy embedded help selector was updated to include the
+Game Boy topic, launch instructions, small-display behavior and controls.
+The firmware is flashed; all 16 manual tests pass and live `man -k gameboy`
+finds `app.gameboy` (98 embedded topics). Evidence:
+`/home/dennis/teensy-gameboy-help.json`.
+
+Help background follow-up (2026-10-10): Teensy terminal erase/scroll blanks
+now retain selected colors but clear text decorations, matching the shared
+terminal's handling of inverse text. This prevents a menu highlight from
+turning unused help-page cells white. A regression reproduced the old behavior
+and passes after the fix; LCD terminal and bounded-flush tests pass. Firmware
+is flashed; the user confirmed the empty help-page areas are dark again
+with only the header highlighted (2026-10-10).
 
 Game Boy input follow-up: physical HID characters now bypass terminal-style
 140 ms button pulses, so actual key releases are respected. The rapid-tap host
@@ -1141,3 +1256,35 @@ gain controls, file protection/error display and three repeated memory-recovery
 cycles, with zero capture overruns and output underruns. Host audio ring, task
 lifetime and recorder ASan/UBSan transport tests passed. See
 [recorder documentation](teensy41-recorder.md) for controls and test commands.
+
+## 2026-10-11: FlexIO NES reader and partial dashboard redraw installed
+
+Flashed `teensy41_display_wiring` with the user's controller connected. HEX SHA256:
+`dbe34a6b2b8ea841b57b4f6d5fff84cd3be19b11ee611456dd7cf650d9047ad3`.
+Artifacts and initial USB evidence: `../solar_os-baselines/2026-10-11-nes-flexio/`.
+The board reports `nes=flexio-dma`, >2,200 scans and zero faults in the first
+post-boot sample. Settled dashboard CPU readings were 5.3–5.5%, compared with
+one 8.1% pre-upload reading. This comparison includes the LCD redraw optimization
+and is not an isolated FlexIO benchmark. Normal dashboard updates measured
+202–651 us after boot versus 6538 us in the pre-upload sample; storage refreshes
+are a separate, slower path. Monitor stack headroom was 988 bytes.
+
+Host waveform/driver, navigation, Game Boy input and shutdown tests passed;
+firmware build passed. Exact physical pulse timing still requires a logic analyzer.
+See `scripts/ports/README.md` for diagnostics, fallback and hardware acceptance.
+
+A second USB observation captured physical controller-driven page changes through
+Music/Mesh/Network, a mesh slot change, and return to System. At 6,670 scans the
+fault count remained zero. This demonstrates functional button input but does
+not certify all eight buttons or measured pulse widths. Evidence:
+`teensy-nes-flexio-buttons.json` in the same artifact directory.
+
+User confirmed controller operation, but requested intuitive numeric Mesh slot
+selection: Up now increments and Down decrements, both wrapping 0–2. Host
+navigation tests cover both directions and wrap; rebuilt and flashed with HEX
+SHA256 `b2af5480317c1b2296fdf5fad0dadb503a6eb7cadb208fd4ba7986552fbb993e`.
+Updated artifacts are in the checkpoint's `slot-direction/` subdirectory.
+The prior image reached 23,259 scans with zero faults before this update.
+User also reports incidental horizontal presses while using Up/Down on an
+aftermarket controller; no diagonal suppression was added, and the mechanical
+cause is unconfirmed.

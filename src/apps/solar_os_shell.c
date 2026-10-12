@@ -561,6 +561,9 @@ void solar_os_shell_cmd_telnetd(solar_os_context_t *, int, char **);
 bool sk_ramfs_complete(const solar_os_completion_request_t *, solar_os_completion_emit_t, void *, void *);
 #endif
 #if SK_UPSTREAM_SHELL
+#if SK_MESH_CLIENT
+void sk_shell_cmd_mesh(solar_os_context_t *, int, char **);
+#endif
 void sk_shell_cmd_pwd(solar_os_context_t *, int, char **);
 void sk_shell_cmd_session(solar_os_context_t *, int, char **);
 void sk_shell_cmd_fg(solar_os_context_t *, int, char **);
@@ -577,8 +580,27 @@ void sk_shell_cmd_close(solar_os_context_t *, int, char **);
 extern int sk_shell_compose(solar_os_context_t *, const char *);
 extern void sk_shell_cmd_filter(solar_os_context_t *, int, char **);
 #endif
+#if SK_WIRELESS_BRIDGE
+void sk_shell_cmd_wbridge(solar_os_context_t *, int, char **);
+void sk_shell_cmd_bridge_wifi(solar_os_context_t *, int, char **);
+#define solar_os_shell_cmd_wifi sk_shell_cmd_bridge_wifi
+void sk_shell_cmd_bridge_bt(solar_os_context_t *, int, char **);
+#endif
 static const shell_command_t shell_builtin_commands[] = {
+#if SK_WIRELESS_BRIDGE || (SOLAR_OS_PACKAGE_SERVICE_WIFI && !SK_UPSTREAM_SHELL)
+    {"wifi", "Wi-Fi station control", solar_os_shell_cmd_wifi},
+#endif
+#if SK_WIRELESS_BRIDGE
+    {"wbridge", "ESP32 SPI bridge on/off/status", sk_shell_cmd_wbridge},
+    {"bt", "Bluetooth discovery, keyboard and audio", sk_shell_cmd_bridge_bt},
+#endif
 #if SK_SHELL_COMPOSE
+#if SK_MESH_CLIENT
+    {"mesh", "MeshCore/Meshtastic companion radios", sk_shell_cmd_mesh},
+    {"meshstatus", "show mesh radio status", sk_shell_cmd_mesh},
+    {"meshlog", "record mesh events on SD", sk_shell_cmd_mesh},
+    {"meshbridge", "experimental one-way mesh relay", sk_shell_cmd_mesh},
+#endif
     {"grep", "filter piped lines by literal text", sk_shell_cmd_filter},
     {"head", "show first piped lines", sk_shell_cmd_filter},
     {"wc", "count piped lines, words and bytes", sk_shell_cmd_filter},
@@ -781,9 +803,6 @@ static const shell_command_t shell_builtin_commands[] = {
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_NETWORK
     {"network", "network interfaces, routes, and router", solar_os_shell_cmd_network},
-#endif
-#if SOLAR_OS_PACKAGE_SERVICE_WIFI
-    {"wifi", "Wi-Fi station control", solar_os_shell_cmd_wifi},
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_WIREGUARD
     {"wireguard", "WireGuard VPN client", solar_os_shell_cmd_wireguard},

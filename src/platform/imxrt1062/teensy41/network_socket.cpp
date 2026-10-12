@@ -170,7 +170,7 @@ extern "C" void sk_net_transport_poll(int ready) {
     switch(q.op) {
 #if SK_FTP
     case SK_NET_LOCAL_ADDR: {
-        auto ip=Ethernet.localIP();
+        auto ip=IPAddress(netif_default?ip4_addr_get_u32(netif_ip4_addr(netif_default)):0);
         for(unsigned i=0;i<4;++i)r.ip[i]=ip[i];
         break;
     }

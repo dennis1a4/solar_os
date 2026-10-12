@@ -2141,3 +2141,17 @@ timebase (100 us/div to 50 ms/div). There are gaps between snapshots. This is
 not a continuous recorder or serial decoder. Frequency requires several cycles
 and is unreliable for nonperiodic or aliased signals. Use an appropriate analog
 anti-alias filter. ADC timing and accuracy need physical validation.
+
+## meshmon
+
+Teensy display-wiring profile: monitor a MeshCore or Meshtastic companion radio.
+
+```text
+meshmon slotN
+```
+
+First use `mesh connect slot0 meshcore` or `mesh connect slot1 meshtastic`.
+Shows text/packet activity, channel/direct scope, RSSI/SNR when available, and
+local queued/radio accepted/delivery events. Escape exits without disconnecting
+the radio. Each view has independent bounded history. See `man mesh` for wiring
+and protocol limits. Radio hardware testing is pending.

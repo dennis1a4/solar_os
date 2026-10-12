@@ -20,6 +20,10 @@ do not maintain a separate device or website copy.
 
 ## Experimental Teensy 4.1 port
 
+The Teensy 4.1/SuperKeyboard port was developed with assistance from OpenAI
+Codex for implementation, debugging, testing, and documentation, with hardware
+testing and validation by Dennis.
+
 The SuperKeyboard port now runs independent RA8875 LCD/USB-host-keyboard and
 USB serial terminals, writable SD/QSPI flash storage, MicroPython, Ethernet,
 an SSH client, Files, editor, calculator, less, Notes, Sheet, a terminal synth,
@@ -32,9 +36,23 @@ highlighting, then `python /sd/example.py` to run them. `Ctrl+S` saves and
 `Ctrl+]` exits the editor. The interactive Python REPL is separate and does not
 have syntax highlighting. See [Python editing notes](doc/ports/teensy41-syntax.md).
 
-The installed profile builds with `pio run -e teensy41_telnet_legacy`.
-The normal `teensy41_display` profile requires the wiring changes documented
-in the port README.
+The installed profile builds with `pio run -e teensy41_display_wiring` for the
+current main/small display wiring. Older display profiles use different pins;
+check the [current handover](doc/ports/teensy41-handoff.md) before uploading.
+
+This profile includes runtime-selectable MeshCore and Meshtastic UART companion
+clients: `mesh`, `chat`, `meshmon`, `meshlog`, `meshbridge`, and `meshstatus`.
+A shared background service owns the slot UARTs, queues incoming events in PSRAM,
+and notifies subscribed applications. See `man mesh` on the device and the
+[service/API notes](src/services/mesh/README.md). Protocol simulation and Teensy
+service tests pass; the SparkFun MeshCore UART handshake passed on hardware.
+Over-the-air delivery still requires a matching peer.
+
+The separate ESP32 Wi-Fi/BT bridge adds Wi-Fi networking, keyboard pairing, and
+Bluetooth audio output. Wi-Fi DHCP, DNS, TCP/UDP, HTTP and selected verified HTTPS
+requests passed on hardware, including MicroPython networking. Keyboard hardware
+validation and reported Bluetooth audio choppiness remain open. See the
+[wireless commands and wiring](doc/manual/commands.md#teensy-esp32-wireless-bridge).
 
 Start with the [Teensy 4.1 README](doc/ports/README.md) for hardware, temporary
 LCD wiring, build/upload instructions, commands, test coverage, and limitations.

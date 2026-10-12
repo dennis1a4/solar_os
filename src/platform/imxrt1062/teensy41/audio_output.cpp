@@ -1,3 +1,7 @@
+#if SK_WIRELESS_BRIDGE
+#include "wireless_bridge.h"
+static bool wireless_output;
+#endif
 #if SK_AUDIO_PLAYER
 #include <arduino_freertos.h>
 #include <Audio.h>
@@ -396,6 +400,12 @@ static esp_err_t configure_output(uint8_t volume) {
     return configured ? ESP_OK : ESP_FAIL;
 }
 extern "C" esp_err_t sk_audio_output_start(uint8_t volume) {
+#if SK_WIRELESS_BRIDGE
+    if(sk_wireless_audio_selected()) {
+        esp_err_t result=sk_wireless_audio_start(volume);
+        wireless_output=result==ESP_OK;return result;
+    }
+#endif
     const esp_err_t err = configure_output(volume);
     if (err != ESP_OK) return err;
     auto *buffer = static_cast<PlaybackBlock *>(solar_os_memory_alloc(
@@ -420,6 +430,12 @@ extern "C" esp_err_t sk_audio_output_start(uint8_t volume) {
     return ESP_OK;
 }
 extern "C" esp_err_t sk_audio_output_write(const int16_t *data, size_t frames) {
+#if SK_WIRELESS_BRIDGE
+    if(wireless_output) {
+        if(!output_wait_ready(nullptr))return ESP_ERR_TIMEOUT;
+        return sk_wireless_audio_write(data,frames);
+    }
+#endif
     if (!pcm) return ESP_ERR_INVALID_STATE;
     if (file_pcm) return file_output_write(data,frames);
     while (frames) {
@@ -445,6 +461,9 @@ extern "C" esp_err_t sk_audio_output_write(const int16_t *data, size_t frames) {
 }
 #if SK_SYNTH
 extern "C" esp_err_t sk_audio_output_volume(uint8_t volume) {
+#if SK_WIRELESS_BRIDGE
+    if(wireless_output || sk_wireless_audio_selected())return sk_wireless_audio_volume(volume);
+#endif
     if (volume > 100) return ESP_ERR_INVALID_ARG;
     if (!ready) return ESP_ERR_NOT_FOUND;
     if (!sk_i2c_lock(0)) return ESP_ERR_TIMEOUT;
@@ -457,6 +476,9 @@ extern "C" uint32_t sk_audio_output_underruns() { return underruns; }
 // Limit queued audio to four blocks (~12 ms), instead of the player's 90 ms.
 extern "C" esp_err_t sk_audio_synth_write(const int16_t *data, size_t frames,
                                           const volatile bool *stop) {
+#if SK_WIRELESS_BRIDGE
+    if(wireless_output)return sk_wireless_audio_synth_write(data,frames,stop);
+#endif
     if (!pcm) return ESP_ERR_INVALID_STATE;
     while (frames) {
         uint32_t started = millis();
@@ -488,6 +510,9 @@ extern "C" esp_err_t sk_audio_synth_write(const int16_t *data, size_t frames,
 }
 #endif
 extern "C" esp_err_t sk_audio_output_finish(bool drain) {
+#if SK_WIRELESS_BRIDGE
+    if(wireless_output){wireless_output=false;output_paused=false;return sk_wireless_audio_finish(drain);}
+#endif
     esp_err_t result = ESP_OK;
     if (file_pcm && drain) {
         if (file_partial) {
@@ -536,7 +561,12 @@ void sk_audio_player_tone(bool on) {
     __DMB();
     tone_on = on;
 }
-extern "C" bool sk_audio_output_ready() { return ready; }
+extern "C" bool sk_audio_output_ready() {
+#if SK_WIRELESS_BRIDGE
+    if(sk_wireless_audio_selected())return sk_wireless_audio_ready();
+#endif
+    return ready;
+}
 
 extern "C" void sk_audio_output_status() {
     sk_console_printf("Audio: SGTL5000=%s rate=44100 stereo blocks=%lu underruns=%lu\r\n",

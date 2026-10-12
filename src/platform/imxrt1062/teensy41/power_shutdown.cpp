@@ -1,3 +1,9 @@
+#if SK_WIRELESS_BRIDGE
+#include "wireless_bridge.h"
+#endif
+#if SK_MESH_CLIENT
+#include "mesh_service.h"
+#endif
 #if SK_UPSTREAM_SHELL && SK_HW_RESOURCES && SK_LCD_CONSOLE
 #include <arduino_freertos.h>
 #include "platform.h"
@@ -50,7 +56,14 @@ static void shutdown_step() {
             else if(result>0) {status="waiting for Python and console cleanup";cleaning=true;}
         } else if(sk_shutdown_ready()) {
             status="draining serial logs";
-            if(sk_serial_shutdown()!=ESP_OK)finish("serial log error; power remains on");
+            if(
+#if SK_MESH_CLIENT
+               !sk_mesh_shutdown() ||
+#endif
+#if SK_WIRELESS_BRIDGE
+               !sk_wireless_shutdown() ||
+#endif
+               sk_serial_shutdown()!=ESP_OK)finish("serial log error; power remains on");
             else {
                 status="syncing storage";
                 if(

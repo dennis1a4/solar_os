@@ -1,3 +1,9 @@
+#if SK_WIRELESS_BRIDGE
+#include "wireless_bridge.h"
+#endif
+#if SK_MESH_CLIENT
+#include "mesh_service.h"
+#endif
 #if SK_UPSTREAM_SHELL && SK_LCD_CONSOLE
 #include <arduino_freertos.h>
 #include <semphr.h>
@@ -588,11 +594,21 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
 #endif
         return;
     }
+    if(argc==4 && !strcmp(argv[1],"small") && !strcmp(argv[2],"page")) {
+        const char *names[]={"system","network","music","mesh"};
+        for(unsigned page=0;page<4;++page) if(!strcmp(argv[3],names[page])) {
+            io->command_status=sk_small_page(page)?0:1;
+            solar_os_shell_io_writeln(io,io->command_status?"Small display unavailable":names[page]);
+            return;
+        }
+        io->command_status=2;
+        solar_os_shell_io_writeln(io,"usage: lcd small page system|network|music|mesh"); return;
+    }
     if(argc>=2 && !strcmp(argv[1],"small")) {
         int enabled=-1;
         if(argc==3 && !strcmp(argv[2],"on")) enabled=1;
         else if(argc==3 && !strcmp(argv[2],"off")) enabled=0;
-        else if(argc!=2) { io->command_status=2; solar_os_shell_io_writeln(io,"usage: lcd small [on|off|brightness [0-100]]"); return; }
+        else if(argc!=2) { io->command_status=2; solar_os_shell_io_writeln(io,"usage: lcd small [on|off|page NAME|brightness [0-100]]"); return; }
         char status[640];
         sk_small_monitor_status(status,sizeof(status),enabled);
         solar_os_shell_io_writeln(io,status);
@@ -673,6 +689,12 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
 void sk_upstream_shell_run() {
 #if SK_HW_RESOURCES
     sk_serial_init();
+#if SK_WIRELESS_BRIDGE
+    sk_wireless_init();
+#endif
+#if SK_MESH_CLIENT
+    sk_mesh_init();
+#endif
 #endif
 #if SK_PLOT
     extern void sk_plot_streams_begin(); sk_plot_streams_begin();

@@ -116,7 +116,12 @@ static esp_err_t playback_start(uint8_t volume, const solar_os_audio_wav_options
     esp_err_t err=sk_audio_output_start(volume);
     if (err==ESP_OK && options && options->device) {
         solar_os_audio_device_info_t device={0};
+#if SK_WIRELESS_BRIDGE
+        extern bool sk_wireless_audio_selected(void);
+        strcpy(device.id,sk_wireless_audio_selected()?"bluetooth":"sgtl5000");
+#else
         strcpy(device.id,"sgtl5000");
+#endif
         device.capabilities=SOLAR_OS_AUDIO_DEVICE_CAP_OUTPUT|SOLAR_OS_AUDIO_DEVICE_CAP_VOLUME;
         device.native_format.sample_rate=44100;
         device.native_format.channels=2; device.native_format.bits_per_sample=16;

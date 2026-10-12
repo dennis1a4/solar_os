@@ -1,0 +1,28 @@
+// SolarOS's bounded client subset of the Meshtastic wire API.
+// Field numbers/types follow meshtastic/protobufs mesh.proto and channel.proto.
+// Unused fields (including channel secrets) are skipped by nanopb.
+syntax = "proto2";
+package solar_mesh;
+message User { optional string name = 2; optional string short_name = 3; }
+message Node { optional uint32 number = 1; optional User user = 2; optional float snr = 4; optional fixed32 heard = 5; }
+message Data { optional uint32 port = 1; optional bytes payload = 2; optional fixed32 request_id = 6; }
+message Packet {
+ optional fixed32 source = 1; optional fixed32 destination = 2; optional uint32 channel = 3;
+ optional Data decoded = 4; optional fixed32 id = 6; optional fixed32 received = 7;
+ optional float snr = 8; optional uint32 hop_limit = 9; optional bool want_ack = 10;
+ optional int32 rssi = 12; optional bool via_mqtt = 14;
+}
+message Self { optional uint32 number = 1; }
+message Metadata { optional string firmware = 1; optional uint32 model = 9; }
+message ChannelSettings { optional string name = 3; }
+message Channel { optional int32 index = 1; optional ChannelSettings settings = 2; optional uint32 role = 3; }
+message Queue { optional int32 result = 1; optional uint32 free = 2; optional uint32 maximum = 3; optional uint32 id = 4; }
+message Heartbeat { optional uint32 nonce = 1; }
+message Routing { optional uint32 error = 3; }
+message FromRadio {
+ oneof payload { Packet packet = 2; Self self = 3; Node node = 4; uint32 config_complete = 7;
+ bool rebooted = 8; Channel channel = 10; Queue queue = 11; Metadata metadata = 13; }
+}
+message ToRadio {
+ oneof payload { Packet packet = 1; uint32 want_config = 3; bool disconnect = 4; Heartbeat heartbeat = 7; }
+}
