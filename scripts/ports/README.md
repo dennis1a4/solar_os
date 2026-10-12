@@ -900,3 +900,9 @@ EN5/FAULT_N6 reset state, pulse latch, explicit fault clear/re-enable and preser
 interrupt masking in the direct USB power driver. These are host tests, not
 physical motor or USB fault tests. The standalone motor-controller project has
 `make all test` for the AVR logic and real ISR code against mock registers.
+
+
+The wireless host test runs the full transport suite once per slot and checks
+selection, conflicting CS/GPIO ownership, interrupt cleanup and off/rebind behavior.
+Use `wbridge on slot0` or `wbridge on slot1`; the wired scripts default to slot0
+and must only be used with their matching physical wiring.

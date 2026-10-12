@@ -28,5 +28,10 @@ inline void xTaskNotifyGive(TaskHandle_t){}
 inline unsigned ulTaskNotifyTake(int,unsigned){return 0;}
 
 #define FALLING 2
+#ifdef WIRELESS_TEST_IRQ
+void attachInterrupt(int,void(*)(),int);
+void detachInterrupt(int);
+#else
 inline void attachInterrupt(int,void(*)(),int){}
 inline void detachInterrupt(int){}
+#endif

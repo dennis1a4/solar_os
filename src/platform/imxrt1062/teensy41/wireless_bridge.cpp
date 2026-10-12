@@ -3,6 +3,7 @@
 #include "audio_output.h"
 #include "keyboard_input.h"
 #include "platform.h"
+#include "board.h"
 #include <arduino_freertos.h>
 #include <semphr.h>
 extern "C" {
@@ -14,6 +15,11 @@ extern "C" {
 #include <atomic>
 #include <stdlib.h>
 static const char *owner = "wireless:slot0";
+// Only the pending-data hint reads the slot without holding mutex.
+static std::atomic<unsigned> selected_slot{0};
+static const superkeyboard::SlotPins &slot_pins() {
+  return superkeyboard::slots[selected_slot.load()];
+}
 static StaticSemaphore_t mutex_storage;
 static SemaphoreHandle_t mutex;
 static StaticTask_t worker_tcb;
@@ -39,13 +45,13 @@ struct Guard {
 };
 static bool transfer() {
   uint32_t began = millis();
-  while (!digitalRead(29)) {
+  while (!digitalRead(slot_pins().tx)) {
     if (millis() - began >= 250)
       return false;
     vTaskDelay(1);
   }
   transfer_completed = false;
-  if (sk_slot_spi(0, owner, WB_SPI_HZ, WB_SPI_MODE, tx, rx, WB_SIZE) != ESP_OK)
+  if (sk_slot_spi(selected_slot.load(), owner, WB_SPI_HZ, WB_SPI_MODE, tx, rx, WB_SIZE) != ESP_OK)
     return false;
   // Capture the falling edge: ESP flash writes may delay completion and a
   // fast low/high readiness pulse must not be missed between transactions.
@@ -99,7 +105,7 @@ static unsigned rpc(unsigned op, const void *data, size_t size, uint8_t *out,
   taskEXIT_CRITICAL();
   return WB_FAILED;
 }
-extern "C" bool sk_wireless_wifi_pending() { return enabled && healthy && digitalRead(28); }
+extern "C" bool sk_wireless_wifi_pending() { return enabled && healthy && digitalRead(slot_pins().rx); }
 extern "C" bool sk_wireless_wifi_available() { return enabled && healthy; }
 extern "C" unsigned sk_wireless_wifi_command(unsigned op, const void *in, size_t n,
     uint8_t *out, size_t capacity, size_t *len) {
@@ -167,31 +173,35 @@ static void stop_link() {
   taskEXIT_CRITICAL();
   for (unsigned i = 0; i < 2; i++)
     if (claimed[i]) {
-      int pin = 28 + i;
-      if (pin == 29)
-        detachInterrupt(29);
+      int pin = i ? slot_pins().tx : slot_pins().rx;
+      if (i == 1)
+        detachInterrupt(pin);
       pinMode(pin, INPUT);
       solar_os_resource_release(SOLAR_OS_RESOURCE_GPIO_PIN, pin, -1, owner);
       claimed[i] = false;
     }
-  sk_slot_release(0, owner);
+  sk_slot_release(selected_slot.load(), owner);
 }
-static bool start_link() {
+static bool start_link(unsigned slot = 0) {
+  if (slot > 1)
+    return false;
   if (enabled)
-    return get_status();
-  if (sk_slot_claim(0, owner) != ESP_OK)
+    return selected_slot.load() == slot && get_status();
+  selected_slot = slot;
+  owner = slot ? "wireless:slot1" : "wireless:slot0";
+  if (sk_slot_claim(slot, owner) != ESP_OK)
     return false;
   for (unsigned i = 0; i < 2; i++) {
-    if (solar_os_resource_claim(SOLAR_OS_RESOURCE_GPIO_PIN, 28 + i, -1, owner,
+    if (solar_os_resource_claim(SOLAR_OS_RESOURCE_GPIO_PIN, i ? slot_pins().tx : slot_pins().rx, -1, owner,
                                 "bridge handshake") != ESP_OK) {
       stop_link();
       return false;
     }
     claimed[i] = true;
   }
-  pinMode(28, INPUT_PULLDOWN);
-  pinMode(29, INPUT_PULLDOWN);
-  attachInterrupt(29, handshake_fell, FALLING);
+  pinMode(slot_pins().rx, INPUT_PULLDOWN);
+  pinMode(slot_pins().tx, INPUT_PULLDOWN);
+  attachInterrupt(slot_pins().tx, handshake_fell, FALLING);
   enabled = true;
   if (!get_status()) {
     stop_link();
@@ -208,7 +218,7 @@ static void poll(void *) {
         get_status();
         heartbeat = millis();
       }
-      if (enabled && healthy && digitalRead(28)) {
+      if (enabled && healthy && digitalRead(slot_pins().rx)) {
         uint8_t report[13];
         size_t n = 0;
         if (rpc(WB_KEYS, nullptr, 0, report, sizeof(report), &n) == WB_OK &&
@@ -437,8 +447,9 @@ static void status(solar_os_shell_io_t *io) {
     return;
   }
   solar_os_shell_io_printf(io,
-                           "SPI1 slot0 6MHz mode3; keyboard=%s audio=%s "
+                           "SPI%u slot%u 6MHz mode3; keyboard=%s audio=%s "
                            "route=%s underruns=%lu errors=%u\n",
+                           unsigned(slot_pins().spi), selected_slot.load(),
                            status_bytes[0] & 4 ? "connected" : "absent",
                            status_bytes[0] & 8 ? "connected" : "absent",
                            bt_route ? "bluetooth" : "local",
@@ -459,8 +470,22 @@ extern "C" void sk_shell_cmd_wbridge(solar_os_context_t *ctx, int argc,
   auto *io = solar_os_context_shell_io(ctx);
   Guard g;
   io->command_status = 0;
-  if (argc == 2 && !strcmp(argv[1], "on")) {
-    print_result(io, start_link() ? WB_OK : WB_FAILED);
+  if ((argc == 2 || argc == 3) && !strcmp(argv[1], "on")) {
+    unsigned slot = 0;
+    if (argc == 3) {
+      if (!strcmp(argv[2], "slot1")) slot = 1;
+      else if (strcmp(argv[2], "slot0")) {
+        io->command_status = 1;
+        solar_os_shell_io_writeln(io, "Choose slot0 or slot1");
+        return;
+      }
+    }
+    if (enabled && selected_slot.load() != slot) {
+      io->command_status = 1;
+      solar_os_shell_io_writeln(io, "Bridge active on another slot; stop playback and run wbridge off first");
+      return;
+    }
+    print_result(io, start_link(slot) ? WB_OK : WB_FAILED);
     return;
   }
   if (argc == 2 && !strcmp(argv[1], "off")) {
@@ -477,7 +502,7 @@ extern "C" void sk_shell_cmd_wbridge(solar_os_context_t *ctx, int argc,
     return;
   }
   io->command_status = 1;
-  solar_os_shell_io_writeln(io, "usage: wbridge on|off|status");
+  solar_os_shell_io_writeln(io, "usage: wbridge on [slot0|slot1] | off | status");
 }
 extern "C" void sk_shell_cmd_bridge_wifi(solar_os_context_t *ctx, int argc,
                                          char **argv) {

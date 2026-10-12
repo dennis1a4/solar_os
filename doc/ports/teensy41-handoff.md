@@ -1,8 +1,27 @@
 # Teensy / SuperKeyboard handover
 
-Updated 2026-10-11. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
+Updated 2026-10-12. Branch: `teensy41` (upstream integration retained as `teensy41-upstream-4.15.18`); GitHub: `dennis1a4/solar_os`.
 This is the current state. Older snapshots are in the
 [handover history](teensy41-handoff-history.md).
+
+## Selectable wireless slot — 2026-10-12
+
+The Wi-Fi/BT bridge can use either of the two existing slots: `wbridge on slot0`
+or `wbridge on slot1`. Bare `wbridge on` still selects slot0. CS/handshake/DR are
+37/29/28 for slot0 and 36/35/34 for slot1; SPI1 signals and ESP32 pins are unchanged.
+One bridge is active at a time. Stop playback and use `wbridge off` before
+selecting the other slot; power off before physically moving the module. Save the
+explicit command in startup if desired; no implicit persistence or autodetection.
+
+Host tests run the Wi-Fi frame, PCM, retry, timeout and disconnect cases against
+both mappings, verifying GPIO/CS claims, the selected interrupt, rollback, invalid
+slots and stop/rebind cleanup. Embedded manual tests and the module-board firmware
+build pass. The Teensy was flashed successfully (module-board profile).
+HEX SHA256: `3e49f5e801da8c6965ca74a0281d50f3e38b7b2635934bb09d07d1fe41d7f3a3`.
+Live slot0 connection failed; no ESP32 USB device was present to inspect/reset,
+and Wi-Fi DHCP could not be tested. Ethernet remained up and the bridge rolled
+back to off. Physical slot1 operation remains untested. ESP32 firmware is unchanged.
+Upload log: /tmp/wbridge-slots-upload.log.
 
 ## Motor-module and USB power revision — 2026-10-11
 

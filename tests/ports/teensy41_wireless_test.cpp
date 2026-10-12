@@ -4,31 +4,43 @@
 #include <string>
 #include <vector>
 #define SK_WIRELESS_BRIDGE 1
+#define WIRELESS_TEST_IRQ 1
 #include "../../src/platform/imxrt1062/teensy41/wireless_bridge.cpp"
 void sk_wifi_shell(solar_os_context_t *, int, char **) {}
 uint32_t test_clock;
 static bool ready_pin = true, slot_claimed = false, pin_claim[42], foreign29,
             corrupt_once, drop_all;
 static unsigned pcm_commands, pcm_bytes;
+static unsigned test_slot;
+static int data_pin=28, handshake_pin=29, interrupt_pin=-1;
+static bool foreign_slot;
+static void (*interrupt_handler)();
 static std::vector<uint8_t> received_pcm, wifi_sent, wifi_in;
 static bool bad_wifi_offset;
 static bool pcm_busy;
 static uint8_t pending[WB_SIZE], last_req[WB_SIZE], last_resp[WB_SIZE];
 static bool last_valid;
 static std::string printed;
-int digitalRead(int) { return ready_pin; }
-void pinMode(int pin, int) { assert(!(pin == 29 && foreign29)); }
-esp_err_t sk_slot_claim(unsigned, const char *) {
+int digitalRead(int pin) { assert(pin==data_pin || pin==handshake_pin); return ready_pin; }
+void attachInterrupt(int pin,void(*handler)(),int mode) {assert(pin==handshake_pin && mode==FALLING);interrupt_pin=pin;interrupt_handler=handler;}
+void detachInterrupt(int pin) {assert(pin==handshake_pin);interrupt_pin=-1;interrupt_handler=nullptr;}
+void pinMode(int pin, int) { assert(!(pin == handshake_pin && foreign29)); }
+esp_err_t sk_slot_claim(unsigned slot, const char *who) {
+  assert(slot==test_slot && std::string(who)=="wireless:slot"+std::to_string(slot));
+  if(foreign_slot)return ESP_FAIL;
+  assert(!slot_claimed);
   slot_claimed = true;
   return ESP_OK;
 }
-esp_err_t sk_slot_release(unsigned, const char *) {
+esp_err_t sk_slot_release(unsigned slot, const char *) {
+  assert(slot==test_slot && slot_claimed);
   slot_claimed = false;
   return ESP_OK;
 }
 extern "C" esp_err_t solar_os_resource_claim(solar_os_resource_kind_t, int pin,
                                              int, const char *, const char *) {
-  if (pin == 29 && foreign29)
+  assert(pin==data_pin || pin==handshake_pin);
+  if (pin == handshake_pin && foreign29)
     return ESP_FAIL;
   pin_claim[pin] = true;
   return ESP_OK;
@@ -55,11 +67,13 @@ extern "C" void solar_os_shell_io_printf(solar_os_shell_io_t *, const char *f,
   va_end(a);
   printed += b;
 }
-esp_err_t sk_slot_spi(unsigned, const char *, uint32_t hz, uint8_t mode,
+esp_err_t sk_slot_spi(unsigned slot, const char *who, uint32_t hz, uint8_t mode,
                       const uint8_t *in, uint8_t *out, size_t n) {
   assert(slot_claimed && n == WB_SIZE);
   assert(hz == WB_SPI_HZ && mode == WB_SPI_MODE);
-  handshake_fell();
+  assert(slot==test_slot && std::string(who)=="wireless:slot"+std::to_string(slot));
+  assert(interrupt_pin==handshake_pin && interrupt_handler);
+  interrupt_handler();
   memcpy(out, pending, n);
   if (drop_all)
     memset(out, 0, n);
@@ -123,7 +137,7 @@ esp_err_t sk_slot_spi(unsigned, const char *, uint32_t hz, uint8_t mode,
   return ESP_OK;
 }
 static void command(void (*fn)(solar_os_context_t *, int, char **),
-                    std::initializer_list<const char *> words) {
+                    std::initializer_list<const char *> words, int expected_status=0) {
   solar_os_shell_io_t io{};
   solar_os_context_t ctx{&io};
   std::vector<char *> argv;
@@ -131,27 +145,43 @@ static void command(void (*fn)(solar_os_context_t *, int, char **),
     argv.push_back(const_cast<char *>(w));
   printed.clear();
   fn(&ctx, argv.size(), argv.data());
-  assert(io.command_status == 0);
+  assert(io.command_status == expected_status);
 }
-int main() {
+int main(int argc, char **) {
+  test_slot=argc>1?1:0;
+  data_pin=test_slot?34:28;handshake_pin=test_slot?35:29;
+  const char *slot_name=test_slot?"slot1":"slot0";
   sk_wireless_init();
+  foreign_slot=true;
+  {Guard g; assert(!start_link(test_slot));}
+  assert(!slot_claimed && interrupt_pin==-1);
+  foreign_slot=false;
   foreign29 = true;
   {
     Guard g;
-    assert(!start_link());
+    assert(!start_link(test_slot));
   }
-  assert(!pin_claim[28] && !slot_claimed);
+  assert(!pin_claim[data_pin] && !slot_claimed);
   foreign29 = false;
   ready_pin = false;
   unsigned before = test_clock;
   {
     Guard g;
-    assert(!start_link());
+    assert(!start_link(test_slot));
   }
   assert(test_clock - before <= 1000);
-  assert(!pin_claim[28] && !pin_claim[29] && !slot_claimed);
+  assert(!pin_claim[data_pin] && !pin_claim[handshake_pin] && !slot_claimed);
   ready_pin = true;
-  command(sk_shell_cmd_wbridge, {"wbridge", "on"});
+  if(test_slot) command(sk_shell_cmd_wbridge, {"wbridge", "on", slot_name});
+  else command(sk_shell_cmd_wbridge, {"wbridge", "on"});
+  assert(selected_slot.load()==test_slot && sk_wireless_wifi_pending());
+  command(sk_shell_cmd_wbridge, {"wbridge", "on", "slot2"},1);
+  command(sk_shell_cmd_wbridge, {"wbridge", "on", "junk"},1);
+  command(sk_shell_cmd_wbridge, {"wbridge", "on", test_slot?"slot0":"slot1"},1);
+  assert(selected_slot.load()==test_slot && slot_claimed && interrupt_pin==handshake_pin);
+  command(sk_shell_cmd_wbridge, {"wbridge", "on", slot_name});
+  command(sk_shell_cmd_wbridge, {"wbridge", "status"});
+  assert(printed.find(slot_name)!=std::string::npos);
   assert(enabled && healthy);
   command(sk_shell_cmd_bridge_wifi, {"wifi", "scan"});
   assert(printed.find("test-network") != std::string::npos);
@@ -233,7 +263,16 @@ int main() {
   assert(sk_wireless_key_read() == -1);
   drop_all = false;
   assert(sk_wireless_shutdown());
-  assert(!enabled && !slot_claimed && !pin_claim[28] && !pin_claim[29]);
+  assert(!enabled && !slot_claimed && !pin_claim[data_pin] && !pin_claim[handshake_pin]);
+  assert(interrupt_pin==-1);
+  // Rebind after off, with no stale GPIO claim or interrupt from the old slot.
+  test_slot=1-test_slot;data_pin=test_slot?34:28;handshake_pin=test_slot?35:29;
+  slot_name=test_slot?"slot1":"slot0";
+  command(sk_shell_cmd_wbridge, {"wbridge", "on", slot_name});
+  assert(selected_slot.load()==test_slot && interrupt_pin==handshake_pin);
+  command(sk_shell_cmd_wbridge, {"wbridge", "off"});
+  assert(!slot_claimed && interrupt_pin==-1);
+  for(auto claim:pin_claim)assert(!claim);
   puts("Teensy wireless commands, timeout, pin rollback, duplicate audio and "
        "disconnect tests passed");
 }

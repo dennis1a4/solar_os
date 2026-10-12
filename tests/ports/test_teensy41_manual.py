@@ -18,6 +18,8 @@ class ManualTest(unittest.TestCase):
         for name in ('wifi', 'bt', 'wbridge', 'motor', 'usbpower'):
             self.assertIn('command.' + name, self.by_id)
         self.assertIn('hidden password', self.by_id['command.wifi']['body'])
+        self.assertIn('wbridge on [slot0|slot1]', self.by_id['command.wbridge']['body'])
+        self.assertIn('HS35<-ESP18', self.by_id['command.wbridge']['body'])
         self.assertIn('bt audio INDEX', self.by_id['command.bt']['body'])
         self.assertIn('wait 15', self.by_id['command.ntp']['body'])
 

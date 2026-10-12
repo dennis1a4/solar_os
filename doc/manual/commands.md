@@ -1429,7 +1429,7 @@ Over-the-air delivery remains untested.
 
 | Command | Usage | Description |
 | --- | --- | --- |
-| `wbridge` | `wbridge on`, `wbridge off`, `wbridge status` | Claim/release slot0 and the ESP32 SPI bridge. Disabled at boot. Requires the profiles firmware; the earlier ESP-Hosted controller firmware is incompatible. |
+| `wbridge` | `wbridge on [slot0\|slot1]`, `wbridge off`, `wbridge status` | Claim/release the selected slot and the ESP32 SPI bridge. Disabled at boot. Requires the profiles firmware; the earlier ESP-Hosted controller firmware is incompatible. |
 | `bt` | `bt scan [ble]`, `bt status` | Discover Classic Bluetooth or BLE peers and show indexed results and pending pairing requests. |
 | `bt` | `bt keyboard INDEX`, `bt keyboard disconnect` | Connect/disconnect a Classic or BLE keyboard from the most recent scan. Supports eight-byte boot-compatible keyboard reports; other HID layouts are reported as unsupported. |
 | `bt` | `bt audio INDEX`, `bt audio disconnect` | Connect/disconnect a Classic Bluetooth A2DP speaker or headphones. |
@@ -1455,11 +1455,27 @@ default. Use the existing network route controls to change preference, or
 `network down` to stop Ethernet when testing Wi-Fi alone. Existing TCP sessions
 bound to a lost interface need reconnecting; they do not migrate between IPs.
 
-Turn both boards off before wiring: Teensy26 to ESP13, Teensy39 to ESP25,
-Teensy27 to ESP14, Teensy37 to ESP27, Teensy29 to ESP18, Teensy28 to ESP19,
-and GND to GND. Power each by USB; do not join power rails. The bridge owns
-slot0 CS and pins28/29, so disconnect a slot0 MeshCore session first. The
-separate MeshCore firmware/project is unchanged.
+Turn both boards off before wiring or moving the module. The ESP32 firmware and
+ESP-side pins are identical for either of the two existing slots:
+
+| Signal | Teensy slot0 | Teensy slot1 | ESP32 GPIO |
+| --- | --- | --- | --- |
+| MOSI | 26 | 26 | 13 |
+| MISO | 39 | 39 | 25 |
+| SCK | 27 | 27 | 14 |
+| CS | 37 | 36 | 27 |
+| Handshake (ESP to Teensy) | 29 | 35 | 18 |
+| Data-ready (ESP to Teensy) | 28 | 34 | 19 |
+| Ground | GND | GND | GND |
+
+Power each by USB; do not join power rails. Use `wbridge on slot0` or
+`wbridge on slot1`; `wbridge on` defaults to slot0. Only one wireless bridge
+is active at a time. Its selected slot's CS and RX/TX pins are reserved, so a
+MeshCore/UART driver cannot use those pins concurrently. Stop playback and run
+`wbridge off` before selecting a different slot. Driver activation itself does
+not need a reboot; physical swaps require powering off. Put the explicit slot
+command in the startup script to restore that selection at boot. Slot selection
+is not saved automatically. The separate MeshCore firmware/project is unchanged.
 
 SPI uses 1024-byte CRC-checked packets in
 mode3 at 6 MHz. Scan operations are refused while Bluetooth audio is active to avoid
