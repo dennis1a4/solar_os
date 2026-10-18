@@ -30,6 +30,7 @@ extern "C" {
 #endif
 #if SK_PRIMARY_RA8875
 #include <RA8875.h>
+#include "display_probe.h"
 #ifndef SK_PRIMARY_PANEL
 #define SK_PRIMARY_PANEL RA8875_800x480
 #endif
@@ -48,6 +49,7 @@ extern "C" {
 #include "solar_os_memory.h"
 }
 static LcdTerminal *lcd;
+static bool lcd_small;
 static SemaphoreHandle_t lcd_mutex;
 static unsigned render_position;
 static bool lcd_repaint=true;
@@ -128,42 +130,46 @@ static void load_backlight_levels() {
 void sk_displays_begin() {
     load_backlight_levels();
 #if SK_PRIMARY_RA8875
-    if (sk_slot_claim(2, "primary-display") != ESP_OK) return;
-    // Temporary CS wiring may reuse another expansion connector's select pin.
-    // Reserve it as well so slot SPI operations cannot select the LCD.
-    for (unsigned slot = 0; slot < 2; ++slot) {
-        if (superkeyboard::slots[slot].cs == superkeyboard::primary_cs &&
-            sk_slot_claim(slot, "primary-display") != ESP_OK) {
-            sk_console_print("RA8875 chip select is already in use\r\n");
-            return;
+    const auto begin_primary=[]() {
+        if (sk_slot_claim(2, "primary-display") != ESP_OK) return;
+        // Temporary CS wiring may reuse another expansion connector's select pin.
+        // Reserve it as well so slot SPI operations cannot select the LCD.
+        for (unsigned slot = 0; slot < 2; ++slot) {
+            if (superkeyboard::slots[slot].cs == superkeyboard::primary_cs &&
+                sk_slot_claim(slot, "primary-display") != ESP_OK) {
+                sk_console_print("RA8875 chip select is already in use\r\n");
+                return;
+            }
         }
-    }
-    if (!sk_spi_lock(0)) return;
-    primary.begin(SK_PRIMARY_PANEL, 16, 4000000, 2000000);
-    primary_ready = primary.errorCode() == 0;
-    if (primary_ready) {
-        primary.setRotation(SK_PRIMARY_ROTATION);
-        primary.displayOn(true);
+        if (!sk_spi_lock(0)) return;
+        primary.begin(SK_PRIMARY_PANEL, 16, 4000000, 2000000);
+        primary_ready = sk_primary_display_present(primary);
+        if (primary_ready) {
+            primary.setRotation(SK_PRIMARY_ROTATION);
+            primary.displayOn(true);
 #if SK_PRIMARY_BACKLIGHT >= 0
-        sk_lcd_set_brightness(false,backlight_levels[0]);
+            sk_lcd_set_brightness(false,backlight_levels[0]);
 #endif
-        primary.clearScreen(RA8875_BLACK);
-        primary.setTextColor(RA8875_WHITE, RA8875_BLACK);
-        primary.setCursor(0, 0);
-        primary.print("SolarOS Teensy 4.1 bring-up\r\n");
+            primary.clearScreen(RA8875_BLACK);
+            primary.setTextColor(RA8875_WHITE, RA8875_BLACK);
+            primary.setCursor(0, 0);
+            primary.print("SolarOS Teensy 4.1 bring-up\r\n");
 #if SK_LCD_CONSOLE
-        lcd_mutex=xSemaphoreCreateMutex();
-        lcd=static_cast<LcdTerminal *>(solar_os_memory_calloc(1,sizeof(LcdTerminal),
-            SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,"lcd-terminal"));
-        configASSERT(lcd_mutex && lcd);
-        lcd->configure(1,7,0);
-        lcd->reset();
-        primary.setFontDefault();
-        primary.setFontScale(0);
-        primary.showCursor(NOCURSOR,false);
+            lcd_mutex=xSemaphoreCreateMutex();
+            lcd=static_cast<LcdTerminal *>(solar_os_memory_calloc(1,sizeof(LcdTerminal),
+                SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,"lcd-terminal"));
+            configASSERT(lcd_mutex && lcd);
+            lcd->geometry(100,30);
+            lcd->configure(1,7,0);
+            lcd->reset();
+            primary.setFontDefault();
+            primary.setFontScale(0);
+            primary.showCursor(NOCURSOR,false);
 #endif
-    } else sk_console_print("RA8875 initialization failed\r\n");
-    sk_spi_unlock(0);
+        } else sk_console_print("RA8875 initialization failed\r\n");
+        sk_spi_unlock(0);
+    };
+    begin_primary();
 #endif
 #if SK_SECONDARY_ST7735
     if (!sk_spi_lock(superkeyboard::secondary_spi)) return;
@@ -176,8 +182,27 @@ void sk_displays_begin() {
     secondary.fillScreen(ST7735_BLACK);
     sk_lcd_set_brightness(true,backlight_levels[1]);
     sk_spi_unlock(superkeyboard::secondary_spi);
+#if SK_LCD_CONSOLE
+    if(!primary_ready) {
+        lcd_small=true;
+        lcd_mutex=xSemaphoreCreateMutex();
+        lcd=static_cast<LcdTerminal *>(solar_os_memory_calloc(1,sizeof(LcdTerminal),
+            SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,"lcd-terminal"));
+        configASSERT(lcd_mutex && lcd);
+        // Adafruit's built-in font occupies 6x8 pixels including spacing.
+        lcd->geometry(secondary.width()/6,secondary.height()/8);
+        lcd->configure(1,7,0);
+        sk_console_print("Main display absent; small display is the local console\r\n");
+    }
+#endif
+    small_console=
+#if SK_LCD_CONSOLE
+        lcd_small;
+#else
+        false;
+#endif
     small_monitor_start();
-    sk_console_printf("ST7735 monitor started: SPI%u SCK%u MOSI%u CS%u DC%u reset%u backlight%u\r\n",
+    sk_console_printf("ST7735 display started: SPI%u SCK%u MOSI%u CS%u DC%u reset%u backlight%u\r\n",
         superkeyboard::secondary_spi,superkeyboard::secondary_sck,superkeyboard::secondary_mosi,
         superkeyboard::secondary_cs,superkeyboard::secondary_dc,
         superkeyboard::secondary_reset,superkeyboard::secondary_backlight);
@@ -185,7 +210,13 @@ void sk_displays_begin() {
 }
 
 #if SK_LCD_CONSOLE
-bool sk_lcd_ready() { return primary_ready && lcd; }
+bool sk_lcd_ready() { return lcd != nullptr; }
+bool sk_lcd_main_ready() { return primary_ready; }
+void sk_lcd_dimensions(unsigned &cols,unsigned &rows) {
+    xSemaphoreTake(lcd_mutex,portMAX_DELAY);
+    cols=lcd->cols; rows=lcd->rows;
+    xSemaphoreGive(lcd_mutex);
+}
 void sk_lcd_write(const char *text,size_t length) {
     if(!lcd) return;
     xSemaphoreTake(lcd_mutex,portMAX_DELAY);
@@ -224,13 +255,27 @@ void sk_lcd_flush() {
     xSemaphoreTake(lcd_mutex,portMAX_DELAY);
     const bool pending=lcd_pending || lcd_repaint;
     xSemaphoreGive(lcd_mutex);
-    if(!pending || !sk_spi_lock(0)) return;
+    const unsigned spi=lcd_small?superkeyboard::secondary_spi:0;
+    if(!pending || !sk_spi_lock(spi)) return;
+#if SK_SECONDARY_ST7735
+    // A background instrument can temporarily cover the fallback terminal.
+    if(lcd_small && small_owned) {sk_spi_unlock(spi);return;}
+#endif
     static const uint16_t colors[]={0x0000,0xa800,0x0540,0xad40,0x0015,0xa815,0x0555,0xad55,
                                    0x52aa,0xf800,0x07e0,0xffe0,0x001f,0xf81f,0x07ff,0xffff};
     xSemaphoreTake(lcd_mutex,portMAX_DELAY);
     if(lcd_repaint) {
-        primary.setFontDefault(); primary.setFontScale(lcd->scale-1);
-        primary.clearScreen(colors[lcd->default_bg]);
+#if SK_SECONDARY_ST7735
+        if(lcd_small) {
+            secondary.setTextSize(lcd->scale);
+            secondary.setTextWrap(false);
+            secondary.fillScreen(colors[lcd->default_bg]);
+        } else
+#endif
+        {
+            primary.setFontDefault(); primary.setFontScale(lcd->scale-1);
+            primary.clearScreen(colors[lcd->default_bg]);
+        }
         memset(lcd->dirty,1,sizeof(lcd->dirty)); lcd_repaint=false;
     }
     unsigned drawn=0,checked=0;
@@ -245,16 +290,26 @@ void sk_lcd_flush() {
         bool inverse=cell.flags&4;
         if(lcd->visible && row==lcd->y && col==lcd->x) inverse=!inverse;
         if(inverse) { auto t=fg; fg=bg; bg=t; }
-        primary.setTextColor(fg,bg);
-        primary.setCursor(col*8*lcd->scale,row*16*lcd->scale);
-        primary.write(cell.ch);
-        if(cell.flags&2) primary.drawLine(col*8*lcd->scale,(row+1)*16*lcd->scale-1,(col+1)*8*lcd->scale-1,(row+1)*16*lcd->scale-1,fg);
+#if SK_SECONDARY_ST7735
+        if(lcd_small) {
+            secondary.setTextColor(fg,bg);
+            secondary.setCursor(col*6*lcd->scale,row*8*lcd->scale);
+            secondary.write(cell.ch);
+            if(cell.flags&2) secondary.drawFastHLine(col*6*lcd->scale,(row+1)*8*lcd->scale-1,6*lcd->scale,fg);
+        } else
+#endif
+        {
+            primary.setTextColor(fg,bg);
+            primary.setCursor(col*8*lcd->scale,row*16*lcd->scale);
+            primary.write(cell.ch);
+            if(cell.flags&2) primary.drawLine(col*8*lcd->scale,(row+1)*16*lcd->scale-1,(col+1)*8*lcd->scale-1,(row+1)*16*lcd->scale-1,fg);
+        }
     }
     // A complete scan drained all dirty cells. A bounded batch may still
     // have work left, so another flush must inspect the remaining cells.
     lcd_pending=checked<lcd->rows*lcd->cols;
     xSemaphoreGive(lcd_mutex);
-    sk_spi_unlock(0);
+    sk_spi_unlock(spi);
 }
 #endif
 void sk_display_write(const char *text, size_t length) {
@@ -540,7 +595,7 @@ void sk_audio_tone(bool on) {
 
 #if SK_PLOT
 extern "C" void sk_lcd_graphics_mode(bool enabled) {
-    graphics_mode=enabled;
+    graphics_mode=enabled && primary_ready;
     if (!enabled && lcd) {
         xSemaphoreTake(lcd_mutex,portMAX_DELAY);
         lcd_repaint=true;
@@ -548,7 +603,7 @@ extern "C" void sk_lcd_graphics_mode(bool enabled) {
     }
 }
 extern "C" bool sk_lcd_pixels(int x,int y,int width,int height,const uint16_t *pixels) {
-    if(!sk_spi_lock(0)) return false;
+    if(!primary_ready || !sk_spi_lock(0)) return false;
     primary.writeRect(x,y,width,height,pixels); sk_spi_unlock(0); return true;
 }
 extern "C" void sk_lcd_graphics_presented(uint32_t elapsed) {

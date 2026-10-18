@@ -103,6 +103,8 @@ static TaskHandle_t remote_task;
 DMAMEM static StackType_t local_stack[10240];
 static StaticTask_t local_tcb;
 extern bool sk_lcd_ready();
+extern bool sk_lcd_main_ready();
+extern void sk_lcd_dimensions(unsigned &,unsigned &);
 extern void sk_lcd_write(const char *,size_t);
 extern void sk_lcd_flush();
 extern void sk_lcd_row(unsigned,char *);
@@ -136,6 +138,7 @@ extern "C" bool sk_console_is_remote() { return &active()==&remote_console; }
 #define owner (active().name)
 #define app_frame (active().frame)
 extern "C" bool sk_console_is_local() { return active().local; }
+extern "C" bool sk_console_compact_prompt() { return active().local && !sk_lcd_main_ready(); }
 extern "C" void sk_console_input_boundary() { if(active().local)sk_usb_input_boundary(); }
 extern "C" bool sk_audio_owner_connected() {
 #if SK_TELNETD
@@ -361,7 +364,8 @@ static bool initialize_console() {
         }
 #endif
         unsigned size,fg,bg; sk_lcd_appearance(size,fg,bg);
-        solar_os_shell_io_set_dimensions(io,100/size,30/size);
+        unsigned cols,rows; sk_lcd_dimensions(cols,rows);
+        solar_os_shell_io_set_dimensions(io,cols,rows);
     }
 #if SK_SETTINGS
     if(!active().local
@@ -643,19 +647,21 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
         if(saved!=ESP_OK) solar_os_shell_io_writeln(io,"Applied for this boot; saving LCD settings failed.");
 #endif
         auto *local_io=solar_os_shell_session_io(local.shell);
-        solar_os_shell_io_set_dimensions(local_io,100/next_size,30/next_size);
+        unsigned cols,rows; sk_lcd_dimensions(cols,rows);
+        solar_os_shell_io_set_dimensions(local_io,cols,rows);
         if(next_size!=size) {
             solar_os_shell_io_clear(local_io);
             if(!active().local) solar_os_shell_session_prompt(&local.context,local.shell);
         }
-        solar_os_shell_io_printf(io,"LCD font %ux (%ux%u), color %s on %s\n",next_size,100/next_size,30/next_size,lcd_colors[next_fg],lcd_colors[next_bg]);
+        solar_os_shell_io_printf(io,"LCD font %ux (%ux%u), color %s on %s\n",next_size,cols,rows,lcd_colors[next_fg],lcd_colors[next_bg]);
         io->command_status=0;
     } else if(argc==2 && !strcmp(argv[1],"colors")) {
         for(auto *name:lcd_colors) solar_os_shell_io_writeln(io,name);
     } else if(argc==2 && !strcmp(argv[1],"dump")) {
         if(active().local) { solar_os_shell_io_writeln(io,"Use lcd dump from USB."); return; }
         char row[101];
-        for(unsigned r=0;r<30/size;++r) { sk_lcd_row(r,row); solar_os_shell_io_writeln(io,row); }
+        unsigned cols,rows; sk_lcd_dimensions(cols,rows);
+        for(unsigned r=0;r<rows;++r) { sk_lcd_row(r,row); solar_os_shell_io_writeln(io,row); }
     } else if(argc==3 && !strcmp(argv[1],"send") && !active().local) {
         if(strlen(argv[2])>200) { solar_os_shell_io_writeln(io,"Command too long."); return; }
         sk_usb_inject(argv[2]); sk_usb_inject("\r");
@@ -678,8 +684,10 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
         else { solar_os_shell_io_writeln(io,"usage: lcd key exit|ctrlc|ctrlz|esc|up|down|left|right|home|end|tab|space|enter|CHAR"); return; }
         solar_os_shell_io_writeln(io,"Queued for LCD session.");
     } else {
+        unsigned cols,rows; sk_lcd_dimensions(cols,rows);
         solar_os_shell_io_printf(io,"LCD %ux%u, font %ux, color %s on %s; local consoles: usb and lcd; current=%s; keyboard=%s\n",
-            100/size,30/size,size,lcd_colors[fg],lcd_colors[bg],owner,sk_usb_keyboard_connected()?"connected":"absent");
+            cols,rows,size,lcd_colors[fg],lcd_colors[bg],owner,sk_usb_keyboard_connected()?"connected":"absent");
+        solar_os_shell_io_printf(io,"Console display: %s (selected at boot)\n",sk_lcd_main_ready()?"main RA8875":"small ST7735 fallback");
         char status[160]; sk_usb_status(status,sizeof(status)); solar_os_shell_io_writeln(io,status);
 #if SK_PLOT
         extern void sk_gfx_status(char *,size_t); sk_gfx_status(status,sizeof(status)); solar_os_shell_io_writeln(io,status);
@@ -703,7 +711,7 @@ void sk_upstream_shell_run() {
     console_gate=xSemaphoreCreateRecursiveMutex(); configASSERT(console_gate);
     const solar_os_port_driver_t usb={"usb","Teensy USB CDC",SOLAR_OS_PORT_CAP_READ|SOLAR_OS_PORT_CAP_WRITE,
         terminal_read,terminal_write,nullptr,nullptr,nullptr};
-    const solar_os_port_driver_t display={"lcd","RA8875 and USB host keyboard",SOLAR_OS_PORT_CAP_READ|SOLAR_OS_PORT_CAP_WRITE,
+    const solar_os_port_driver_t display={"lcd","LCD and USB host keyboard",SOLAR_OS_PORT_CAP_READ|SOLAR_OS_PORT_CAP_WRITE,
         terminal_read,terminal_write,nullptr,nullptr,reinterpret_cast<void *>(1)};
     configASSERT(solar_os_port_register(&usb)==ESP_OK && solar_os_port_register(&display)==ESP_OK);
     consoles[0].name="usb-shell"; consoles[1].name="lcd-shell"; consoles[1].local=true;

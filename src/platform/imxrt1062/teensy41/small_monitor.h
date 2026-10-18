@@ -24,7 +24,9 @@ DMAMEM static StackType_t small_stack[1024];
 static StaticTask_t small_tcb;
 static TaskHandle_t small_task;
 static bool small_enabled=true;
+static bool small_console; // The fallback terminal owns the dashboard surface.
 static bool small_owned; // Protected by SPI mutex for rendering.
+static uint32_t small_owner_generation; // Changes only for a newly cleared lease.
 static uint32_t small_generation;
 static uint32_t small_updates, small_cpu, small_elapsed, small_misses;
 static char small_lines[9][27];
@@ -44,7 +46,7 @@ static void small_monitor_run(void *) {
     for (;;) {
         ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(1000));
         taskENTER_CRITICAL();
-        const bool enabled=small_enabled && !small_owned;
+        const bool enabled=small_enabled && !small_owned && !small_console;
         const uint32_t current_generation=small_generation;
         const unsigned page=small_nav.page, slot=small_nav.slot;
         taskEXIT_CRITICAL();
@@ -197,11 +199,12 @@ void sk_small_monitor_status(char *out,size_t size,int enabled) {
     char lines[9][27];
     memcpy(lines,small_lines,sizeof(lines));
     const bool active=small_enabled;
+    const bool console=small_console,owned=small_owned;
     const uint32_t updates=small_updates,cpu=small_cpu,elapsed=small_elapsed,misses=small_misses;
     taskEXIT_CRITICAL();
     const uint32_t runtime=small_task?ulTaskGetRunTimeCounter(small_task):0;
     snprintf(out,size,"small=%s updates=%lu cpu=%lu.%lu%% update-us=%lu runtime-us=%lu spi-misses=%lu stack-free=%lu nes=%s nes-scans=%lu nes-faults=%lu",
-        small_task?(active?"on":"off"):"unavailable",(unsigned long)updates,(unsigned long)(cpu/10),(unsigned long)(cpu%10),
+        small_task?(owned?"owned":console?"console":active?"on":"off"):"unavailable",(unsigned long)updates,(unsigned long)(cpu/10),(unsigned long)(cpu%10),
         (unsigned long)elapsed,(unsigned long)runtime,(unsigned long)misses,
         small_task?(unsigned long)(uxTaskGetStackHighWaterMark(small_task)*sizeof(StackType_t)):0UL,
         nes_reader::mode,(unsigned long)nes_reader::scans,(unsigned long)nes_reader::faults);
@@ -220,7 +223,7 @@ extern "C" bool sk_small_acquire() {
     if(!small_task || !sk_spi_lock(superkeyboard::secondary_spi)) return false;
     const bool available=!small_owned;
     if(available) {
-        taskENTER_CRITICAL(); small_owned=true; taskEXIT_CRITICAL();
+        taskENTER_CRITICAL(); small_owned=true; ++small_owner_generation; taskEXIT_CRITICAL();
         secondary.fillScreen(ST7735_BLACK);
     }
     sk_spi_unlock(superkeyboard::secondary_spi);
@@ -234,6 +237,13 @@ extern "C" void sk_small_release() {
     // No in-flight graphics producer may remain when its owner releases.
     while(!sk_spi_lock(superkeyboard::secondary_spi)) vTaskDelay(1);
     taskENTER_CRITICAL(); small_owned=false; ++small_generation; taskEXIT_CRITICAL();
+#if SK_LCD_CONSOLE
+    if(lcd_small) {
+        xSemaphoreTake(lcd_mutex,portMAX_DELAY);
+        lcd_repaint=true;
+        xSemaphoreGive(lcd_mutex);
+    }
+#endif
     sk_spi_unlock(superkeyboard::secondary_spi);
 #endif
 }
@@ -297,7 +307,7 @@ extern "C" void sk_small_input_poll() {
     const uint8_t buttons=raw==255?0:sk_nes_buttons(raw);
     taskENTER_CRITICAL();
     const unsigned old_page=small_nav.page,old_slot=small_nav.slot;
-    const uint8_t pressed=small_nav.update(buttons,at,small_owned || !small_enabled);
+    const uint8_t pressed=small_nav.update(buttons,at,small_owned || !small_enabled || small_console);
     nes_held=small_nav.held;
     sampling=false;
     if(small_nav.page==2 && old_page==2 && (pressed&1) && small_music.active && uint32_t(now-small_music_at)<2000)
@@ -318,3 +328,85 @@ extern "C" void sk_small_input_stop() {
     taskEXIT_CRITICAL();
 #endif
 }
+
+extern "C" uint8_t sk_small_buttons() {
+#if SK_SECONDARY_ST7735
+    taskENTER_CRITICAL();const uint8_t buttons=nes_held;taskEXIT_CRITICAL();
+    return buttons;
+#else
+    return 0;
+#endif
+}
+
+#if SK_DMM && SK_SECONDARY_ST7735
+#include "dmm_paint.h"
+bool sk_small_dmm_frame(const DmmModel *view,bool demo) {
+    if(!view || !sk_spi_lock(superkeyboard::secondary_spi))return false;
+    if(!small_owned) {sk_spi_unlock(superkeyboard::secondary_spi);return false;}
+    static DmmPaintCache cache;
+    const auto &v=*view;
+    const bool fresh=!cache.valid || cache.generation!=small_owner_generation;
+    if(fresh) {
+        // sk_small_acquire already cleared the surface, once per ownership.
+        cache=DmmPaintCache{};cache.valid=true;cache.generation=small_owner_generation;
+    }
+    secondary.setTextWrap(false);
+    char title[27],mode[27],number[8],extrema[27];
+    snprintf(title,sizeof(title),"%s DC %uV",demo?"DEMO":"UNCAL",v.range);
+    const uint32_t now=millis();
+    const bool stale=v.valid && uint32_t(now-v.last_ms)>500;
+    snprintf(mode,sizeof(mode),"%s%s%s",v.mode==DmmModel::Minimum?"MIN":v.mode==DmmModel::Maximum?"MAX":"LIVE",v.hold?" HOLD":"",stale?" STALE":"");
+    if(!v.valid)strcpy(number,"---");
+    else if(v.displayed_overload())strcpy(number,"OL");
+    else dmm_paint_voltage(number,v.displayed());
+    char low[8],high[8];dmm_paint_voltage(low,v.minimum);dmm_paint_voltage(high,v.maximum);
+    snprintf(extrema,sizeof(extrema),"min %.7s max %.7s",low,high);
+    dmm_paint_text(secondary,2,1,1,demo?ST7735_YELLOW:ST7735_CYAN,ST7735_BLACK,cache.title,title,fresh || demo!=cache.demo);
+    dmm_paint_text(secondary,2,13,1,ST7735_WHITE,ST7735_BLACK,cache.mode,mode);
+    dmm_paint_text(secondary,2,27,3,ST7735_WHITE,ST7735_BLACK,cache.number,number);
+    dmm_paint_text(secondary,2,55,1,ST7735_WHITE,ST7735_BLACK,cache.extrema,extrema);
+    cache.demo=demo;
+    secondary.setTextSize(1);
+    if(fresh) {
+        secondary.setTextColor(ST7735_WHITE,ST7735_BLACK);
+        secondary.setCursor(148,43);secondary.print("V");
+        secondary.setCursor(2,66);secondary.print("A hold B mode SEL reset");
+        secondary.setCursor(2,76);secondary.print("UP 5V DN 50V START exit");
+        secondary.drawRect(1,87,158,31,ST7735_BLUE);
+        secondary.setCursor(2,120);secondary.print("-10s      auto       now");
+    }
+    // Autoscaled history, positioned by timestamps, never by sample count.
+    // Missing conversions leave a gap; hold freezes only the large readout.
+    int32_t lo=v.live,hi=v.live;
+    for(unsigned i=0;i<v.count;++i) {
+        const auto &p=v.point(i);
+        if(uint32_t(now-p.ms)>DmmModel::WindowMs)continue;
+        if(p.mv<lo)lo=p.mv;
+        if(p.mv>hi)hi=p.mv;
+    }
+    if(hi-lo<20) {lo-=10;hi+=10;}
+    DmmTraceBitmap next_trace;
+    int px=-1,py=-1;uint32_t previous_ms=0;
+    for(unsigned i=0;i<v.count;++i) {
+        const auto &p=v.point(i);const uint32_t age=now-p.ms;
+        if(age>DmmModel::WindowMs)continue;
+        const int x=157-int(uint64_t(age)*154/DmmModel::WindowMs);
+        const int y=115-int(int64_t(p.mv-lo)*26/(hi-lo));
+        if(px>=0 && uint32_t(p.ms-previous_ms)<=150)next_trace.line(px-2,py-89,x-2,y-89);
+        else next_trace.set(x-2,y-89);
+        px=x;py=y;previous_ms=p.ms;
+    }
+    for(int y=0;y<DmmTraceBitmap::Height;++y) {
+        if(!memcmp(cache.trace.pixels[y],next_trace.pixels[y],DmmTraceBitmap::Stride))continue;
+        for(int x=0;x<DmmTraceBitmap::Width;) {
+            const bool ink=next_trace.get(x,y);
+            if(cache.trace.get(x,y)==ink) {++x;continue;}
+            const int first=x++;
+            while(x<DmmTraceBitmap::Width && next_trace.get(x,y)==ink && cache.trace.get(x,y)!=ink)++x;
+            secondary.drawFastHLine(first+2,y+89,x-first,ink?ST7735_GREEN:ST7735_BLACK);
+        }
+    }
+    cache.trace=next_trace;
+    sk_spi_unlock(superkeyboard::secondary_spi);return true;
+}
+#endif

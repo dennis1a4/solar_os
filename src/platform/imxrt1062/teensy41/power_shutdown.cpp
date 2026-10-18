@@ -10,6 +10,9 @@
 #include "platform.h"
 #include "power_shutdown.h"
 #include "serial_terminal.h"
+#if SK_DMM
+#include "dmm.h"
+#endif
 extern "C" {
 #include "solar_os.h"
 #include "solar_os_shell_io.h"
@@ -56,6 +59,9 @@ static void shutdown_step() {
             if(result<0)finish("blocked: close active/retained apps before shutdown");
             else if(result>0) {status="waiting for Python and console cleanup";cleaning=true;}
         } else if(sk_shutdown_ready()) {
+#if SK_DMM
+            if(!sk_dmm_stop()) {finish("DMM cleanup pending; power remains on");return;}
+#endif
             status="draining serial logs";
 #if SK_MOTOR_MODULE
             if(!sk_motor_shutdown())finish("motor stop unconfirmed; power remains on");

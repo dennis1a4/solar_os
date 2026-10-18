@@ -16,6 +16,8 @@ bool sk_small_music_take_toggle(void);
 bool sk_small_page(unsigned page);
 void sk_small_input_poll(void);
 void sk_small_input_stop(void);
+// Debounced physical NES state only (never consumes a keyboard event).
+uint8_t sk_small_buttons(void);
 // One graphics owner at a time. The dashboard pauses while claimed.
 bool sk_small_acquire(void);
 uint8_t sk_gameboy_buttons(void);
@@ -28,4 +30,8 @@ void sk_small_release(void);
 bool sk_small_frame(const uint16_t *pixels);
 #ifdef __cplusplus
 }
+#if SK_DMM
+#include "dmm_model.h"
+bool sk_small_dmm_frame(const DmmModel *view,bool demo);
+#endif
 #endif

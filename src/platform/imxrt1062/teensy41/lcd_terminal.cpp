@@ -9,10 +9,19 @@ void LcdTerminal::blank(unsigned row,unsigned first,unsigned end) {
         cells[row][col]={' ',fg,bg,0}; dirty[row][col]=true;
     }
 }
+bool LcdTerminal::geometry(unsigned columns,unsigned lines) {
+    if(!columns || columns>max_cols || !lines || lines>max_rows) return false;
+    base_cols=columns; base_rows=lines;
+    if(!scale) scale=1;
+    cols=base_cols/scale; rows=base_rows/scale;
+    if(!cols || !rows) { scale=1; cols=base_cols; rows=base_rows; }
+    reset();
+    return true;
+}
 bool LcdTerminal::configure(unsigned size,unsigned foreground,unsigned background) {
-    if(size<1 || size>3 || foreground>15 || background>15 || foreground==background) return false;
+    if(size<1 || size>3 || size>base_cols || size>base_rows || foreground>15 || background>15 || foreground==background) return false;
     bool resized=scale!=size || !cols || !rows;
-    scale=size; cols=max_cols/scale; rows=max_rows/scale;
+    scale=size; cols=base_cols/scale; rows=base_rows/scale;
     default_fg=foreground; default_bg=background;
     if(resized) reset();
     memset(dirty,1,sizeof(dirty));

@@ -53,14 +53,17 @@ See [graphics notes](teensy41-graphics.md).
 Touch is not required or enabled.
 
 Incoming Ethernet shells are available through [Telnet](teensy41-telnetd.md),
-with explicit startup and password login. The currently tested old-wiring image
-uses `teensy41_telnet_legacy` (AmpEn40, scope ADC disabled). The normal
+with explicit startup and password login. The current module-board image uses
+AmpEn1, ADC40 reserved for the DMM when live capture is enabled, and no Serial1
+console. Older images use `teensy41_telnet_legacy` (AmpEn40, scope ADC disabled). The normal
 `teensy41_display` candidate requires the planned AmpEn0/ADC40 wiring change.
 
 ## Revised PCB pinout
 
 The [2026-10-01 PCB target pinout](superkeyboard-pcb-pinout.md) assigns RGB to
-pin 0, AmpEn to pin 1 and DMM input to pin 40. This is **not the bench wiring**.
+pin 0, AmpEn to pin 1 and DMM input to pin 40. AmpEn1 and DMM40 are now confirmed
+for the module-board bench profile; the remaining PCB target wiring is not
+implicitly adopted. DMM range scaling/protection remains unconfirmed.
 The flash-drive ODS has been checked: header 2 is main-display-only and pin 9
 is backlight PWM despite its connector-reference name. Display-specific wiring
 still needs checking before a PCB profile; none has been applied. Earlier AmpEn0 proposals below describe older test
@@ -130,6 +133,7 @@ target. Useful profiles are:
 
 | Profile | Purpose |
 | --- | --- |
+| `teensy41_module_board` | Current bench: AmpEn1, ADC40 DMM (demo until scaling verified), USB host power controls, existing display wiring |
 | `teensy41_telnet_legacy` | Current AmpEn40 wiring; workstation apps, Telnet, LCD/USB, scope demo |
 | `teensy41_display` | New AmpEn0/ADC40 wiring; physical scope ADC, Serial1 disabled |
 | `teensy41_synth` | Combined apps plus terminal synth, USB console only |
@@ -266,6 +270,9 @@ USB flash-drive integration and limits: [Teensy USB storage](teensy41-usb-storag
 
 - [Single-channel scope](teensy41-scope.md): graphical ADC snapshots, controls,
   pending pin move and validation.
+
+- [Background DMM](teensy41-dmm.md): large small-screen DC readings, NES controls,
+  min/max/hold and ten-second trace; live measurement awaits input verification.
 
 Background scripts and scheduling: see [jobs notes](teensy41-jobs.md).
 

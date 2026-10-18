@@ -2,12 +2,14 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// Fixed-cell ANSI terminal for the RA8875 internal 8x16 font. Independent of
+// Fixed-cell ANSI terminal for either local display. Independent of
 // Arduino so cursor/erase/scroll handling can be checked on the host.
 struct LcdTerminal {
     static constexpr unsigned max_cols=100, max_rows=30;
     static constexpr uint8_t default_color=16;
+    unsigned base_cols=100, base_rows=30;
     unsigned cols=100, rows=30, scale=1;
+    bool geometry(unsigned columns,unsigned lines);
     uint8_t default_fg=7, default_bg=0;
     bool configure(unsigned size,unsigned foreground,unsigned background);
     struct Cell { uint8_t ch, fg, bg, flags; };

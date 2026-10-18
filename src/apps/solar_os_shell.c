@@ -548,6 +548,9 @@ void solar_os_shell_cmd_flash(solar_os_context_t *ctx, int argc, char **argv);
 #if SK_LCD_CONSOLE
 void solar_os_shell_cmd_lcd(solar_os_context_t *ctx, int argc, char **argv);
 #endif
+#if SK_DMM
+void solar_os_shell_cmd_dmm(solar_os_context_t *ctx, int argc, char **argv);
+#endif
 #if SK_USB_STORAGE
 void solar_os_shell_cmd_usb(solar_os_context_t *ctx, int argc, char **argv);
 #endif
@@ -694,6 +697,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"setterm", "set serial terminal size", solar_os_shell_cmd_setterm},
 #if SK_LCD_CONSOLE
     {"lcd", "LCD status, dump, or send a quoted command", solar_os_shell_cmd_lcd},
+#endif
+#if SK_DMM
+    {"dmm", "background DC meter on the small display", solar_os_shell_cmd_dmm},
 #endif
 #if SK_PLAYGROUND
     {"rtc", "show/set UTC clock for HTTPS", solar_os_shell_cmd_rtc},
@@ -4230,8 +4236,16 @@ static void shell_prompt(solar_os_context_t *ctx)
         shell_reset_cwd(shell_session(ctx));
     }
     shell_format_display_path(shell_session(ctx)->cwd, display_path, sizeof(display_path));
-    solar_os_identity_format(identity, sizeof(identity));
-    snprintf(prompt, sizeof(prompt), "%s:%s ", identity, display_path);
+#if SK_LCD_CONSOLE
+    extern bool sk_console_compact_prompt(void);
+    if (sk_console_compact_prompt()) {
+        snprintf(prompt, sizeof(prompt), "%s> ", display_path);
+    } else
+#endif
+    {
+        solar_os_identity_format(identity, sizeof(identity));
+        snprintf(prompt, sizeof(prompt), "%s:%s ", identity, display_path);
+    }
     solar_os_shell_io_set_cursor_visible(io, true);
     solar_os_shell_io_write_bold(io, prompt);
     shell_session(ctx)->input_row = solar_os_shell_io_cursor_row(io);

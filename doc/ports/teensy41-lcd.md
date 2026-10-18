@@ -66,3 +66,37 @@ errors; it is not a controller identification/readback test.
 
 Installed firmware is now the LCD bootstrap profile, not synth/apps.
 Firmware, logs and source snapshot: `../solar_os-baselines/2026-09-27-lcd/`.
+
+## Boot-time console fallback
+
+Combined LCD-console builds with `SK_SECONDARY_ST7735` probe the main RA8875
+by writing two cursor positions and reading them back over MISO. Configuration
+errors, constant zero/one reads and stale values fail the probe. This checks
+controller communication, not the LCD glass, backlight or ribbon connection.
+MISO must be connected for a main display to pass detection.
+
+If the probe fails, the ST7735 replaces its status monitor with the local ANSI
+shell. The default 160x128 landscape panel uses 26 columns and 16 rows with a
+6x8 font. The USB-host keyboard and `lcd send`, `lcd key`, `lcd dump`, font and
+color commands continue to use the same local shell. `lcd status` reports the
+selected display and actual terminal dimensions. The small console uses a compact
+path-only prompt (`/> ` at the root) to leave room for commands. Main-display,
+USB and remote prompts retain their user and host names. The small screen remains
+reserved for the console by default, with dashboard drawing paused. A background
+instrument such as DMM may temporarily lease it; shell output is buffered and
+repainted when the instrument releases the screen. Main-screen graphics are
+unavailable during fallback.
+
+Selection happens at boot. Reconnect the main display with power off and reboot
+to restore the main console and small status monitor. An ST7735 response is not
+probed because its current wiring is write-only.
+
+Validation (2026-10-17): terminal/probe host tests and bounded renderer tests
+passed for main and small display geometry. Both display-wiring and module-board
+firmware built successfully. On the connected module board, a temporary forced
+fallback build reported 26x16, executed `echo fallback-console-ok` on the local
+shell and returned to the prompt, confirmed with `lcd dump`. The user confirmed
+visible output. The final firmware restores automatic detection; the connected
+RA8875 passed the register readback probe. After the final upload, `lcd status`
+reported main RA8875 at 100x30 and the local echo/prompt check passed again.
+Physical unplug/reboot detection has not yet been tested.

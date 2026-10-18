@@ -18,7 +18,9 @@ static u8g2_t canvas;
 static solar_os_gfx_t gfx;
 static u8x8_display_info_t info;
 static SkGraphicsPresenter presenter;
+extern bool sk_lcd_main_ready();
 solar_os_gfx_t *sk_lcd_gfx() {
+    if(!sk_lcd_main_ready()) return nullptr;
     if (!gfx.u8g2) {
         auto *mask=(uint8_t *)solar_os_memory_calloc(1,800*480/8,SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,"gfx.font-mask");
         configASSERT(mask);
@@ -41,7 +43,7 @@ extern "C" bool solar_os_display_target_name_for_u8g2(const u8g2_t *u,char *name
     if(u!=&canvas || n<9)return false;strlcpy(name,"display0",n);return true;
 }
 extern "C" bool solar_os_display_find_target(const char *name,solar_os_display_target_t *target) {
-    if(!name || strcmp(name,"display0") || !target)return false;
+    if(!sk_lcd_main_ready() || !name || strcmp(name,"display0") || !target)return false;
     memset(target,0,sizeof(*target));strcpy(target->name,"display0");target->ready=true;
     target->width=800;target->height=480;target->u8g2=&canvas;
     target->surface_formats=SOLAR_OS_DISPLAY_FORMAT_INDEX8_BIT;return true;

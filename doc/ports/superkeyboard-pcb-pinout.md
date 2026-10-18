@@ -97,8 +97,9 @@ I2C2 serves slot 0 and display slot 2. Audio retains its dedicated I2C bus.
 
 Create a distinct PCB profile once display-specific wiring is established.
 It should reserve RGB0 and AmpEn1, disable Serial1, and reserve pin 40 for the
-chosen DMM/ADC service. The current guard only checks AmpEn against Serial1 RX0;
-it must also cover TX1 and the RGB reservation when adding the PCB profile.
+chosen DMM/ADC service. The guard now checks AmpEn against both Serial1 RX0 and
+TX1. The module-board bench profile has adopted the confirmed AmpEn1/DMM40 roles
+with Serial1 disabled; other PCB roles, including RGB0, still need integration.
 
 Pin 9 needs a backlight role rather than its old expansion-CS role. Model
 header 2 as display-only; do not offer its pins through generic expansion

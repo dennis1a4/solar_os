@@ -32,7 +32,17 @@ int main() {
 #else
     assert(claimed(37,"primary-display") && claimed(9,"primary-display") && claimed(15,"primary-display"));
 #endif
-    assert(claimed(0,"console") && claimed(40,"board") && claimed(13,"spi0") && claimed(49,"qspi"));
+    assert(claimed(superkeyboard::amplifier_shutdown,"board") && claimed(13,"spi0") && claimed(49,"qspi"));
+#if SK_UART_CONSOLE
+    assert(claimed(0,"console") && claimed(1,"console"));
+#endif
+#if SK_DMM
+    assert(claimed(1,"board") && !claimed(0,"console") && !claimed(40,"board"));
+    assert(solar_os_resource_claim(SOLAR_OS_RESOURCE_GPIO_PIN,40,-1,"dmm","DMM probe")==ESP_OK);
+    assert(solar_os_resource_claim(SOLAR_OS_RESOURCE_GPIO_PIN,40,-1,"python.hw.1","Python ADC")==ESP_ERR_INVALID_STATE);
+    solar_os_resource_release_owner("dmm");
+    assert(solar_os_resource_claim_count()==baseline);
+#endif
     assert(sk_uart_claim_format(1,"format-test",9600,0x102)==ESP_OK);
     assert(Serial8.format==0x102);
     assert(sk_uart_release(1,"format-test")==ESP_OK);

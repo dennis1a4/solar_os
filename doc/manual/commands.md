@@ -251,6 +251,34 @@ an ejected drive. Eject refuses while a file or directory handle is open.
 Only one drive/volume is supported. No USB format command is provided.
 Use 512-byte logical sectors and files smaller than 2 GiB.
 
+### `dmm` (Teensy module-board profile)
+
+`dmm --demo [--range 5|50]` starts a background DC meter on the 160x128 small
+display and immediately returns the shell. The worker continues independently
+while Python scripts, FTP transfers and other applications run. The screen
+shows large voltage digits, min/max values, hold state and an autoscaled rolling
+10-second trace. Holding the reading does not stop acquisition or the trace.
+
+NES controls: **A** toggles hold; **B** cycles live/min/max; **Left/Right** toggle
+min/max; **Up/Down** select nominal 5 V/50 V ranges; **Select** resets extrema;
+**Start** stops the meter and restores the small status monitor or console.
+Changing ranges resets readings/history. The DMM temporarily reserves the small
+display; a Game Boy or another small-display owner must be stopped first.
+
+Shell controls are `dmm status`, `dmm stop`, `dmm hold`, `dmm min`, `dmm max`,
+`dmm live`, `dmm reset` and `dmm range 5|50`. Sampling targets 20 readings/second;
+the visible reading and trace update twice/second, with immediate NES control
+feedback. The trace uses elapsed timestamps, so scheduling gaps do not stretch
+the apparent time axis.
+
+`dmm start [--range 5|50]` selects real ADC input only in a hardware-verified
+build. The current module board assigns ADC40 to the probe and amplifier enable
+to pin 1, with the Serial1 console disabled. **Live measurement remains disabled
+until both range input dividers/protection and scaling have been confirmed.**
+Range selection currently selects the conversion scale; it does not switch an
+unspecified external divider circuit. Demo readings are clearly labeled DEMO.
+This is DC voltage mode; current, resistance and continuity need further hardware.
+
 ### `lcd` (Teensy display profile)
 
 `lcd` shows local terminal geometry and the calling console. `lcd dump` prints
@@ -333,6 +361,7 @@ These controls affect only the LCD; USB/Telnet geometry is independent.
 | `schedule` | `schedule run <name>` | Run an entry immediately. Only one scheduled shell script can run at a time. |
 | `schedule` | `schedule stop [name]` | Stop the active ringing alarm, optionally only when its name matches. |
 | `setterm` | `setterm` | Open the terminal settings TUI from the display shell. |
+| `dmm` | `dmm --demo [--range 5\|50]`, `dmm status\|stop\|hold\|min\|max\|live\|reset`, `dmm range 5\|50` | Background DC meter on the small display; live input requires verified hardware. |
 | `lcd` | `lcd [dump\|send "COMMAND"\|key exit\|key ctrlc\|key esc]` | Teensy display profile: show status, dump LCD text, or queue local input from USB. |
 | `lcd small page` | `lcd small page system|network|music|mesh` | Select the small-dashboard page. NES Left/Right switches pages; Select returns home. A toggles playback on Music while player is active; Up increases and Down decreases the radio slot number on Mesh, wrapping between 0 and 2. Selection is retained while an app owns the display, until reboot. |
 | `lcd brightness` | `lcd brightness [0-100]`, `lcd small brightness [0-100]` | Read/set display backlight levels; 0 is off, 100 is full. Levels are saved in flash on the Teensy display-wiring profile. |

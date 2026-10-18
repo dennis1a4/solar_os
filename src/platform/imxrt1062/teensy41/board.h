@@ -27,7 +27,7 @@
 #ifndef SK_UART_CONSOLE
 #define SK_UART_CONSOLE 1
 #endif
-static_assert(!SK_UART_CONSOLE || SK_AMPLIFIER_SHUTDOWN_PIN != 0, "AmpEn pin 0 conflicts with Serial1 RX");
+static_assert(!SK_UART_CONSOLE || (SK_AMPLIFIER_SHUTDOWN_PIN != 0 && SK_AMPLIFIER_SHUTDOWN_PIN != 1), "AmpEn conflicts with Serial1 RX/TX");
 namespace superkeyboard {
 constexpr uint8_t console_rx = 0, console_tx = 1;
 constexpr uint8_t shift_clock = 2, nes_latch = 3, nes_data = 4;

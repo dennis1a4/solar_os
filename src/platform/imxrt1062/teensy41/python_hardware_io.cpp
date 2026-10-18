@@ -3,6 +3,7 @@
 #include "platform.h"
 #include "board.h"
 #include "python_hardware_io.h"
+#include "adc_guard.h"
 extern "C" {
 #include "solar_os_resources.h"
 #include "solar_os_buses.h"
@@ -61,7 +62,13 @@ extern "C" esp_err_t sk_py_hw_value(uint32_t token,int op,int value,int *result)
     *result=0;
     if(h->kind==0) {if(op==1){if(h->option!=1 || value<0 || value>1)return ESP_ERR_INVALID_ARG;digitalWrite(h->id,value);}else if(op!=0)return ESP_ERR_INVALID_ARG;*result=digitalRead(h->id);}
     else if(h->kind==1 && op==0) { // Arduino ADC is kept at its default 10-bit resolution.
+#if SK_DMM
+        if(!sk_adc_lock(50))return ESP_ERR_TIMEOUT;
+#endif
         *result=analogRead(h->id);*result=(*result<<6)|(*result>>4);
+#if SK_DMM
+        sk_adc_unlock();
+#endif
     } else if(h->kind==2) {
         if(op==1) {if(value<0 || value>65535)return ESP_ERR_INVALID_ARG;uint32_t old=analogWriteResolution(16);analogWrite(h->id,value);analogWriteResolution(old);h->value=value;}
         else if(op==2) {if(value<1 || value>100000)return ESP_ERR_INVALID_ARG;analogWriteFrequency(h->id,value);h->option=value;}
