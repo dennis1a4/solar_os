@@ -2,9 +2,13 @@
 #pragma once
 #include "small_display.h"
 #include "small_navigation.h"
+#include "power_path.h"
 #include "small_monitor_row.h"
 #if SK_SECONDARY_ST7735
 #include "nes_flexio.h"
+#if SK_WIRELESS_BRIDGE && SK_ETHERNET
+#include "wifi_network.h"
+#endif
 extern "C" {
 #include "solar_os_memory.h"
 #include "solar_os_storage.h"
@@ -104,23 +108,47 @@ static void small_monitor_run(void *) {
             if(page==1) {
                 strcpy(lines[1],"Network");
 #if SK_ETHERNET
-                solar_os_network_path_info_t path{};
-                if(solar_os_network_path_list(&path,1)) {
-                    snprintf(lines[2],27,"%.12s: %s",path.name,path.ready?"ready":path.connecting?"connecting":"down");
+                solar_os_network_path_info_t paths[2]{};
+                const size_t count=solar_os_network_path_list(paths,2);
+                strcpy(lines[2],"Ethernet: down");
+                strcpy(lines[4],"WiFi: unavailable");
+                for(size_t i=0;i<count && i<2;i++) {
+                    const auto &path=paths[i];
+                    const bool wifi=!strcmp(path.name,"wifi0");
+                    const unsigned row=wifi?4:2;
+                    snprintf(lines[row],27,"%s: %s",wifi?"WiFi":"Ethernet",
+                        path.ready?"ready":path.connecting?"connecting":"down");
                     esp_netif_ip_info_t ip{};
-                    esp_netif_dns_info_t dns{};
                     char addr[16];
                     if(esp_netif_get_ip_info(path.netif,&ip)==ESP_OK) {
-                        esp_ip4addr_ntoa(&ip.ip,addr,sizeof(addr)); snprintf(lines[3],27,"IP  %s",addr);
-                        esp_ip4addr_ntoa(&ip.gw,addr,sizeof(addr)); snprintf(lines[4],27,"GW  %s",addr);
-                        esp_ip4addr_ntoa(&ip.netmask,addr,sizeof(addr)); snprintf(lines[5],27,"Mask %s",addr);
+                        esp_ip4addr_ntoa(&ip.ip,addr,sizeof(addr));
+                        snprintf(lines[wifi?6:3],27,"IP %s",addr);
                     }
-                    if(esp_netif_get_dns_info(path.netif,ESP_NETIF_DNS_MAIN,&dns)==ESP_OK) {
-                        esp_ip4addr_ntoa(&dns.ip.u_addr.ip4,addr,sizeof(addr)); snprintf(lines[6],27,"DNS %s",addr);
+                }
+#if SK_WIRELESS_BRIDGE
+                sk_wifi_status_t wifi{};
+                sk_wifi_status(&wifi);
+                if(!wifi.available) {
+                    strcpy(lines[4],"WiFi: unavailable");
+                    lines[6][0]=0;
+                } else {
+                    if(wifi.state!=2) {
+                        const char *state=wifi.state==1?"connecting":wifi.state==3?"failed":"disconnected";
+                        snprintf(lines[4],27,"WiFi: %s",state);
                     }
-                } else strcpy(lines[2],"No network interface");
+                    snprintf(lines[5],27,"SSID %.21s",wifi.ssid);
+                    if(wifi.state==2) snprintf(lines[7],27,"Signal %d dBm",int(wifi.rssi));
+                }
+#endif
 #else
                 strcpy(lines[2],"Network unavailable");
+#endif
+            } else if(page==4) {
+#if SK_POWER_PATH
+                sk_power_path_lines(lines);
+#else
+                strcpy(lines[1],"Power path");
+                strcpy(lines[2],"PCB hardware unavailable");
 #endif
             } else if(page==2) {
                 strcpy(lines[1],"Music");
@@ -280,7 +308,7 @@ extern "C" bool sk_small_music_take_toggle() {
 }
 extern "C" bool sk_small_page(unsigned page) {
 #if SK_SECONDARY_ST7735
-    if(page>=4 || !small_task) return false;
+    if(page>=5 || !small_task) return false;
     taskENTER_CRITICAL(); small_nav.page=page; ++small_generation; taskEXIT_CRITICAL();
     xTaskNotifyGive(small_task);
     return true;
@@ -352,7 +380,8 @@ bool sk_small_dmm_frame(const DmmModel *view,bool demo) {
     }
     secondary.setTextWrap(false);
     char title[27],mode[27],number[8],extrema[27];
-    snprintf(title,sizeof(title),"%s DC %uV",demo?"DEMO":"UNCAL",v.range);
+    if(v.test)snprintf(title,sizeof(title),"TEST UNCAL 5V");
+    else snprintf(title,sizeof(title),"%s DC %uV",demo?"DEMO":"UNCAL",v.range);
     const uint32_t now=millis();
     const bool stale=v.valid && uint32_t(now-v.last_ms)>500;
     snprintf(mode,sizeof(mode),"%s%s%s",v.mode==DmmModel::Minimum?"MIN":v.mode==DmmModel::Maximum?"MAX":"LIVE",v.hold?" HOLD":"",stale?" STALE":"");
@@ -366,32 +395,28 @@ bool sk_small_dmm_frame(const DmmModel *view,bool demo) {
     dmm_paint_text(secondary,2,27,3,ST7735_WHITE,ST7735_BLACK,cache.number,number);
     dmm_paint_text(secondary,2,55,1,ST7735_WHITE,ST7735_BLACK,cache.extrema,extrema);
     cache.demo=demo;
+    char footer[27];
+    snprintf(footer,sizeof(footer),"-10s %-14s now",v.trace_auto?"AUTO":v.range==50?"0-50V":"0-5V");
+    dmm_paint_text(secondary,2,120,1,ST7735_WHITE,ST7735_BLACK,cache.footer,footer);
     secondary.setTextSize(1);
     if(fresh) {
         secondary.setTextColor(ST7735_WHITE,ST7735_BLACK);
         secondary.setCursor(148,43);secondary.print("V");
-        secondary.setCursor(2,66);secondary.print("A hold B mode SEL reset");
-        secondary.setCursor(2,76);secondary.print("UP 5V DN 50V START exit");
+        secondary.setCursor(2,66);secondary.print("A hold B mode L graph");
+        secondary.setCursor(2,76);secondary.print(v.test?"SEL reset START exit":"UP/DN range SEL rst START");
         secondary.drawRect(1,87,158,31,ST7735_BLUE);
-        secondary.setCursor(2,120);secondary.print("-10s      auto       now");
     }
-    // Autoscaled history, positioned by timestamps, never by sample count.
+    // History is positioned by timestamps, never by sample count.
     // Missing conversions leave a gap; hold freezes only the large readout.
-    int32_t lo=v.live,hi=v.live;
-    for(unsigned i=0;i<v.count;++i) {
-        const auto &p=v.point(i);
-        if(uint32_t(now-p.ms)>DmmModel::WindowMs)continue;
-        if(p.mv<lo)lo=p.mv;
-        if(p.mv>hi)hi=p.mv;
-    }
-    if(hi-lo<20) {lo-=10;hi+=10;}
+    int32_t lo,hi;v.trace_limits(now,lo,hi);
     DmmTraceBitmap next_trace;
     int px=-1,py=-1;uint32_t previous_ms=0;
     for(unsigned i=0;i<v.count;++i) {
         const auto &p=v.point(i);const uint32_t age=now-p.ms;
         if(age>DmmModel::WindowMs)continue;
         const int x=157-int(uint64_t(age)*154/DmmModel::WindowMs);
-        const int y=115-int(int64_t(p.mv-lo)*26/(hi-lo));
+        const int32_t level=p.mv<lo?lo:p.mv>hi?hi:p.mv;
+        const int y=115-int(int64_t(level-lo)*26/(hi-lo));
         if(px>=0 && uint32_t(p.ms-previous_ms)<=150)next_trace.line(px-2,py-89,x-2,y-89);
         else next_trace.set(x-2,y-89);
         px=x;py=y;previous_ms=p.ms;

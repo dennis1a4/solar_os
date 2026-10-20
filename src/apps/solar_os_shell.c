@@ -595,7 +595,13 @@ void sk_shell_cmd_motor(solar_os_context_t *, int, char **);
 #if SK_USB_HOST_POWER
 void sk_shell_cmd_usbpower(solar_os_context_t *, int, char **);
 #endif
+#if SK_POWER_PATH
+void sk_shell_cmd_powerpath(solar_os_context_t *, int, char **);
+#endif
 static const shell_command_t shell_builtin_commands[] = {
+#if SK_POWER_PATH
+    {"powerpath", "power inputs, measurements and hardware current limit", sk_shell_cmd_powerpath},
+#endif
 #if SK_MOTOR_MODULE
     {"motor", "I2C motor module on slot0 or slot1", sk_shell_cmd_motor},
 #endif

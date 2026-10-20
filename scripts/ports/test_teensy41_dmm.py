@@ -23,6 +23,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--log', type=Path, required=True)
     parser.add_argument('--leave-running', action='store_true')
+    parser.add_argument('--test-input', action='store_true', help='Check the temporary live ADC40 divider test; no FTP or generated signals')
     args = parser.parse_args()
     report = {'commands': [], 'checks': [], 'passed': False}
     ports = [p.device for p in list_ports.comports() if (p.vid, p.pid) == (0x16c0, 0x0483)]
@@ -37,21 +38,54 @@ def main():
             out = console.command(text)
             print(out, flush=True)
             return out
-        def state():
+        def state(source='DEMO'):
             out = cmd('dmm status')
-            assert 'DMM running source=DEMO' in out, out
+            assert 'DMM running source='+source in out, out
             return dict(re.findall(r'([\w-]+)=([^\s]+)', out))
         def check(text):
             report['checks'].append(text)
             print('PASS:', text, flush=True)
         try:
             cmd('')
-            assert 'ftpd stopped' in cmd('job status ftpd'), 'Existing ftpd must be left alone'
+            if not args.test_input:
+                assert 'ftpd stopped' in cmd('job status ftpd'), 'Existing ftpd must be left alone'
             cmd('dmm stop')
             pins = cmd('io claims')
             assert re.search(r'gpio\s+1\s+-1\s+board\s+amplifier enable', pins), pins
             assert not re.search(r'gpio\s+40\s+-1\s+board', pins), pins
             assert 'live input disabled' in cmd('dmm start')
+            if args.test_input:
+                assert '0-5V DC only' in cmd('dmm --test --range 50')
+                assert 'running in background' in cmd('dmm --test')
+                time.sleep(.3)
+                before = state('ADC_TEST')
+                assert before['range']=='5V' and before['valid']=='yes'
+                assert 0 <= int(before['raw']) <= 1023
+                assert re.search(r'gpio\s+40\s+-1\s+dmm\s+DMM probe', cmd('io claims'))
+                time.sleep(.7)
+                after = state('ADC_TEST')
+                assert int(after['samples']) >= int(before['samples'])+10
+                assert after['read-errors']=='0' and after['display-misses']=='0'
+                assert '50V disabled' in cmd('dmm range 50')
+                assert state('ADC_TEST')['range']=='5V'
+                check('passive ADC40 samples, explicit test source, raw diagnostics and 50V lockout')
+                cmd('dmm hold'); held=state('ADC_TEST');time.sleep(.7);after=state('ADC_TEST')
+                assert held['value-mV']==after['value-mV'] and int(after['samples'])>int(held['samples'])
+                cmd('dmm trace range'); fixed=state('ADC_TEST')
+                assert fixed['trace']=='range' and fixed['hold']=='on'
+                assert fixed['value-mV']==held['value-mV'] and int(fixed['samples'])>=int(after['samples'])
+                cmd('dmm trace toggle'); automatic=state('ADC_TEST')
+                assert automatic['trace']=='auto' and automatic['hold']=='on'
+                assert automatic['value-mV']==held['value-mV'] and int(automatic['samples'])>=int(fixed['samples'])
+                check('trace toggles AUTO/fixed without resetting hold or sampling')
+                cmd('dmm live')
+                assert 'small display restored' in cmd('dmm stop')
+                assert not re.search(r'gpio\s+40\s+-1\s+dmm', cmd('io claims'))
+                check('real-input hold keeps sampling and stop releases ADC40')
+                report['real_input']=dict(before=before,after=after)
+                if args.leave_running: cmd('dmm --test')
+                report['passed']=True
+                return
             assert 'running in background' in cmd('dmm --demo')
             time.sleep(.5)
             first = state()

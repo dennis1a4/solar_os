@@ -43,6 +43,13 @@ int main() {
     solar_os_resource_release_owner("dmm");
     assert(solar_os_resource_claim_count()==baseline);
 #endif
+#if SK_POWER_PATH
+    assert(claimed(5,"power-path") && !claimed(5,"usb-host-power"));
+    assert(!claimed(6,"usb-host-power") && !claimed(22,"board") && !claimed(38,"board"));
+    assert(superkeyboard::slots[2].cs==10 && test_pin_calls[9]==0);
+    assert(solar_os_resource_claim(SOLAR_OS_RESOURCE_GPIO_PIN,5,-1,"python.hw.1","GPIO")==ESP_ERR_INVALID_STATE);
+    assert(solar_os_resource_claim_count()==baseline);
+#endif
     assert(sk_uart_claim_format(1,"format-test",9600,0x102)==ESP_OK);
     assert(Serial8.format==0x102);
     assert(sk_uart_release(1,"format-test")==ESP_OK);

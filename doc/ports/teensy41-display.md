@@ -215,3 +215,13 @@ Corrected ROM SHA-256: `a433fdc9befe3b2b5b8b6d862c4fae4ce9ef61cfc714be067150e70a
 by the app, `E` the mask sampled for emulation, and `D` a changed image completed
 on the display. Times are milliseconds since boot; masks use Peanut-GB button
 bits. Maximum input/frame gaps reset on game launch and include pauses.
+
+The small dashboard Network page shows Ethernet and Wi-Fi connection states and
+IP addresses, plus the Wi-Fi SSID (up to 21 characters) and RSSI in dBm. Wi-Fi
+details come from the normal network poll, without extra bridge requests.
+
+The `teensy41_power_board` profile adds `lcd small page power` with common-path
+voltage/current/watts, three valid inputs, USB-PD settings, host status and saved
+current-trip threshold. NES Left/Right cycles five pages. Missing power hardware
+shows `unconnected`; see [power path](teensy41-power-path.md) for GPIO assignments
+and the direct hardware overcurrent shutdown behavior.

@@ -3,6 +3,11 @@
 uint32_t test_now;
 static int preflight=1,cuts,serial_calls,storage_calls,pd_calls;
 static bool ready=true,storage_ok=true,pd_ok=true;
+#if SK_POWER_PATH
+static bool path_ok=true;
+static unsigned path_cuts;
+bool sk_power_path_cut(){++path_cuts;return path_ok;}
+#endif
 static esp_err_t serial_result=ESP_OK;
 static unsigned cleanup_delay;
 static bool dmm_ready=true;
@@ -20,6 +25,9 @@ static void reset(){
     preflight=1;ready=storage_ok=pd_ok=true;serial_result=ESP_OK;
     cuts=serial_calls=storage_calls=pd_calls=cleanup_delay=0;
     dmm_ready=true;dmm_stops=0;
+#if SK_POWER_PATH
+    path_ok=true;path_cuts=0;
+#endif
 }
 int main(){
     reset();assert(request(true));assert(!request(false));shutdown_step();
@@ -45,5 +53,12 @@ int main(){
     // A refused request can be retried; busy presses cannot change dry-run mode.
     reset();request(true);sk_power_button_event();shutdown_step();shutdown_step();assert(!cuts && !pending);
     request(false);shutdown_step();shutdown_step();assert(cuts==1);
+#if SK_POWER_PATH
+    reset();path_ok=false;request(false);shutdown_step();shutdown_step();
+    assert(!pending && !cuts && path_cuts==1 && strstr(status,"KILL failed"));
+    reset();request(true);shutdown_step();shutdown_step();assert(!path_cuts);
+    reset();storage_ok=false;request(false);shutdown_step();shutdown_step();assert(!path_cuts);
+    reset();request(false);shutdown_step();shutdown_step();assert(path_cuts==1 && cuts==1);
+#endif
     puts("shutdown coordinator: PASS");
 }

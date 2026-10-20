@@ -38,12 +38,12 @@ static uint32_t read_errors,display_misses;
 static void lock() {xSemaphoreTake(mutex,portMAX_DELAY);}
 static void unlock() {xSemaphoreGive(mutex);}
 
-static bool live_supported() {
+static bool live_supported(bool test=false) {
 #if SK_SCOPE && SK_SCOPE_ADC_PIN >= 0
     // The DMA scope reconfigures both ADC controllers; pin locking is not enough.
     return false;
 #else
-    return SK_DMM_INPUT_VERIFIED && ((SK_DMM_ADC_PIN>=14 && SK_DMM_ADC_PIN<=27) || (SK_DMM_ADC_PIN>=38 && SK_DMM_ADC_PIN<=41)) &&
+    return (SK_DMM_INPUT_VERIFIED || (test && SK_DMM_ADC_PIN==40)) && ((SK_DMM_ADC_PIN>=14 && SK_DMM_ADC_PIN<=27) || (SK_DMM_ADC_PIN>=38 && SK_DMM_ADC_PIN<=41)) &&
         SK_DMM_ADC_PIN!=SK_AMPLIFIER_SHUTDOWN_PIN;
 #endif
 }
@@ -74,6 +74,7 @@ static void run(void *) {
         if(!meter.buttons(pressed))stopping=true;
         const unsigned range=meter.range;
         const bool simulated=demo,stop_now=stopping;
+        const bool testing=meter.test;
         unlock();
         if(stop_now)continue;
         unsigned raw=0;bool ok=true;
@@ -89,7 +90,10 @@ static void run(void *) {
             raw=(raw+4)/8;sk_adc_unlock();
         } else ok=false;
         lock();
-        if(ok && meter.range==range)meter.sample(now,dmm_scale(raw,range==5?SK_DMM_5V_FULL_SCALE_MV:SK_DMM_50V_FULL_SCALE_MV),raw>=1022);
+        if(ok && meter.range==range) {
+            meter.raw=raw;
+            meter.sample(now,testing?dmm_test_scale(raw):dmm_scale(raw,range==5?SK_DMM_5V_FULL_SCALE_MV:SK_DMM_50V_FULL_SCALE_MV),raw>=1022);
+        }
         else ++read_errors;
         const bool draw=uint32_t(now-rendered)>=500;
         if(draw)view=meter;
@@ -125,15 +129,19 @@ extern "C" bool sk_dmm_stop() {
 static void status(solar_os_shell_io_t *io) {
     lock();
     const bool running=active,simulated=demo;
+    const bool testing=meter.test;
+    const unsigned raw=meter.raw;
+    const bool trace_auto=meter.trace_auto;
     const unsigned range=meter.range,mode=meter.mode;
     const bool held=meter.hold,valid=meter.valid,overload=meter.displayed_overload();
     const int32_t value=meter.displayed(),lo=meter.minimum,hi=meter.maximum;
     const uint32_t samples=meter.samples,missed=meter.missed,errors=read_errors,misses=display_misses;
     unlock();
-    solar_os_shell_io_printf(io,"DMM %s source=%s pin=%d range=%uV mode=%s hold=%s valid=%s overload=%s value-mV=%ld min-mV=%ld max-mV=%ld samples=%lu missed=%lu read-errors=%lu display-misses=%lu\n",
-        running?"running":"stopped",simulated?"DEMO":"ADC",SK_DMM_ADC_PIN,range,
-        mode==DmmModel::Minimum?"MIN":mode==DmmModel::Maximum?"MAX":"LIVE",held?"on":"off",valid?"yes":"no",overload?"yes":"no",
+    solar_os_shell_io_printf(io,"DMM %s source=%s pin=%d range=%uV trace=%s mode=%s hold=%s valid=%s overload=%s value-mV=%ld min-mV=%ld max-mV=%ld samples=%lu missed=%lu read-errors=%lu display-misses=%lu\n",
+        running?"running":"stopped",simulated?"DEMO":testing?"ADC_TEST":"ADC",SK_DMM_ADC_PIN,range,
+        trace_auto?"auto":"range",mode==DmmModel::Minimum?"MIN":mode==DmmModel::Maximum?"MAX":"LIVE",held?"on":"off",valid?"yes":"no",overload?"yes":"no",
         (long)value,(long)lo,(long)hi,(unsigned long)samples,(unsigned long)missed,(unsigned long)errors,(unsigned long)misses);
+    if(testing)solar_os_shell_io_printf(io,"TEST UNCAL: raw=%u adc-mV=%ld; temporary 10k/3.3k estimate; 0-5V DC test only, 50V disabled\n",raw,(long)dmm_scale(raw,3300));
 }
 extern "C" void solar_os_shell_cmd_dmm(solar_os_context_t *ctx,int argc,char **argv) {
     auto *io=solar_os_context_shell_io(ctx);io->command_status=0;
@@ -144,6 +152,11 @@ extern "C" void solar_os_shell_cmd_dmm(solar_os_context_t *ctx,int argc,char **a
         io->command_status=sk_dmm_stop()?0:1;
         solar_os_shell_io_writeln(io,io->command_status?"dmm: stop pending":"DMM stopped; small display restored");return;
     }
+    if(argc==3 && !strcmp(command,"trace") && (!strcmp(argv[2],"auto") || !strcmp(argv[2],"range") || !strcmp(argv[2],"toggle"))) {
+        lock();
+        meter.trace_auto=!strcmp(argv[2],"toggle")?!meter.trace_auto:!strcmp(argv[2],"auto");
+        unlock();status(io);return;
+    }
     if(argc==2 && (!strcmp(command,"hold") || !strcmp(command,"min") || !strcmp(command,"max") || !strcmp(command,"live") || !strcmp(command,"reset"))) {
         lock();
         if(!strcmp(command,"hold"))meter.toggle_hold();
@@ -152,23 +165,30 @@ extern "C" void solar_os_shell_cmd_dmm(solar_os_context_t *ctx,int argc,char **a
         unlock();status(io);return;
     }
     if(argc==3 && !strcmp(command,"range") && (!strcmp(argv[2],"5") || !strcmp(argv[2],"50"))) {
-        lock();meter.set_range(unsigned(atoi(argv[2])));unlock();status(io);return;
+        lock();const bool blocked=meter.test && !strcmp(argv[2],"50");
+        if(!blocked)meter.set_range(unsigned(atoi(argv[2])));
+        unlock();
+        if(blocked) {io->command_status=1;solar_os_shell_io_writeln(io,"dmm: 50V disabled in temporary divider test mode");}
+        status(io);return;
     }
-    bool simulated=!strcmp(command,"--demo"),valid=!strcmp(command,"start") || simulated;
+    bool simulated=!strcmp(command,"--demo"),testing=!strcmp(command,"--test");
+    bool valid=!strcmp(command,"start") || simulated || testing;
     unsigned range=5;
     for(int i=2;i<argc && valid;++i) {
         if(!strcmp(argv[i],"--demo"))simulated=true;
+        else if(!strcmp(argv[i],"--test"))testing=true;
         else if(!strcmp(argv[i],"--range") && i+1<argc && (!strcmp(argv[i+1],"5") || !strcmp(argv[i+1],"50")))range=unsigned(atoi(argv[++i]));
         else valid=false;
     }
-    if(!valid) {
+    if(!valid || (simulated && testing)) {
         io->command_status=2;
-        solar_os_shell_io_writeln(io,"usage: dmm [start|--demo] [--demo] [--range 5|50] | status|stop|hold|min|max|live|reset | range 5|50");return;
+        solar_os_shell_io_writeln(io,"usage: dmm [start|--demo|--test] [--demo|--test] [--range 5|50] | status|stop|hold|min|max|live|reset | range 5|50 | trace auto|range|toggle");return;
     }
+    if(testing && range!=5) {io->command_status=1;solar_os_shell_io_writeln(io,"dmm: temporary divider test supports 0-5V DC only");return;}
     lock();const bool running=active;unlock();
     if(running) {status(io);return;}
     if(sk_power_requested()) {io->command_status=1;solar_os_shell_io_writeln(io,"dmm: shutdown pending");return;}
-    if(!simulated && !live_supported()) {
+    if(!simulated && !live_supported(testing)) {
         io->command_status=1;
         solar_os_shell_io_writeln(io,"dmm: live input disabled; verify 5V/50V dividers/protection and free ADC40 from amplifier/scope ownership. Use dmm --demo.");return;
     }
@@ -184,9 +204,9 @@ extern "C" void solar_os_shell_cmd_dmm(solar_os_context_t *ctx,int argc,char **a
         if(claimed) {solar_os_resource_release_owner("dmm");claimed=false;}
         io->command_status=1;solar_os_shell_io_writeln(io,"dmm: small display busy or unavailable");return;
     }
-    lock();meter=DmmModel{};meter.set_range(range);demo=simulated;read_errors=display_misses=0;stopping=false;active=true;unlock();
+    lock();meter=DmmModel{};meter.test=testing;meter.set_range(range);demo=simulated;read_errors=display_misses=0;stopping=false;active=true;unlock();
     xTaskNotifyGive(task);
-    solar_os_shell_io_writeln(io,"DMM running in background. NES: A hold, B live/min/max, Left min, Right max, Up 5V, Down 50V, Select reset, Start stop.");
+    solar_os_shell_io_printf(io,"DMM running in background. NES: A hold, B live/min/max, Left trace auto/range, Right max, %sSelect reset, Start stop.\n",testing?"":"Up 5V, Down 50V, ");
     status(io);
 }
 #endif

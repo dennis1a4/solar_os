@@ -253,14 +253,21 @@ Use 512-byte logical sectors and files smaller than 2 GiB.
 
 ### `dmm` (Teensy module-board profile)
 
+For the temporary ADC40 bench divider, `dmm stop` then `dmm --test` reads real
+input and shows `TEST UNCAL 5V`. It uses only a temporary nominal 10k/3.3k estimate
+for the probe voltage; it does not set calibration or verify either production
+range. Use 0-5 V DC only for this test. The 50 V selection is disabled through
+both shell and NES controls. `dmm status` also shows raw counts and ADC-pin mV.
+This opt-in mode is not saved across reboot. `dmm --demo` still uses simulated
+readings, and ordinary `dmm start` retains the production verification gate.
+
 `dmm --demo [--range 5|50]` starts a background DC meter on the 160x128 small
 display and immediately returns the shell. The worker continues independently
 while Python scripts, FTP transfers and other applications run. The screen
-shows large voltage digits, min/max values, hold state and an autoscaled rolling
+shows large voltage digits, min/max values, hold state and a rolling
 10-second trace. Holding the reading does not stop acquisition or the trace.
 
-NES controls: **A** toggles hold; **B** cycles live/min/max; **Left/Right** toggle
-min/max; **Up/Down** select nominal 5 V/50 V ranges; **Select** resets extrema;
+NES controls: **A** toggles hold; **B** cycles live/min/max; **Left** toggles trace autoscale/fixed-range; **Right** toggles max; **Up/Down** select nominal 5 V/50 V ranges; **Select** resets extrema;
 **Start** stops the meter and restores the small status monitor or console.
 Changing ranges resets readings/history. The DMM temporarily reserves the small
 display; a Game Boy or another small-display owner must be stopped first.
@@ -277,6 +284,12 @@ to pin 1, with the Serial1 console disabled. **Live measurement remains disabled
 until both range input dividers/protection and scaling have been confirmed.**
 Range selection currently selects the conversion scale; it does not switch an
 unspecified external divider circuit. Demo readings are clearly labeled DEMO.
+`dmm trace auto`, `dmm trace range` and `dmm trace toggle` also control the graph.
+The footer shows AUTO, 0-5V or 0-50V. Fixed mode spans zero to the selected input
+range and clips the trace at its edges; readings and recorded samples are not
+clipped. Changing trace mode preserves history, hold and min/max. The trace mode
+is retained across range changes and defaults to AUTO on each new start.
+
 This is DC voltage mode; current, resistance and continuity need further hardware.
 
 ### `lcd` (Teensy display profile)
@@ -363,7 +376,8 @@ These controls affect only the LCD; USB/Telnet geometry is independent.
 | `setterm` | `setterm` | Open the terminal settings TUI from the display shell. |
 | `dmm` | `dmm --demo [--range 5\|50]`, `dmm status\|stop\|hold\|min\|max\|live\|reset`, `dmm range 5\|50` | Background DC meter on the small display; live input requires verified hardware. |
 | `lcd` | `lcd [dump\|send "COMMAND"\|key exit\|key ctrlc\|key esc]` | Teensy display profile: show status, dump LCD text, or queue local input from USB. |
-| `lcd small page` | `lcd small page system|network|music|mesh` | Select the small-dashboard page. NES Left/Right switches pages; Select returns home. A toggles playback on Music while player is active; Up increases and Down decreases the radio slot number on Mesh, wrapping between 0 and 2. Selection is retained while an app owns the display, until reboot. |
+| `powerpath` | `powerpath [status]`, `powerpath max 100..5000`, `powerpath max off` | Power-PCB profile: measured bus V/mA/W, input validity, USB host and PD status. Max is in mA, saved across boots, and pending until the INA237 confirms the threshold. Hardware overcurrent directly cuts power through LTC2954 KILL; it cannot perform graceful storage cleanup. Default custom limit is off. |
+| `lcd small page` | `lcd small page system\|network\|music\|mesh\|power` | Select the small-dashboard page. NES Left/Right switches pages; Select returns home. A toggles playback on Music while player is active; Up increases and Down decreases the radio slot number on Mesh, wrapping between 0 and 2. Selection is retained while an app owns the display, until reboot. |
 | `lcd brightness` | `lcd brightness [0-100]`, `lcd small brightness [0-100]` | Read/set display backlight levels; 0 is off, 100 is full. Levels are saved in flash on the Teensy display-wiring profile. |
 | `setterm` | `setterm --display <target> [orientation\|font\|textsize\|palette\|statusbar] [value]` | Show or change the volatile terminal profile of a named display target. |
 | `setterm` | `setterm orientation [0\|90\|180\|270]` | Show or set primary-display orientation. |

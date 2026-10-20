@@ -17,6 +17,9 @@
 #ifndef SK_MOTOR_ENABLE_PIN
 #define SK_MOTOR_ENABLE_PIN 10
 #endif
+#ifndef SK_SLOT2_CS
+#define SK_SLOT2_CS 9
+#endif
 #ifndef SK_SECONDARY_SPI_BUS
 #define SK_SECONDARY_SPI_BUS 1
 #endif
@@ -31,7 +34,8 @@ static_assert(!SK_UART_CONSOLE || (SK_AMPLIFIER_SHUTDOWN_PIN != 0 && SK_AMPLIFIE
 namespace superkeyboard {
 constexpr uint8_t console_rx = 0, console_tx = 1;
 constexpr uint8_t shift_clock = 2, nes_latch = 3, nes_data = 4;
-constexpr uint8_t usb_host_enable = 5, usb_host_fault = 6;
+constexpr uint8_t usb_host_enable = 5, usb_host_fault = 6; // Legacy direct wiring.
+constexpr uint8_t power_expander_int = 5; // Revised power PCB.
 constexpr uint8_t audio_out = 7, audio_in = 8;
 constexpr uint8_t primary_cs = SK_PRIMARY_CS, primary_reset = SK_PRIMARY_RESET;
 constexpr int primary_wait = SK_PRIMARY_WAIT, primary_backlight = SK_PRIMARY_BACKLIGHT;
@@ -59,6 +63,6 @@ struct SlotPins {
 constexpr SlotPins slots[] = {
     {1, 37, 2, 7, 28, 29},
     {1, 36, 1, 8, 34, 35},
-    {0, 9, 2, 3, 15, 14},
+    {0, SK_SLOT2_CS, 2, 3, 15, 14},
 };
 }

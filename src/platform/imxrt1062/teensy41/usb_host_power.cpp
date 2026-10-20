@@ -1,4 +1,5 @@
 #include "usb_host_power.h"
+#include "power_path.h"
 #if SK_USB_HOST_POWER
 #include <arduino_freertos.h>
 #include "board.h"
@@ -11,6 +12,30 @@ extern "C" {
 #include "solar_os.h"
 #include "solar_os_shell_io.h"
 }
+#if SK_POWER_PATH
+// GPIO5 now receives expander INT; never drive it as the old host EN pin.
+void sk_usb_host_power_begin() {}
+void sk_usb_host_power_off() {sk_power_path_usb_off();}
+extern "C" void sk_shell_cmd_usbpower(solar_os_context_t *ctx,int argc,char **argv) {
+    auto *io=solar_os_context_shell_io(ctx);io->command_status=1;
+    const char *op=argc==1?"status":argc==2?argv[1]:"";
+    if(strcmp(op,"on") && strcmp(op,"off") && strcmp(op,"clear") && strcmp(op,"status")) {
+        solar_os_shell_io_writeln(io,"usbpower status|on|off|clear");return;
+    }
+#if SK_USB_STORAGE
+    if(!strcmp(op,"off")) {
+        StorageLock lock;
+        if(sk_usb_storage_mounted()) {solar_os_shell_io_writeln(io,"Unmount USB storage before turning host power off");return;}
+        io->command_status=sk_power_path_usb(op)?0:1;
+    } else
+#endif
+    io->command_status=sk_power_path_usb(op)?0:1;
+    SkPowerPathSnapshot s{};sk_power_path_snapshot(&s);
+    if(!s.expander_connected)solar_os_shell_io_writeln(io,"USB host: unconnected (MCP23008)");
+    else solar_os_shell_io_printf(io,"USB host MCP23008 GP3 EN=%u GP4 FAULT=%u latched=%u GP5 SINK=%u (not measured VBUS)\n",s.usb_enabled,s.usb_fault,s.usb_latched,s.usb_attached);
+    if(io->command_status)solar_os_shell_io_writeln(io,"Request failed; inactive faults need explicit clear before enable; shutdown blocks enable.");
+}
+#else
 namespace {
 volatile bool enabled=false, fault_latched=false;
 bool initialized=false;
@@ -75,4 +100,5 @@ extern "C" void sk_shell_cmd_usbpower(solar_os_context_t *ctx,int argc,char **ar
 usage:
     solar_os_shell_io_writeln(io,"usbpower status|on|off|clear (off at boot; clear never enables power)");
 }
+#endif
 #endif

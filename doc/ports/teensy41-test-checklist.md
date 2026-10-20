@@ -1,6 +1,6 @@
 # Teensy / SuperKeyboard outstanding test checklist
 
-Updated 2026-10-05. **Use this as the master test queue.** Feature notes linked
+Updated 2026-10-19. **Use this as the master test queue.** Feature notes linked
 below contain procedures and historical evidence; the roadmap tracks development.
 Unchecked items are outstanding, not failed unless explicitly described as such.
 Do not check off a physical test based on simulation, injected input or a build.
@@ -85,20 +85,21 @@ Details and artifact locations: [player notes](teensy41-player.md).
 | USB-storage baseline | Historical, preserved checkpoint | Earlier physical USB/keyboard checks passed here; no SD recovery or Clock |
 | Clock image | Prior validated checkpoint | Includes SD recovery and OBD demo; AmpEn is still pin 40; Clock remote checks passed |
 | Workstation legacy image, stages 1–4 plus RAMFS | Prior checkpoint; sessions/jobs/processes/network diagnostics/hardware ownership device tests, UART8 loopback and basic physical repeat passed | AmpEn40, scope ADC disabled, Serial1 retained; includes scope/pdpower demos |
-| Graceful-shutdown legacy image | Currently installed; software shutdown and Python process regression pass | LCD CS37/reset9/WAIT15, AmpEn40, Serial1 retained; basic On/Off shutdown/wake user-confirmed; remaining power tests below |
+| Graceful-shutdown legacy image | Prior checkpoint; software shutdown and Python process regression pass | LCD CS37/reset9/WAIT15, AmpEn40, Serial1 retained; basic On/Off shutdown/wake user-confirmed; remaining power tests below |
 | Normal display candidate | Built, not flashed | Telnet plus scope ADC40/AmpEn0; Serial1 UART disabled; USB/LCD retained |
+| October 19 power-board image | Currently installed; PCB absent, missing-device screen and saved-limit reboot checks pass | `teensy41_power_board`; AmpEn1, DMM ADC40; GPIO5 expander INT; I2C1 SCL16/SDA17; main CS10/reset14/backlight15; small SPI0 with controls30..33 |
 
-- [ ] **SETUP-1 — Pending pin move:** move AmpEn to pin 0 before installing the
-  scope candidate. Do not attach scope input to pin 40 while the old firmware
-  still drives that pin as AmpEn. Record the actual wiring and firmware hash.
-- [ ] **SETUP-2 — Candidate boot regression:** after rewiring/upload, verify LCD
-  and USB shells, keyboard, powered hub, `/sd`, `/usb`, `/flash`, Ethernet and
-  app listing. Confirm AmpEn is on pin 0 and pin 40 is an input. Serial1 on
-  pins 0/1 is intentionally unavailable in this candidate.
+- [x] **SETUP-1 — Updated pin move:** user confirmed AmpEn moved to pin1;
+  pin40 is the DMM input. The earlier AmpEn0/scope proposal is superseded.
+  Serial1 is disabled in the module and power-board profiles. GPIO5 is now the
+  MCP23008 interrupt on the power PCB, not a direct USB host enable output.
+- [ ] **SETUP-2 — Final-PCB boot regression:** after connecting the revised
+  power board, verify LCD/USB shells, keyboard/powered hub, `/sd`, `/usb`,
+  `/flash`, Ethernet, Wi-Fi and app listing. Check physical pin ownership and
+  rail sequencing; host tests and the PCB-absent boot do not establish these.
 
-The SD, Clock and OBD demo tests can begin on the installed legacy image without
-waiting for the scope wiring. Use the powered host hub. Keep older checkpoint
-files with their corresponding wiring descriptions.
+Earlier SD/Clock/OBD evidence refers to the corresponding historical images.
+Keep older checkpoint files with their wiring descriptions.
 
 ## Keyboard and host hub
 
@@ -621,3 +622,78 @@ removal during active I/O or compatibility with other drive formats/controllers.
   `/tmp/teensy-manual-device.json`. Index summary truncation and backward wrapped
   row traversal bugs discovered during acceptance are fixed; the new navigation
   regression also passes. See handoff for the installed image hash.
+
+## Motherboard power path — 2026-10-19
+
+Details: [power-path wiring, commands and shunt selection](teensy41-power-path.md).
+The PCB is **not connected**. The user confirms that the INA237's dedicated
+3.3V regulator is upstream of the LTC4417 MOSFETs. Thus switching system power
+off should leave the INA powered while an input remains; this must be measured.
+The user is still adding the LTC4417 UV/OV divider resistors. These prerequisites
+and the shunt footprint/pad mapping remain outstanding, not firmware test passes.
+
+- [x] **PWR-SW — Host acceptance:** actual driver/formatter sanitizer tests,
+  missing/wrong devices, nominal 10mOhm conversion, threshold readback/failure,
+  signed current/power, capture/fault latch, boot-OFF/reset recovery, open-drain
+  KILL, passive PD and row bounds pass. Shutdown tests cover successful cleanup,
+  refused/failed cleanup, failed KILL and `--check` without asserting KILL.
+  Pin reservation tests cover legacy/display/module/power profiles.
+- [x] **PWR-ABSENT — PCB-absent device acceptance:** power-board image flashed;
+  Power page reports Meter/Inputs/PD/USB host unconnected, no fabricated zeros,
+  zero SPI misses. Strict max parsing and saved pending limit survive an
+  acknowledged reboot. Test limit restored to the original off setting.
+- [ ] **PWR-1 — Assembly prerequisites:** complete U4 UV/OV resistor networks;
+  verify intended voltage windows and component ratings. Replace R13's humidity
+  sensor footprint with the chosen 10mOhm Kelvin shunt footprint; check force
+  and sense pad mapping against the BOM and manufacturer drawing. Verify ground
+  address straps: U5 MCP23008=0x20, U13 INA237=0x40, U3 STUSB4500=0x28 on I2C1.
+- [ ] **PWR-2 — Always-on supply and pullups:** measure the INA237 3.3V supply
+  before and after LTC4417 shutdown and during Teensy reset/hang. Check GP6
+  ALERT/KILL remains open-drain, MCU/expander rail-off leakage/backfeed and I2C
+  levels. Confirm the INA is not inadvertently reset when switched rails drop.
+- [ ] **PWR-3 — LTC4417 validity/priority:** test each input alone, combinations,
+  unplug/replug, out-of-window and boundary voltages. Compare VALID1/2/3 against
+  GP0/1/2 and the Power page. Measure actual path selection/switchover separately
+  from inferred PD > barrel DC > AUX priority; check no reverse current.
+- [ ] **PWR-4 — INA237 accuracy:** use a reference meter/load to compare bus V,
+  signed current and W at low current and several loads through 5A within board
+  ratings. Measure shunt temperature/drop and actual resistance; check current
+  direction, zero offset, Kelvin routing and data invalidation on I2C failure.
+- [ ] **PWR-5 — Independent trip with Teensy halted:** first configure and read
+  back a conservative threshold, then deliberately halt/reset the Teensy or
+  prevent its boot while keeping INA standby power present. Increase a bounded
+  test load and scope shunt voltage, ALERT/KILL, LTC2954 EN and switched VOUT.
+  Verify power cuts without any Teensy instruction or expander transaction.
+  Repeat after a system shutdown/wake with the upstream INA supply retained;
+  confirm threshold retention and measure response/overshoot.
+- [ ] **PWR-6 — Complete input loss/cold start:** remove all INA supply, restore
+  input with Teensy held reset, and measure the default behavior. INA registers
+  are volatile: distinguish retained standby operation from a truly cold start.
+  Verify the interval before firmware restores the saved threshold. A custom
+  limit immediately after total power loss requires additional independent
+  configuration/protection hardware; do not mark this requirement met by NVS.
+- [ ] **PWR-7 — LTC2954 graceful button sequence:** scope physical PB, INT_N,
+  MCP23008 INT/Teensy5, GP6/KILL_N, EN and switched VOUT. A tap must request
+  SolarOS cleanup, then KILL only after applications/jobs stop, logs drain and
+  storage sync succeeds. Run with Python, FTP, serial logging and mounted SD/
+  USB storage using disposable fixtures. Verify files after restart. Confirm
+  `poweroff --check` leaves GP6 as input; repeat with failed/blocked cleanup and
+  I2C failure. Measure the C71 forced-hold deadline versus cleanup duration.
+- [ ] **PWR-8 — Forced button cutoff:** with the Teensy held reset/halted, verify
+  LTC2954's long hold independently removes switched power. Check release/wake
+  behavior, retained INA supply and that software never drives shared KILL high.
+- [ ] **PWR-9 — TPS25820 host:** verify GP3 EN OFF at boot, explicit ON, GP5
+  SINK attachment, device/keyboard/storage enumeration, GP4 fault assertion and
+  latched OFF. Check clear never enables, active fault refuses clear/ON, short
+  pulses/capture limitations, reset/reconnect remains OFF, and explicit OFF
+  refuses mounted USB storage. Measure host VBUS and hardware current limiting;
+  EN/SINK alone do not prove voltage. Confirm CHG grounded/default advertisement.
+- [ ] **PWR-10 — STUSB4500 PD status:** compare requested VSEL target/RDO current
+  with a PD analyzer/source at supported voltages. Check waiting/mismatch,
+  detach/reconnect and I2C errors. Verify passive reads consume no negotiation
+  events, active `pd` ownership remains exclusive, no spontaneous higher-voltage
+  request/NVM writes occur, and RDO current is never called measured consumption.
+- [ ] **PWR-11 — Concurrent load and display:** repeat telemetry/button/USB/PD
+  checks with Python, FTP, Wi-Fi and DMM active; stop DMM to inspect the Power
+  page. Verify NES navigation, no full-screen flashing, no stale valid readings,
+  bounded I2C latency, task stack margins and storage integrity after shutdown.

@@ -1,6 +1,7 @@
 #if SK_HW_RESOURCES
 #include <arduino_freertos.h>
 #include "board.h"
+#include "power_path.h"
 #include "platform.h"
 extern "C" {
 #include "solar_os_resources.h"
@@ -14,15 +15,19 @@ esp_err_t sk_resources_begin() {
     using namespace superkeyboard;
     const Fixed fixed[]={
         {2,"board","shift clock"},{3,"board","NES latch"},{4,"board","NES data"},
-        #if SK_USB_HOST_POWER
+        #if SK_POWER_PATH
+        {power_expander_int,"power-path","MCP23008 INT_N"},
+#elif SK_USB_HOST_POWER
         {usb_host_enable,"usb-host-power","TPS25820 EN"},
         {usb_host_fault,"usb-host-power","TPS25820 FAULT_N"},
 #endif
 #if SK_MOTOR_ENABLE_PIN >= 0
         {motor_enable,"board","motor enable"},
 #endif
-        {relay,"board","relay"},
-        {amplifier_shutdown,"board","amplifier enable"},{vin_sense,"board","VIN sense"},{volume,"board","volume"},
+#if !SK_POWER_PATH
+        {relay,"board","relay"},{vin_sense,"board","VIN sense"},
+#endif
+        {amplifier_shutdown,"board","amplifier enable"},{volume,"board","volume"},
         {primary_mosi,"spi0","MOSI"},{primary_miso,"spi0","MISO"},{primary_sck,"spi0","SCK"},
         {shared_mosi,"spi1","MOSI"},{shared_miso,"spi1","MISO"},{shared_sck,"spi1","SCK"},
         {audio_sda,"i2c0","SDA"},{audio_scl,"i2c0","SCL"},

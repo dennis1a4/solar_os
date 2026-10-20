@@ -2,6 +2,10 @@
 #include <arduino_freertos.h>
 #include <semphr.h>
 #include "platform.h"
+#include "power_path.h"
+#if SK_POWER_PATH
+#include "power_path_model.h"
+#endif
 extern "C" {
 #include "solar_os.h"
 #include "solar_os_shell_io.h"
@@ -74,6 +78,26 @@ extern "C" void sk_shell_cmd_pd(solar_os_context_t *ctx,int argc,char **argv){
 usage:
     solar_os_shell_io_writeln(io,"usage: pd status|close | pd open i2cN ADDRESS BOARD_MAX_MV BOARD_MAX_MA | pd request MV MA");
 }
+#if SK_POWER_PATH
+void sk_pd_board_snapshot(SkPowerPdSnapshot *out) {
+    *out={};
+    // The active negotiator's receive events remain exclusively owned by it.
+    if(worker) {
+        if(bus!=1 || address!=SK_POWER_PD_ADDRESS || !guard ||
+           xSemaphoreTake(guard,pdMS_TO_TICKS(50))!=pdTRUE)return;
+        auto copy=power;xSemaphoreGive(guard);
+        out->connected=true;out->attached=copy.source.attached;
+        out->ready=out->rdo_valid=copy.state==SOLAR_PD_POWER_READY && copy.source.contract_valid;
+        if(out->rdo_valid) {out->set_mv=copy.source.contract.mv;out->rdo_ma=copy.source.contract.ma;}
+        return;
+    }
+    if(solar_os_resource_claim(SOLAR_OS_RESOURCE_I2C_ADDRESS,1,SK_POWER_PD_ADDRESS,"pd-status","STUSB4500 passive status")!=ESP_OK)return;
+    const SkPowerPathIo transport{nullptr,
+        [](void *,uint8_t a,uint8_t r,uint8_t *p,size_t n){return sk_i2c_transfer(1,a,&r,1,p,n)==ESP_OK;},nullptr};
+    sk_power_pd_observe(transport,out);
+    solar_os_resource_release(SOLAR_OS_RESOURCE_I2C_ADDRESS,1,SK_POWER_PD_ADDRESS,"pd-status");
+}
+#endif
 // Called only after console/Python/bus owners have quiesced. A configured but
 // closed/failed monitor cannot prove that an old high-voltage contract ended.
 extern "C" bool sk_pd_shutdown() {

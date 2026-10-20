@@ -3,6 +3,7 @@
 #include "board.h"
 #include "platform.h"
 #include "usb_host_power.h"
+#include "power_path.h"
 extern "C" {
 #include "solar_os.h"
 #include "solar_os_queue.h"
@@ -184,7 +185,9 @@ void setup() {
     digitalWrite(superkeyboard::primary_backlight, LOW);
     pinMode(superkeyboard::primary_backlight, OUTPUT);
 #endif
+#if !SK_POWER_PATH
     digitalWrite(superkeyboard::relay, LOW); pinMode(superkeyboard::relay, OUTPUT);
+#endif
     // LM4871 shutdown is active HIGH; keep the loudspeaker amplifier off.
     digitalWrite(superkeyboard::amplifier_shutdown, HIGH); pinMode(superkeyboard::amplifier_shutdown, OUTPUT);
     heartbeat_queue = solar_os_queue_create_internal(1, sizeof(uint32_t));

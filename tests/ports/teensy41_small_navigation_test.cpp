@@ -14,7 +14,8 @@ int main() {
     n.update(0,1010,false); n.update(0,1030,false);
     n.update(32,1040,false); n.update(32,1060,false); assert(n.page==0);
     n.update(0,1070,false); n.update(0,1090,false);
-    n.update(32,1100,false); n.update(32,1120,false); assert(n.page==3);
+    n.update(32,1100,false); n.update(32,1120,false); assert(n.page==4);
+    n.page=3; // Mesh page index is retained when the fifth page is added.
     n.update(128,1130,false); n.update(128,1150,false); assert(n.slot==2);
     n.update(4,1160,false); n.update(4,1180,false); assert(n.page==0);
     n.update(16,1200,true); n.update(16,1220,true); assert(n.page==0);
@@ -24,6 +25,14 @@ int main() {
     SmallNavigation wrap;
     wrap.update(16,0xfffffff0,false);
     wrap.update(16,4,false); assert(wrap.page==1); // uptime rollover
+    SmallNavigation pages;
+    unsigned page_now=0;
+    for(unsigned i=0;i<10;i++) {
+        pages.update(0,page_now,false); pages.update(0,page_now+20,false);
+        pages.update(16,page_now+30,false); pages.update(16,page_now+50,false);
+        assert(pages.page==(i+1)%5);
+        page_now+=60;
+    }
     SmallNavigation slots;
     slots.page=3;
     unsigned now=0;

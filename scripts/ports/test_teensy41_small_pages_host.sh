@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 small_test_dir=$(mktemp -d /tmp/solaros-small-pages.XXXXXX)
+trap 'rm -rf "$small_test_dir"' EXIT
 c++ -std=c++17 -Wall -Wextra -Werror \
     -Isrc/platform/imxrt1062/teensy41 tests/ports/teensy41_small_navigation_test.cpp \
     -o "$small_test_dir/test"

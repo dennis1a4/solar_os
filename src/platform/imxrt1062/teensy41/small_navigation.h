@@ -19,8 +19,8 @@ struct SmallNavigation {
         held=buttons;
         if(owned) return 0;
         if(pressed&4) page=0;
-        else if((pressed&48)==16) page=(page+1)%4;
-        else if((pressed&48)==32) page=(page+3)%4;
+        else if((pressed&48)==16) page=(page+1)%5;
+        else if((pressed&48)==32) page=(page+4)%5;
         if(page==3) {
             if((pressed&192)==64) slot=(slot+1)%3; // Up increases the slot number.
             else if((pressed&192)==128) slot=(slot+2)%3;

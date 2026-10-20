@@ -29,7 +29,7 @@ struct DmmTraceBitmap {
 struct DmmPaintCache {
     bool valid=false,demo=false;
     uint32_t generation=0;
-    char title[27]{},mode[27]{},number[8]{},extrema[27]{};
+    char title[27]{},mode[27]{},number[8]{},extrema[27]{},footer[27]{};
     DmmTraceBitmap trace;
 };
 

@@ -21,6 +21,12 @@ static bool added, linked;
 static uint32_t last_link, last_rx, epoch, dns_address;
 static std::atomic<bool> connecting{false};
 static uint8_t link_info[52];
+static sk_wifi_status_t cached_status{};
+void sk_wifi_status(sk_wifi_status_t *out) {
+  taskENTER_CRITICAL();
+  *out=cached_status;
+  taskEXIT_CRITICAL();
+}
 DMAMEM static uint8_t frame[1514];
 static uint32_t tx_packets, rx_packets, tx_drops, rx_drops;
 static err_t output(struct netif *, struct pbuf *p) {
@@ -48,6 +54,18 @@ void sk_wifi_network_poll(bool lwip_ready) {
     last_link=now; size_t n=0;
     bool ok=sk_wireless_wifi_available() &&
       sk_wireless_wifi_command(WB_WIFI_LINK,nullptr,0,link_info,sizeof(link_info),&n)==WB_OK && n==52;
+    sk_wifi_status_t status{};
+    status.available=ok;
+    if(ok) {
+      status.state=link_info[0]; status.rssi=(int8_t)link_info[19];
+      for(unsigned i=0;i<32;i++) {
+        const uint8_t ch=link_info[20+i];
+        status.ssid[i]=ch>=32 && ch<127?ch:(ch?'?':0);
+      }
+    }
+    taskENTER_CRITICAL();
+    cached_status=status;
+    taskEXIT_CRITICAL();
     bool up=ok && link_info[0]==2;
     connecting=ok && link_info[0]==1;
     if(ok && !added) {

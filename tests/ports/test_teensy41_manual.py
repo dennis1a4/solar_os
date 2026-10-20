@@ -15,7 +15,7 @@ class ManualTest(unittest.TestCase):
         cls.pages=PORT.select_pages(GEN.load_pages(ROOT/'doc/manual',ROOT/'packages/solar_os_packages.toml'),GEN.markdown_to_terminal_text)
         cls.by_id={p['id']:p for p in cls.pages}
     def test_wireless_topics(self):
-        for name in ('wifi', 'bt', 'wbridge', 'motor', 'usbpower'):
+        for name in ('wifi', 'bt', 'wbridge', 'motor', 'usbpower', 'powerpath'):
             self.assertIn('command.' + name, self.by_id)
         self.assertIn('hidden password', self.by_id['command.wifi']['body'])
         self.assertIn('wbridge on [slot0|slot1]', self.by_id['command.wbridge']['body'])

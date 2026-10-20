@@ -5,6 +5,12 @@
 int main() {
     assert(dmm_scale(0,5000)==0 && dmm_scale(1023,5000)==5000);
     assert(dmm_scale(1023,50000)==50000 && dmm_scale(512,50000)==25024);
+    assert(dmm_test_scale(1023)==13300);
+    assert(dmm_test_scale(385)>4990 && dmm_test_scale(385)<5020);
+    assert(dmm_test_scale(231)>2990 && dmm_test_scale(231)<3020);
+    DmmModel bench;bench.test=true;bench.sample(0,3000);
+    bench.set_range(50);assert(bench.test && bench.range==5 && bench.valid);
+    bench.buttons(128);assert(bench.test && bench.range==5 && bench.valid);
     DmmModel m;
     m.toggle_hold();assert(!m.hold);
     m.sample(0,2000);m.sample(50,3000);m.sample(100,1000);
@@ -27,8 +33,15 @@ int main() {
     assert(m.buttons(2) && !m.hold && m.mode==DmmModel::Minimum);
     assert(m.buttons(16) && m.mode==DmmModel::Maximum);
     assert(m.buttons(16) && m.mode==DmmModel::Live);
-    assert(m.buttons(32) && m.mode==DmmModel::Minimum);
-    assert(m.buttons(32) && m.mode==DmmModel::Live);
+    const unsigned saved_count=m.count;const int32_t saved_reading=m.live;
+    int32_t low,high;
+    assert(m.buttons(32) && !m.trace_auto && m.mode==DmmModel::Live);
+    m.trace_limits(m.last_ms,low,high);assert(low==0 && high==50000);
+    assert(m.count==saved_count && m.live==saved_reading);
+    assert(m.buttons(32) && m.trace_auto && m.mode==DmmModel::Live);
+    m.trace_limits(m.last_ms,low,high);assert(low==24990 && high==25010);
+    m.trace_auto=false;m.set_range(5);m.trace_limits(0,low,high);
+    assert(!m.trace_auto && low==0 && high==5000);
     assert(m.buttons(64) && m.range==5 && !m.valid);
     assert(m.buttons(128) && m.range==50 && !m.valid);
     assert(!m.buttons(8));

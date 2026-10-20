@@ -1,4 +1,5 @@
 #include "motor_module.h"
+#include "power_path.h"
 #if SK_WIRELESS_BRIDGE
 #include "wireless_bridge.h"
 #endif
@@ -88,6 +89,7 @@ static void shutdown_step() {
                 else if(expired())finish("cleanup exceeded deadline; power remains on");
                 else if(check_only)finish("check complete; power remains on (jobs stopped)");
                 else {
+                    if(!sk_power_path_cut()) {finish("MCP23008 KILL failed; power remains on");return;}
                     status="powering off";
                     sk_power_cut();
                 }

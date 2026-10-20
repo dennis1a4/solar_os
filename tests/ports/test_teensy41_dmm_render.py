@@ -37,7 +37,7 @@ struct Display {
   assert(locked && x+6*size<=160 && y+8*size<=128);
   cells[y][x]=ch;x+=6*size;++operations;++glyphs;
   if(size==3)++large_glyphs;
-  if(y==66 || y==76 || y==120 || y==43)++static_glyphs;
+  if(y==66 || y==76 || y==43)++static_glyphs;
  }
  void print(const char *s){while(*s)write(*s++);}
  void drawFastHLine(int x,int y,int w,unsigned ink){
@@ -92,13 +92,30 @@ int main(){
  // so static labels and an otherwise identical readout are painted again.
  locked=true;secondary.fillScreen(0);locked=false;++small_owner_generation;
  before=operations;assert(sk_small_dmm_frame(&model,true));assert(operations>before);
- assert(secondary.line(2,66,26).find("A hold B mode SEL reset")!=std::string::npos);
+ assert(secondary.line(2,66,26).find("A hold B mode L graph")!=std::string::npos);
  assert(secondary.line(2,27,7,3)=="---    ");assert(screen_clears==1);
+ model=DmmModel{};model.test=true;model.sample(test_now,3000);
+ locked=true;secondary.fillScreen(0);locked=false;++small_owner_generation;
+ assert(sk_small_dmm_frame(&model,false));
+ assert(secondary.line(2,1,26).find("TEST UNCAL 5V")!=std::string::npos);
+ assert(secondary.line(2,76,26).find("SEL reset")!=std::string::npos);
+ // Fixed-range rendering clips out-of-range samples at the plot edges and
+ // changes only the trace/footer, without clearing history or the readout.
+ model=DmmModel{};model.sample(test_now-100,1000);model.sample(test_now-50,4000);model.sample(test_now,3000);
+ assert(sk_small_dmm_frame(&model,true));
+ assert(secondary.line(2,120,26).find("AUTO")!=std::string::npos);
+ unsigned number_writes=large_glyphs;model.trace_auto=false;
+ assert(sk_small_dmm_frame(&model,true));
+ assert(secondary.line(2,120,26).find("0-5V")!=std::string::npos && large_glyphs==number_writes);
+ model.sample(test_now,-1000);model.sample(test_now,9000);assert(sk_small_dmm_frame(&model,true));
+ assert(secondary.pixels[89][157]==ST7735_GREEN);
+ model.set_range(50);model.sample(test_now,25000);assert(!model.trace_auto);
+ assert(sk_small_dmm_frame(&model,true));assert(secondary.line(2,120,26).find("0-50V")!=std::string::npos);
  // Timer rollover preserves bounds, the visible ten-second axis and font state.
  model=DmmModel{};const uint32_t start=UINT32_MAX-5000;
  for(unsigned i=0;i<=200;++i)model.sample(start+i*50,1000+(i%20)*100);
  test_now=start+10000;assert(sk_small_dmm_frame(&model,true));
- assert(secondary.size==1 && secondary.trace_pixels()>0 && screen_clears==1);
+ assert(secondary.size==1 && secondary.trace_pixels()>0 && screen_clears==2);
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:

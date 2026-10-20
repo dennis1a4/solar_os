@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include "small_display.h"
 #include "usb_host_power.h"
+#include "power_path.h"
 extern "C" void sk_power_button_event();
 static void button_isr() {
     if(SNVS_HPSR & 0x40) {
@@ -23,7 +24,9 @@ extern "C" void sk_power_button_init() {
 extern "C" void sk_power_cut() {
     __disable_irq();
     sk_small_input_stop();
-    sk_usb_host_power_off();
+#if !SK_POWER_PATH
+    sk_usb_host_power_off(); // PCB expander has already been disabled before KILL.
+#endif
 #if defined(SK_AMPLIFIER_SHUTDOWN_PIN) && SK_AMPLIFIER_SHUTDOWN_PIN >= 0
     digitalWrite(SK_AMPLIFIER_SHUTDOWN_PIN,LOW);
 #endif
