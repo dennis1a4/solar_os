@@ -13,6 +13,9 @@
 extern "C" {
 #include "solar_os_memory.h"
 #include "solar_os_storage.h"
+#if SK_ORGANIZER
+#include "solar_os_organizer.h"
+#endif
 #if SK_ETHERNET
 #include "solar_os_network.h"
 #endif
@@ -29,6 +32,9 @@ DMAMEM static StackType_t small_stack[1024];
 static StaticTask_t small_tcb;
 static TaskHandle_t small_task;
 static bool small_enabled=true;
+#if SK_ORGANIZER
+static const void *puzzle_nes_owner;
+#endif
 static bool small_console; // The fallback terminal owns the dashboard surface.
 static bool small_owned; // Protected by SPI mutex for rendering.
 static uint32_t small_owner_generation; // Changes only for a newly cleared lease.
@@ -111,6 +117,9 @@ static void small_monitor_run(void *) {
         }
         for(unsigned i=0;i<3;++i) strcpy(lines[5+i],disks[i]);
         strcpy(lines[8],"< > Page  Select Home");
+#if SK_ORGANIZER
+        if(page==0)solar_os_organizer_small(lines);
+#endif
         if(page!=0) {
             for(unsigned i=1;i<8;++i) lines[i][0]=0;
             if(page==1) {
@@ -267,6 +276,9 @@ extern "C" bool sk_small_acquire() {
 #if SK_SECONDARY_ST7735
     if(!small_task || !sk_spi_lock(superkeyboard::secondary_spi)) return false;
     const bool available=!small_owned
+#if SK_ORGANIZER
+        && !puzzle_nes_owner
+#endif
         ;
     if(available) {
         taskENTER_CRITICAL(); small_owned=true; ++small_owner_generation; taskEXIT_CRITICAL();
@@ -354,6 +366,9 @@ extern "C" void sk_small_input_poll() {
     const uint8_t buttons=nes_inputs.combined();
     const unsigned old_page=small_nav.page,old_slot=small_nav.slot;
     const uint8_t pressed=small_nav.update_debounced(buttons,small_owned || !small_enabled || small_console
+#if SK_ORGANIZER
+        || puzzle_nes_owner
+#endif
         );
     nes_held=buttons;
     if(!small_owned && !small_console && small_enabled && old_page==small_nav.page && old_page>=5) {
@@ -367,6 +382,9 @@ extern "C" void sk_small_input_poll() {
     if(old_page!=small_nav.page)small_motion_buttons=0;
     if(changed) ++small_generation;
     taskEXIT_CRITICAL();
+#if SK_ORGANIZER
+    if((pressed&8) && !small_owned && !puzzle_nes_owner)solar_os_organizer_ack();
+#endif
     if(changed || (pressed&1)) xTaskNotifyGive(small_task);
 #endif
 }
@@ -480,5 +498,27 @@ bool sk_small_dmm_frame(const DmmModel *view,bool demo) {
     }
     cache.trace=next_trace;
     sk_spi_unlock(superkeyboard::secondary_spi);return true;
+}
+#endif
+
+#if SK_ORGANIZER
+extern "C" bool sk_console_is_local();
+extern "C" bool solar_os_puzzle_nes_claim(const void *owner,bool enable) {
+#if SK_SECONDARY_ST7735
+    if(enable&&!sk_console_is_local())return false;
+    taskENTER_CRITICAL();bool ok=false;
+    if(enable){if(!small_owned&&(!puzzle_nes_owner||puzzle_nes_owner==owner)){puzzle_nes_owner=owner;ok=true;}}
+    else if(puzzle_nes_owner==owner){puzzle_nes_owner=nullptr;ok=true;}
+    taskEXIT_CRITICAL();return ok;
+#else
+    (void)owner;(void)enable;return false;
+#endif
+}
+extern "C" uint8_t solar_os_puzzle_nes_read(const void *owner) {
+#if SK_SECONDARY_ST7735
+    taskENTER_CRITICAL();uint8_t value=puzzle_nes_owner==owner?nes_inputs.combined():0;taskEXIT_CRITICAL();return value;
+#else
+    (void)owner;return 0;
+#endif
 }
 #endif

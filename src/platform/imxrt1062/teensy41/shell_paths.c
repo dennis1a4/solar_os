@@ -96,10 +96,16 @@ esp_err_t solar_os_storage_join_path(const char *base_path,
 
 esp_err_t solar_os_storage_default_path(const char *relative_path, char *path, size_t path_len)
 {
-    return solar_os_storage_join_path(solar_os_storage_mount_point(),
-                                      relative_path,
-                                      path,
-                                      path_len);
+    /* / is a virtual volume listing, not a writable filesystem. Keep default
+     * application state on persistent flash, with SD fallback on other boards. */
+    const char *base = NULL;
+    if (solar_os_storage_flash_is_mounted()) {
+        base = solar_os_storage_flash_mount_point();
+    } else if (solar_os_storage_sd_is_mounted()) {
+        base = solar_os_storage_sd_mount_point();
+    }
+    if (base == NULL) return ESP_ERR_INVALID_STATE;
+    return solar_os_storage_join_path(base, relative_path, path, path_len);
 }
 
 esp_err_t solar_os_storage_normalize_path(const char *path, char *out, size_t out_len)

@@ -37,6 +37,8 @@ typedef esp_err_t (*solar_os_context_output_fn)(const char *text,
 /* Opt into retained-session timer events in supporting port shells. Callbacks
  * must not draw or consume input while suspended. Used for audio auto-advance. */
 #define SOLAR_OS_APP_FLAG_BACKGROUND_TICKS (1U << 6)
+/* App uses Ctrl+Z itself; supporting port shells use F12 to suspend it. */
+#define SOLAR_OS_APP_FLAG_OWNS_CTRL_Z (1U << 7)
 
 /*
  * Foreground-app mutable state is cold by default: the shared app lifecycle

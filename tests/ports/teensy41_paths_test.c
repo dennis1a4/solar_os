@@ -2,6 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 #include "solar_os_storage.h"
+static bool flash_mounted,sd_mounted;
+bool solar_os_storage_flash_is_mounted(void){return flash_mounted;}
+bool solar_os_storage_sd_is_mounted(void){return sd_mounted;}
+const char *solar_os_storage_flash_mount_point(void){return "/flash";}
+const char *solar_os_storage_sd_mount_point(void){return "/sd";}
 const char *solar_os_storage_mount_point(void) { return "/"; }
 bool solar_os_storage_path_has_mount_prefix(const char *p) { return p && p[0] == '/'; }
 esp_err_t solar_os_storage_path_mount_point(const char *p, char *out, size_t len) {
@@ -11,6 +16,16 @@ esp_err_t solar_os_storage_path_mount_point(const char *p, char *out, size_t len
 }
 int main(void) {
     char path[160];
+    assert(solar_os_storage_default_path(".writer",path,sizeof(path))==ESP_ERR_INVALID_STATE);
+    sd_mounted=true;
+    assert(solar_os_storage_default_path(".writer",path,sizeof(path))==ESP_OK);
+    assert(!strcmp(path,"/sd/.writer"));
+    flash_mounted=true;
+    assert(solar_os_storage_default_path(".reader/positions",path,sizeof(path))==ESP_OK);
+    assert(!strcmp(path,"/flash/.reader/positions"));
+    assert(solar_os_storage_default_path("../.writer",path,sizeof(path))==ESP_OK);
+    assert(!strcmp(path,"/flash/.writer"));
+    assert(solar_os_storage_default_path(".writer",path,4)==ESP_ERR_INVALID_SIZE);
     assert(solar_os_storage_resolve_path_at("/one/two", "../test.txt", path, sizeof(path)) == ESP_OK);
     assert(strcmp(path, "/one/test.txt") == 0);
     assert(solar_os_storage_resolve_path_at("/one", "/two/../test.txt", path, sizeof(path)) == ESP_OK);

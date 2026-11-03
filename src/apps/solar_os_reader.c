@@ -813,15 +813,17 @@ static void reader_save_position(solar_os_context_t *ctx)
             (unsigned)(reader.epub ? reader.epub_chapter : 0U),
             reader.path);
 
-    const bool ok = ferror(dest) == 0;
-    fclose(dest);
+    bool ok = ferror(dest) == 0 && solar_os_storage_sync_file(dest) == ESP_OK;
+    if (fclose(dest) != 0) ok = false;
     if (!ok) {
         (void)remove(tmp_path);
         return;
     }
 
-    (void)remove(positions_path);
-    if (rename(tmp_path, positions_path) != 0) {
+    char backup_path[SOLAR_OS_STORAGE_PATH_MAX];
+    if (solar_os_storage_sibling_path(positions_path, ".bak", backup_path,
+                                       sizeof(backup_path)) != ESP_OK ||
+        solar_os_storage_replace_file(tmp_path, positions_path, backup_path) != ESP_OK) {
         (void)remove(tmp_path);
     }
 }

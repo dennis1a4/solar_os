@@ -1,3 +1,6 @@
+#if SK_ORGANIZER
+#include "solar_os_organizer.h"
+#endif
 #include "power_path.h"
 #if SK_WIRELESS_BRIDGE
 #include "wireless_bridge.h"
@@ -321,7 +324,12 @@ extern "C" bool sk_gameboy_keyboard_event() {
 }
 #endif
 static bool emit_key(char ch, void *) {
-    if(ch==26 && foreground) { suspend_app(); return true; }
+    if(foreground) {
+        const bool owns_ctrl_z=(foreground->flags & SOLAR_OS_APP_FLAG_OWNS_CTRL_Z)!=0;
+        if((ch==26 && !owns_ctrl_z) || (ch==SOLAR_OS_KEY_F12 && owns_ctrl_z)) {
+            suspend_app();return true;
+        }
+    }
     solar_os_event_t event{};
     event.type = SOLAR_OS_EVENT_CHAR;
     event.data.ch = ch == 3 && (!foreground || !strcmp(foreground->name, "calc"))
@@ -671,6 +679,15 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
         if(!strcmp(argv[2],"exit")) sk_usb_inject("\035");
         else if(!strcmp(argv[2],"ctrlc")) sk_usb_inject("\003");
         else if(!strcmp(argv[2],"ctrlz")) sk_usb_inject("\032");
+        else if(strlen(argv[2])==5 && !strncmp(argv[2],"ctrl",4) && argv[2][4]>='a' && argv[2][4]<='z') {
+            const char key[]={char(argv[2][4]-'a'+1),0};sk_usb_inject(key);
+        }
+        else if(argv[2][0]=='f' && argv[2][1]>='1' && argv[2][1]<='9') {
+            char *end=nullptr;long n=strtol(argv[2]+1,&end,10);
+            const char *sequence[]={"", "\033OP", "\033OQ", "\033OR", "\033OS", "\033[15~", "\033[17~", "\033[18~", "\033[19~", "\033[20~", "\033[21~", "\033[23~", "\033[24~"};
+            if(*end || n<1 || n>12){solar_os_shell_io_writeln(io,"Function key must be f1..f12");return;}
+            sk_usb_inject(sequence[n]);
+        }
         else if(!strcmp(argv[2],"esc")) sk_usb_inject("\033");
         else if(!strcmp(argv[2],"up")) sk_usb_inject("\033[A");
         else if(!strcmp(argv[2],"down")) sk_usb_inject("\033[B");
@@ -682,7 +699,7 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
         else if(!strcmp(argv[2],"space")) sk_usb_inject(" ");
         else if(!strcmp(argv[2],"enter")) sk_usb_inject("\r");
         else if(strlen(argv[2])==1) sk_usb_inject(argv[2]);
-        else { solar_os_shell_io_writeln(io,"usage: lcd key exit|ctrlc|ctrlz|esc|up|down|left|right|home|end|tab|space|enter|CHAR"); return; }
+        else { solar_os_shell_io_writeln(io,"usage: lcd key exit|ctrlLETTER|f1..f12|esc|up|down|left|right|home|end|tab|space|enter|CHAR"); return; }
         solar_os_shell_io_writeln(io,"Queued for LCD session.");
     } else {
         unsigned cols,rows; sk_lcd_dimensions(cols,rows);
@@ -733,6 +750,9 @@ void sk_upstream_shell_run() {
 #if SK_HW_RESOURCES
     sk_power_init();
     sk_power_path_begin();
+#if SK_ORGANIZER
+    solar_os_organizer_begin();
+#endif
 #endif
     // Hold gate until task handles are published.
     xSemaphoreTakeRecursive(console_gate,portMAX_DELAY);

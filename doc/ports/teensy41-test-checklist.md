@@ -823,3 +823,52 @@ Details: [dual input, APIs and timing](teensy41-display.md#two-physical-controll
   counts, concurrent Python/FTP, retained sessions, USB disconnect and app closure.
   Simulator is a documented subset; secure authentication, event queues,
   application fragmentation and time synchronization are not supported.
+
+### Reader and Writer
+
+- [ ] Run `bash scripts/ports/test_teensy41_documents_host.sh` with sanitizers:
+  Markdown/source layout, UTF-8 buffer/undo, save rollback failures, deflated EPUB
+  chapters, relative PNG asset lookup and bounds/cleanup.
+- [ ] Run `python3 scripts/ports/test_teensy41_documents.py --log /tmp/documents-live.json`
+  with idle LCD, exclusive USB, SD and Ethernet. Uses unique SD fixture documents
+  and a temporary local FTP service; closes FTP and cleans its document metadata.
+- [ ] Main LCD: text/Markdown/EPUB layout, embedded images, find, zoom, row/page
+  navigation, saved position/chapter, suspend/resume and Files -> Reader return.
+- [ ] Writer: typing/selection, clipboard, formatting, find/replace, synced save,
+  Ctrl+Z undo/Ctrl+Y redo and F12 suspend. Confirm other apps still suspend with
+  Ctrl+Z. Verify Recovery and Save/Discard/Cancel prompts with physical keyboard.
+- [ ] Exercise reader and writer retained together, concurrent background apps,
+  repeated open/close memory recovery, missing/corrupt documents, >256 KiB Writer
+  rejection, SD removal/full-volume save failures and reopening recovery snapshots.
+- [ ] Read long real-world EPUBs with varied images and typography. WebP, DRM and
+  browser CSS are not supported on this backend. GUI apps require the main LCD.
+
+### PDA organizer and tools
+
+- [ ] Run `bash scripts/ports/test_teensy41_pda_host.sh`: civil date/leap-year
+  coverage, recurrence anchors, recurring task completion, binary CRC validation,
+  ICS/vCard round trips and UID merge, dimensional conversions, unique Sudoku,
+  Minesweeper first-click/win/loss, app forms/lifecycle and NES direction mapping.
+- [ ] Run `python3 scripts/ports/test_teensy41_pda.py --reboot --log /tmp/pda-live.json`
+  with idle physical controls, exclusive USB, Ethernet and SD. It backs up and
+  restores organizer data, preserves puzzle saves, and uses unique local fixtures.
+- [ ] Calendar: month/week/agenda, search, linked contacts, all-day/recurring events,
+  birthdays, new/edit/delete/cancel, backup/restore and reopening after reset.
+- [ ] Reminder worker: valid RTC/timezone, next-appointment label, catch-up within
+  24 hours, reminder while Calendar is closed, short sound, immediate dismissal,
+  and no alarm left running after backup restore. Check audio-busy/full-scheduler
+  behavior and no automatic power-on wake.
+- [ ] Contacts: phone/work/email/address/birthday/category/notes, vCard field limits,
+  duplicate UID update and isolation from radio identities. Tasks: priority, due,
+  completion, recurrence and original monthly/yearly anchor preservation.
+- [ ] Reject malformed/unsupported imports atomically (TZID/UTC, complex recurrence,
+  overlong lines/values, capacity overflow); verify interrupted-save backup recovery
+  and corrupt-store write blocking. Check full-volume and unavailable-storage errors.
+- [ ] Converter: case-sensitive SI prefixes, temperature offsets, explicit US/UK
+  volumes and decimal/binary data units. Library: mounted documents, offline manuals,
+  filtering, catalog bounds and Reader child-return behavior.
+- [ ] Both puzzle games: keyboard and physical on-board/external NES play, cursor
+  repeat, saved progress, suspend/resume, dashboard input suppression while owned,
+  no held-button leakage and resource conflicts with DMM/Game Boy display ownership.
+- [ ] Small 26x16 layout, multiple retained apps and exact heap recovery over cycles.
+  Personal backups/exports contain address-book/appointment data; keep test fixtures local.

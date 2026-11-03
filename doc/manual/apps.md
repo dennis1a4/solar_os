@@ -1057,6 +1057,19 @@ storage, and verification details.
 
 ## contacts
 
+On the Teensy organizer build this opens the **personal address book**. It is
+separate from the radio-identity store described below. Fields are name, company,
+phone/mobile, work phone, email, postal address, birthday, category and notes.
+Run `contacts`; `/` searches all fields, Enter shows detail, `a` adds, `e` edits
+and `d` deletes after confirmation. Forms use Enter/Tab/Up/Down to select fields,
+Ctrl+U to clear, Ctrl+S to save and Esc to cancel. `i`/`o` import/export vCard 3.0
+(FN/ORG/two TEL/one EMAIL/LABEL or ADR/BDAY/NOTE/CATEGORIES/UID); duplicate UIDs
+update records. Unsupported extra phone/email fields are rejected rather than
+silently discarded. Birthdays appear in Calendar. `b`/`R` back up/restore all
+organizer data; see `calendar` for storage and limits. No account sync is enabled.
+
+Other SolarOS builds use the radio-identity Contacts app:
+
 Provider-neutral address book for gateway and MeshCore identities. Contacts can
 carry multiple provider endpoints while retaining trust independently for each
 endpoint. A signed MeshCore advert creates a `discovered` endpoint: the
@@ -1689,6 +1702,12 @@ Controls:
   document is dirty. Writer writes recovery before suspend or stop and resumes
   in place.
 
+On the Teensy display build, Ctrl+Z stays Undo in Writer and F12 suspends the
+editor; `fg` resumes it. Reader uses the usual Ctrl+Z suspend shortcut. Both apps
+use PSRAM and the main RA8875 display. Documents can be opened from SD, USB or
+flash; metadata/recovery use the persistent root's `.writer`/`.reader` directories.
+PNG/JPEG images use the existing decoder; WebP remains unsupported on Teensy.
+
 ## scp
 
 SCP file transfer over SSH. It supports password or key authentication through
@@ -2260,3 +2279,97 @@ application confirmations. Controls change simulated points only. Class 1–3 sc
 return empty data; event queues, application fragmentation, secure authentication,
 time synchronization and general file/object services are not implemented. This
 is a bench simulator, not a complete conformant DNP3 master/outstation stack.
+
+## calendar
+
+Teensy personal organizer: month, week and 30-day agenda views, recurring
+appointments, birthdays from Contacts, categories, search and local reminders.
+Open `calendar`. Tab cycles views; arrows move date/list; `[`/`]` change month;
+`t` returns to today; `j`/`k` select appointments in month view. Enter shows detail.
+`a` adds, `e` edits, `d` deletes with confirmation, `/` searches and `?` opens help.
+
+Forms use Enter/Tab to advance, Up/Down to select a field, Ctrl+U to clear it,
+Ctrl+S to save and Esc to cancel. Dates are YYYY-MM-DD, time is HH:MM or `all`,
+duration is 1–1440 minutes and reminder is minutes before the event (-1 disables).
+Repeats are none/daily/weekly/monthly/yearly, plus monthly-skip/yearly-skip. Short months clamp to their final
+day while retaining the original recurrence anchor. Contact ID 0 means unlinked.
+
+`i` imports ICS, `o` exports to a new ICS filename, `b` backs up the complete
+organizer database and `R` restores one after confirmation. Imports are validated
+as a transaction and merge matching UIDs. Interchange supports local/floating
+VEVENT dates, daily/weekly/monthly/yearly rules, canonical month-end clamp rules, and display alarms in minutes. UTC/TZID times,
+complex RRULEs, exclusions, multi-day events and unsupported nested components
+are rejected explicitly. This is local interchange, not account synchronization.
+
+State is CRC checked under `/flash/.organizer/organizer.bin` (SD fallback). All
+three organizer apps share it. Capacity: 256 appointments, 512 personal contacts
+and 256 tasks. Corrupt data is preserved with writes blocked until backup restore.
+Reminders run in a separate worker while apps are closed, require a valid RTC and
+use the existing local timezone. They sound through the existing alarm service
+when audio is available; the small system page shows the next appointment or
+active reminder. `K` dismisses a reminder; NES Start dismisses it from the small
+dashboard. Sound stops after about ten seconds; the notification remains until
+dismissed. The board must remain powered; power-on wake is unsupported.
+Ctrl+Z suspends the app, `fg` resumes, and q/Esc closes it.
+
+## tasks
+
+Teensy personal to-do lists with priority, due dates, categories, notes, optional
+contact links and daily/weekly/monthly/yearly recurrence. Run `tasks`. Tab selects
+open/completed/all lists; Space completes a task. Recurring completion advances
+the due date from its original anchor to the next occurrence after today, keeping
+it open; a nonrecurring task can be checked or unchecked. Lists sort by completion,
+priority and due date. `a` adds, `e` edits, `d` confirms deletion, Enter shows detail,
+`/` searches, `?` helps and Ctrl+S saves a form. Ctrl+U clears a form field.
+`i`/`o` import/export local-date VTODO ICS records; `b`/`R` back up/restore the
+shared organizer. See `calendar` for persistence, interchange limits and shortcuts.
+
+## convert
+
+Engineering and everyday unit converter. Run `convert` or `convert VALUE FROM TO`,
+for example `convert 5 ft m` or `convert 32 F C`. Categories include length, area,
+volume (explicit US/UK gallons), mass, temperature, speed, pressure, force, energy,
+power, torque, time, frequency, voltage, current, resistance, capacitance,
+inductance, angle and data sizes. Symbols are case sensitive: mA differs from A,
+Mohm from mohm, and MB from MiB. `F` means Fahrenheit; `Fcap` means farads.
+Tab changes the value/from/to field; Enter converts; Ctrl+U clears a field.
+Up/Down browse units, brackets change category, F3/F4 select source/destination
+and F2 swaps them. Dimension mismatches, nonfinite results and temperatures below
+absolute zero are rejected. Ctrl+Z/fg retains the app; Esc/Ctrl+] exits.
+
+## library
+
+Searchable offline reference library opening documents and bundled manuals in
+Reader. `library [DIRECTORY]` scans a selected directory, or the default roots
+`/sd/Library`, `/sd/books`, `/sd/Documents`, `/flash/Library` and `/usb/Library`.
+It recognizes text, Markdown and EPUB; it does not add PDF, DRM or browser CSS
+support to Reader. Embedded manual pages remain available without SD.
+Arrows select; Enter opens Reader and returns here on exit; `/` filters titles and
+paths, Tab selects all/documents/manuals and `r` refreshes after copying books.
+Catalog bounds are 512 entries, 64 directories and depth four; narrowing the root
+avoids truncation. Actual reading needs the main display. q/Esc/Ctrl+] exits.
+
+## sudoku
+
+Keyboard/NES Sudoku with generated unique-solution puzzles and saved progress.
+Run `sudoku`; arrows move, 1–9 enter a value, 0/Backspace clears, `h` gives a
+counted hint and `c` checks conflicts. Given cells are fixed; conflicts are
+underlined. `n` starts a new puzzle after y/n confirmation, `?` shows help and
+q/Esc/Ctrl+] exits. Ctrl+Z/fg pauses/resumes. Progress lives in the persistent
+`.organizer/sudoku.bin` file and is restored on reopening.
+On the LCD, either NES input set can move the cursor. A cycles digits, B clears,
+Select toggles help and Start checks the board. A/B confirm/cancel a new puzzle.
+While the game owns NES input the small dashboard does not consume its buttons;
+suspending releases ownership. An app already owning the small display prevents
+NES acquisition, leaving keyboard controls available. No two-player game mode
+is implied by combining the independently sampled controllers.
+
+## mines
+
+9x9 Minesweeper with ten mines, safe first reveal and saved progress. Run `mines`.
+Arrows move; Enter/Space reveals and floods blank cells, `f` toggles a flag and
+Enter on a number chords when the surrounding flag count matches. Incorrect
+flags can cause a loss. `n` confirms a new board, `?` shows help, q/Esc/Ctrl+]
+exits and Ctrl+Z/fg pauses/resumes. On LCD NES A reveals, B flags, Select opens
+help and Start requests a new board; A/B confirm/cancel. See `sudoku` for NES
+ownership. Progress is saved in `.organizer/mines.bin`.

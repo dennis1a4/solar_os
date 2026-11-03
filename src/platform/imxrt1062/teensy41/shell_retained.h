@@ -212,7 +212,7 @@ extern "C" void sk_shell_cmd_session(solar_os_context_t *ctx,int argc,char **arg
     auto *io=solar_os_context_shell_io(ctx);
     if(argc>2 || (argc==2 && strcmp(argv[1],"list"))) {
         solar_os_shell_io_writeln(io,"usage: session [list] | session fg [ID] | session close ID");
-        solar_os_shell_io_writeln(io,"Ctrl+Z suspends a resumable app; close discards its unsaved state.");return;
+        solar_os_shell_io_writeln(io,"Ctrl+Z suspends apps (Writer: F12; Ctrl+Z undoes). close discards unsaved state.");return;
     }
     solar_os_shell_io_writeln(io,"ID Owner          State     App              Directory / chain");
     Console *entries[3];const unsigned count=console_entries(entries);

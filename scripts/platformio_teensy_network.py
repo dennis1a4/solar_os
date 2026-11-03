@@ -94,9 +94,10 @@ for obj in ("dmm.cpp", "adc_guard.cpp", "motor_module.cpp", "usb_host_power.cpp"
             "solar_os_net_session.c", "solar_os_network.c", "solar_os_shell_network_status.c"):
     script = script.replace(marker, marker + "\n\t\t*" + obj + ".o(.text* .rodata*)")
 # DNP3 decoding, simulation and UI are bounded worker tasks, not interrupt code.
-for obj in ("solar_os_app_registry.c", "solar_os_dnp3_app.c", "solar_os_dnp3_lab.c",
-            "solar_os_dnp3_wire.c", "solar_os_dnp3_bridge.c", "dnp3_service.cpp",
-            "crc.c", "functions.c", "decode.c"):
+for obj in ("solar_os_app_registry.c", "organizer.cpp", "solar_os_organizer_apps.c", "solar_os_organizer_model.c", "solar_os_organizer_io.c", "solar_os_convert.c", "solar_os_library.c", "solar_os_puzzle_apps.c", "solar_os_puzzles.c", "solar_os_units.c", "solar_os_reader.c", "solar_os_writer.c", "solar_os_writer_buffer.c", "solar_os_writer_files.c",
+            "solar_os_doc.c", "solar_os_epub.c", "solar_os_html.c", "solar_os_xml.c",
+            "solar_os_dnp3_app.c", "solar_os_dnp3_lab.c", "solar_os_dnp3_wire.c",
+            "solar_os_dnp3_bridge.c", "dnp3_service.cpp", "crc.c", "functions.c", "decode.c"):
     script = script.replace(marker, marker + "\n\t\t*" + obj + ".o(.text* .rodata*)")
 # Keep DTCM for startup/network allocations and the 8 KiB core stack guard.
 # The console stack is now in OCRAM. Catch an ITCM-bank regression at link time.

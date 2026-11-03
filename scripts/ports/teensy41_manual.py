@@ -1,5 +1,5 @@
 """Select accurate embedded documentation for the Teensy workstation shell."""
-APP_NAMES = set('dnp3 chat meshmon recorder ftp player synth ltop webradio io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders gameboy mqttx obd clock pdpower scope help curl'.split())
+APP_NAMES = set('calendar contacts tasks convert library sudoku mines reader writer dnp3 chat meshmon recorder ftp player synth ltop webradio io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders gameboy mqttx obd clock pdpower scope help curl'.split())
 COMMAND_NAMES = set('dmm motor powerpath usbpower wifi bt wbridge mesh meshstatus meshlog meshbridge poweroff serial sshkey midi pd grep head wc ramfs gpio i2c spi uart expansion help man commands echo wait watch apps mem uptime clear setterm identity network audio cd ls cat sh mkdir rm mv cp exit reboot version board status top port df pwd session sessions fg bg tail close ping netscan ntp jobs job schedule zip unzip rtc date time flash sd usb lcd telnetd'.split())
 # Audited Teensy contracts. Hardware-neutral shared app pages remain upstream.
 OVERRIDES = {
@@ -207,10 +207,12 @@ OVERRIDES = {
         'lcd color FG BG\n'
         'lcd reset\n'
         'lcd dump\n'
+        'lcd small\n'
+        'lcd small page system|network|music|mesh|power|level|compass\n'
         'lcd send "COMMAND"\n'
-        'lcd key exit|ctrlc|ctrlz|esc|up|down|left|right|home|end|tab|space|enter\n'
+        'lcd key exit|ctrlLETTER|f1..f12|esc|up|down|left|right|home|end|tab|space|enter\n'
         'Font scales give 100x30, 50x15 or 33x10 text cells on the 800x480 LCD. colors lists the 16 accepted color names; foreground/background must differ. reset restores 1x white-on-black. Font/color preferences are saved in flash. Changes require an idle LCD without active or suspended apps.\n'
-        'Use dump/send/key from another console to inspect text or inject input; dump does not capture graphics. Graphical applications own the LCD while running.'),
+        'Use dump/send/key from another console to inspect text or inject input; dump does not capture graphics. Graphical applications own the LCD while running. On teensy41_power_board, on-board data GPIO4 and external NES data GPIO6 share clock2/latch3. Either controls the small dashboard, DMM and single-player games; states remain separate for future two-player apps. GPIO8 remains codec audio input. lcd small reports pads=2 plus onboard/external hex masks and reader faults.'),
     'ls': ('List files and directories.',
         'ls [-a] [-h] [PATH|PATTERN]\n'
         '-a includes dot-prefixed entries; -h prints human-readable sizes. With no path, lists the current directory. ls / shows mounted volumes.'),
@@ -338,7 +340,7 @@ OVERRIDES = {
         'session [list]\n'
         'session fg [ID]\n'
         'session close ID\n'
-        'Ctrl+Z suspends a resumable app chain; up to four suspended chains per console.\n'
+        'Ctrl+Z suspends a resumable app chain; Writer uses F12 because Ctrl+Z is Undo. Up to four suspended chains per console.\n'
         'fg resumes the most recently suspended app on this console, or the named app on its owning console.\n'
         'The owner must be at an empty shell prompt. close discards unsaved state and stops the whole chain.\n'
         'USB/Telnet disconnect closes that console’s apps; local keyboard disconnect preserves LCD sessions.\n'

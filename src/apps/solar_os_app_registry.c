@@ -1,3 +1,9 @@
+#if SK_ORGANIZER
+#include "solar_os_organizer_apps.h"
+#include "solar_os_pda_tools.h"
+#include "solar_os_puzzle_apps.h"
+#define solar_os_contacts_app solar_os_people_app
+#endif
 #if SK_DNP3
 #include "solar_os_dnp3_app.h"
 #endif
@@ -195,7 +201,7 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #elif SOLAR_OS_PACKAGE_APP_CHAT
     APP_ENTRY("chat", "provider-neutral conversation client", &solar_os_chat_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "chat [gateway|meshcore|link|conversation-id]", 1, 2),
 #endif
-#if SOLAR_OS_PACKAGE_APP_CONTACTS
+#if SOLAR_OS_PACKAGE_APP_CONTACTS || SK_ORGANIZER
     APP_ENTRY("contacts", "provider-neutral contact browser", &solar_os_contacts_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "contacts", 1, 1),
 #endif
 #if SOLAR_OS_PACKAGE_APP_AGENT
@@ -318,6 +324,14 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #endif
 #if SOLAR_OS_PACKAGE_APP_LOGIC
     APP_ENTRY("logic", "logic analyzer waveform viewer", &solar_os_logic_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "logic <pin[,pin...]> [rate] [samples] [trigger=pin]", 2, 5),
+#endif
+#if SK_ORGANIZER
+    APP_ENTRY("calendar", "appointments, repeats and reminders", &solar_os_calendar_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "calendar", 1, 1),
+    APP_ENTRY("tasks", "prioritized recurring to-do lists", &solar_os_tasks_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "tasks", 1, 1),
+    APP_ENTRY("convert", "engineering unit converter", &solar_os_convert_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "convert [VALUE FROM TO]", 1, 4),
+    APP_ENTRY("library", "offline document and manual library", &solar_os_library_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "library [DIRECTORY]", 1, 2),
+    APP_ENTRY("sudoku", "saved keyboard/NES Sudoku", &solar_os_sudoku_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "sudoku", 1, 1),
+    APP_ENTRY("mines", "saved keyboard/NES Minesweeper", &solar_os_mines_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "mines", 1, 1),
 #endif
 #if SOLAR_OS_PACKAGE_APP_READER
     APP_FILE_ENTRY("reader", "graphics text/Markdown/EPUB reader", &solar_os_reader_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "reader [--pager] <file.txt|file.md|file.epub|man:topic>", 2, 3, ".txt .text .md .markdown .epub"),
