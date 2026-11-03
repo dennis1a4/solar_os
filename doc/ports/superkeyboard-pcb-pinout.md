@@ -22,6 +22,29 @@ with the secondary backlight; do not interpret it as deliberate signal sharing.
 
 ## PCB signal assignments
 
+### Onboard NES button order (motherboard schematic)
+
+`PCBProjects_2026-10-05/Motherboard/NES_Controller.kicad_sch` connects
+the onboard switches to U12 (4021) as follows. Q7 sends D7 first.
+
+| Button | U12 input | U12 pin | Serial bit |
+| --- | --- | --- | --- |
+| Select | D7 | 1 | 0 |
+| Start | D6 | 15 | 1 |
+| A | D5 | 14 | 2 |
+| B | D4 | 13 | 3 |
+| Up | D3 | 4 | 4 |
+| Right | D2 | 5 | 5 |
+| Left | D1 | 6 | 6 |
+| Down | D0 | 7 | 7 |
+
+Firmware maps this order only for the onboard input. External NES input keeps
+standard serial order: A, B, Select, Start, Up, Down, Left, Right.
+In that schematic, onboard `NESdata` uses GPIO4 and external `NESdata2`
+uses GPIO6; both share GPIO2 clock and GPIO3 latch.
+
+### Main pin table
+
 | Pin | Function supplied | KiCad name supplied | Connection / notes |
 | --- | --- | --- | --- |
 | 0 | RGB LED WS2812B | na | ODS net-name cell is `na`; RGB_LED was in the pasted CSV. Replaces previous AmpEn0 proposal. |

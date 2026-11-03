@@ -1,6 +1,6 @@
 # Teensy / SuperKeyboard outstanding test checklist
 
-Updated 2026-10-19. **Use this as the master test queue.** Feature notes linked
+Updated 2026-11-02. **Use this as the master test queue.** Feature notes linked
 below contain procedures and historical evidence; the roadmap tracks development.
 Unchecked items are outstanding, not failed unless explicitly described as such.
 Do not check off a physical test based on simulation, injected input or a build.
@@ -697,3 +697,102 @@ and the shunt footprint/pad mapping remain outstanding, not firmware test passes
   checks with Python, FTP, Wi-Fi and DMM active; stop DMM to inspect the Power
   page. Verify NES navigation, no full-screen flashing, no stale valid readings,
   bounded I2C latency, task stack margins and storage integrity after shutdown.
+
+## IMU, magnetometer, level and compass — 2026-11-02
+
+Motherboard `Environment.kicad_sch`: U17 LSM6DSOX at I2C1 `0x6a` (SA0
+grounded), U19 MMC5983MA at `0x30`, SDA17/SCL16. IMU INT1 is GPIO22 and
+Mag INT is GPIO38; the current driver polls and leaves these GPIOs untouched.
+Enabled by `SK_MOTION=1` in `teensy41_power_board`.
+Details: [sensor pages and controls](teensy41-display.md#digital-level-and-compass).
+
+- [x] **MOTION-SW — Host acceptance:**
+  `bash scripts/ports/test_teensy41_motion_host.sh` passes for enabled/disabled
+  sensor builds: identity/configuration, signed IMU and packed 18-bit magnetic
+  decoding/scales, independent I2C failures/retry, data-ready expiry and timestamp
+  rollover, level angles/invalid acceleration, cardinal headings/field rejection,
+  calibration coverage/previous-fit preservation, zero/reset/cancel, missing
+  sensors and graphics bounds/stale-pointer clearing. Address/undefined-behavior
+  sanitizers pass (leak detection disabled under the sandbox's ptrace).
+  Small-page and dual-input host tests pass for seven-page wrap, either-source
+  sensor actions, edge-only dispatch and display ownership suppression.
+- [x] **MOTION-ABSENT — Installed image, sensors absent:** flashed the power-board
+  image, run `python3 scripts/ports/test_teensy41_motion_absent.py --log LOG.json`.
+  Level must report `IMU missing / stale`; Compass must report
+  `Magnetometer missing/stale`, without fabricated readings. Observe several
+  two-second probe retries, advancing display updates/NES scans, no SPI/reader
+  faults, sufficient monitor stack headroom, responsive USB and return to System.
+  Passed 2026-11-02: three observations per page across repeated probes;
+  Level updates 49→94 / scans 2002→2472, Compass updates 118→163 /
+  scans 2726→3196, zero SPI misses and NES faults, monitor stack headroom
+  1476 bytes. USB status text confirmed both missing-device messages; physical
+  screen appearance and real-sensor accuracy remain untested. Returned to System.
+  Capture: `/tmp/solaros-motion-absent.json`; upload:
+  `/tmp/solaros-motion-upload.log`. Installed HEX SHA256:
+  `7082fbcd80021dc02f756e1f7774527609ab3bcba1c4e018135dee6e2144f365`.
+- [ ] **IMU-1 — Assembly/identity:** verify U17 supply, decoupling, CS high, SA0
+  low and shared SDA17/SCL16 pullups/levels. Check address `0x6a`, WHO_AM_I
+  `0x6c`, register readback and data-ready operation. Confirm GPIO22/38 remain
+  unclaimed by this polling driver; inspect other consumers before using IRQs.
+- [ ] **IMU-2 — Axis and scale:** verify PCB/case axis directions on all six
+  faces (+/-1 g), approximately zero stationary angular rate and signed response
+  to known rotations. Compare pitch/roll to a reference level at 0, +/-5, +/-30
+  and near +/-90 degrees; check inverted orientation and angle wrapping.
+- [ ] **LEVEL-1 — Display/controls:** check bubble direction, range clipping,
+  green within 0.5 degrees, A relative zero/B absolute reset, either NES input,
+  seven-page navigation and no actions leaking through app/console ownership.
+  Moving/free-fall/high-acceleration input must not be shown as a valid level.
+- [ ] **MAG-1 — Assembly/identity:** verify U19 supply/CAP decoupling, CS high,
+  I2C `0x30`, product ID `0x30`, 18-bit centered decode, data-ready clear and
+  continuous 20 Hz automatic set/reset. Confirm field units and signed axes.
+- [ ] **MAG-2 — Calibration:** rotate the assembled device through all axes,
+  A start/A save, sufficient sample count and spans, inadequate-coverage refusal,
+  B cancel preserving an earlier calibration, and restart behavior (fit is RAM
+  only). Check hard-iron/diagonal scale correction against raw values. Test with
+  the final enclosure, speakers and normal operating currents.
+- [ ] **COMPASS-1 — Direction/reference:** verify package +X reference against
+  the physical forward edge and heading sense. Compare N/E/S/W and 0/360 wrap
+  with a reference magnetic compass, away from interference. Confirm the north
+  pointer, eight-point label and calibration indication. Document case mounting
+  correction if needed; do not claim true north or tilt compensation.
+- [ ] **COMPASS-2 — Invalid conditions:** tilt beyond approximately 15 degrees,
+  move the device, apply/remove magnetic interference and approach vertical field.
+  Confirm hold-flat/invalid-field messages and removal of stale graphics/readings.
+- [ ] **MOTION-RECOVERY — Independent failures/load:** with power removed before
+  rewiring, test each sensor absent alone, both absent and reconnection/restart.
+  Confirm the healthy source still updates, data older than 500 ms is hidden,
+  two-second recovery works, and shared Wire1 devices remain usable. Repeat with
+  audio/network/storage load; inspect update cadence, stack margins and SPI/reader
+  faults. App/console ownership must suppress sensor rendering and restore pages.
+
+## Two physical controller inputs — 2026-10-26
+
+GPIO4 reads the on-board U12 4021 buttons; GPIO6 (U1 symbol pin8) reads the NES
+connector directly. Clock2 and latch3 are shared. GPIO8 remains codec I2S input.
+Details: [dual input, APIs and timing](teensy41-display.md#two-physical-controller-inputs--2026-10-26).
+
+- [x] **NES2-SW — Host acceptance:** paired capture/DMA lifecycles and coherent
+  publication, matched-clock validation, either-side errors/timeouts, GPIO
+  fallback reading both streams, shutdown isolation and IRQ preservation.
+  Independent debounce, all65,536 button-state pairs, source-specific and atomic
+  pair APIs, either-source navigation/Music, merged Game Boy/keyboard controls,
+  ownership transitions and GPIO6 reservation with codec GPIO8 preserved pass.
+- [x] **NES2-READ — Live reader acceptance:** updated image flashed and USB
+  status checked across six observations. Mode `flexio-dual-dma`, two separate
+  masks, 576 completed paired scans during the observation window, zero reader
+  faults and 980 bytes of monitor stack headroom. Both masks were idle00;
+  this does not establish physical button wiring or capture phase. Image SHA256:
+  `762067e574d9c315109b71c7ae687f455ede6ddee8199683a43d03e03f47ab40`.
+- [ ] **NES2-1 — Electrical/timing:** connect both inputs as drawn, probe shared
+  latch/clock plus data4/data6, and confirm bit order/settling and FlexIO1/2 sample
+  phase at startup and under audio/SPI/storage load. Verify100Hz scans, no extra
+  connector clock/latch outputs, and no reader faults/fallback in normal use.
+- [ ] **NES2-2 — Physical independence:** exercise all eight buttons separately
+  on each source; `lcd small` must show the correct independent mask. Hold a
+  button on both, release one, and verify the other stays held. Repeat different
+  simultaneous combinations, bounce and unplug/replug of just the external pad.
+- [ ] **NES2-3 — Navigation/apps:** navigate dashboard pages, Music transport,
+  DMM hold/range/history and single-player Game Boy with either source and both.
+  Check keyboard coexistence, no phantom navigation after apps close, and no
+  stuck buttons during source removal. Separately verify codec capture/playback
+  still works on GPIO8 and DMA/CPU latency under load remains acceptable.

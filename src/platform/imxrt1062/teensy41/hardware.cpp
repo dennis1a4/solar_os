@@ -14,7 +14,10 @@ esp_err_t sk_resources_begin() {
     struct Fixed {unsigned pin;const char *owner,*label;};
     using namespace superkeyboard;
     const Fixed fixed[]={
-        {2,"board","shift clock"},{3,"board","NES latch"},{4,"board","NES data"},
+        {2,"board","shared NES clock"},{3,"board","shared NES latch"},{4,"board","on-board buttons data"},
+#if SK_NES_CONTROLLER_DATA_PIN >= 0
+        {nes_controller_data,"board","external NES data"},
+#endif
         #if SK_POWER_PATH
         {power_expander_int,"power-path","MCP23008 INT_N"},
 #elif SK_USB_HOST_POWER

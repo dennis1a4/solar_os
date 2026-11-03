@@ -18,7 +18,7 @@ else
   profile_flags=(-DSK_UART_CONSOLE=1 -DSK_AMPLIFIER_SHUTDOWN_PIN=40)
 fi
 if [[ "$wiring" == power ]]; then
-  profile_flags+=(-DSK_POWER_PATH=1 -DSK_SLOT2_CS=10)
+  profile_flags+=(-DSK_POWER_PATH=1 -DSK_SLOT2_CS=10 -DSK_NES_CONTROLLER_DATA_PIN=6)
 fi
 c++ -std=c++17 -g -O1 -Wall -Wextra -Werror -Wno-misleading-indentation -fsanitize=address,undefined \
   -DSK_HW_RESOURCES=1 -DSOLAR_OS_BUS_PORTABLE=1 -DSK_PRIMARY_RA8875=1 "${display_flags[@]}" \

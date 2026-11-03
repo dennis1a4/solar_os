@@ -6,6 +6,7 @@
 #include "small_monitor_row.h"
 #if SK_SECONDARY_ST7735
 #include "nes_flexio.h"
+#include "small_motion.h"
 #if SK_WIRELESS_BRIDGE && SK_ETHERNET
 #include "wifi_network.h"
 #endif
@@ -35,25 +36,32 @@ static uint32_t small_generation;
 static uint32_t small_updates, small_cpu, small_elapsed, small_misses;
 static char small_lines[9][27];
 static SmallNavigation small_nav;
-static uint8_t nes_held;
+static uint8_t nes_held; // Combined compatibility state for single-player apps.
+static NesInputs nes_inputs;
 DMAMEM static sk_small_music_t small_music;
 static uint32_t small_music_at;
 static bool small_music_toggle;
+static uint8_t small_motion_buttons;
 
 
 static void small_monitor_run(void *) {
+    SmallMotion motion;
     SmallMonitorRow previous[9]{};
     uint32_t last_time=portGET_RUN_TIME_COUNTER_VALUE();
     uint32_t last_idle=ulTaskGetIdleRunTimeCounter();
     uint32_t storage_at=millis()-30000;
     uint32_t generation=0;
+    uint32_t refresh_ms=1000;
     for (;;) {
-        ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(1000));
+        ulTaskNotifyTake(pdTRUE,pdMS_TO_TICKS(refresh_ms));
         taskENTER_CRITICAL();
         const bool enabled=small_enabled && !small_owned && !small_console;
         const uint32_t current_generation=small_generation;
         const unsigned page=small_nav.page, slot=small_nav.slot;
+        const uint8_t motion_buttons=small_motion_buttons;
+        small_motion_buttons=0;
         taskEXIT_CRITICAL();
+        refresh_ms=page>=5?100:1000;
         if(!enabled) {
             for(auto &row:previous) row.valid=false;
             last_time=portGET_RUN_TIME_COUNTER_VALUE();
@@ -143,6 +151,8 @@ static void small_monitor_run(void *) {
 #else
                 strcpy(lines[2],"Network unavailable");
 #endif
+            } else if(page==5 || page==6) {
+                motion.update(page,motion_buttons,millis(),lines);
             } else if(page==4) {
 #if SK_POWER_PATH
                 sk_power_path_lines(lines);
@@ -192,6 +202,7 @@ static void small_monitor_run(void *) {
         }
         unsigned misses=0;
         for(unsigned i=0;i<9;++i) {
+            if(page>=5 && i>=4 && i<=7)continue;
             uint16_t color=(i==0 || i==1 || i==8)?ST7735_CYAN:ST7735_WHITE;
             if(page==0 && i==2 && memory.dtcm.free<SOLAR_OS_MEMORY_DTCM_LOW_BYTES) color=ST7735_YELLOW;
             if(page==0 && i==2 && memory.dtcm.free<SOLAR_OS_MEMORY_DTCM_CRITICAL_BYTES) color=ST7735_RED;
@@ -205,6 +216,10 @@ static void small_monitor_run(void *) {
                 for(auto &row:previous) row.valid=false;
             }
             previous[i].draw(secondary,i,lines[i],color,i==8?ST7735_BLUE:ST7735_BLACK);
+            sk_spi_unlock(superkeyboard::secondary_spi);
+        }
+        if(page>=5 && sk_spi_lock(superkeyboard::secondary_spi)) {
+            if(!small_owned && generation==small_generation)motion.draw(secondary,page);
             sk_spi_unlock(superkeyboard::secondary_spi);
         }
         taskENTER_CRITICAL();
@@ -231,11 +246,13 @@ void sk_small_monitor_status(char *out,size_t size,int enabled) {
     const uint32_t updates=small_updates,cpu=small_cpu,elapsed=small_elapsed,misses=small_misses;
     taskEXIT_CRITICAL();
     const uint32_t runtime=small_task?ulTaskGetRunTimeCounter(small_task):0;
-    snprintf(out,size,"small=%s updates=%lu cpu=%lu.%lu%% update-us=%lu runtime-us=%lu spi-misses=%lu stack-free=%lu nes=%s nes-scans=%lu nes-faults=%lu",
+    uint8_t pads[2];sk_small_controller_snapshot(pads);
+    snprintf(out,size,"small=%s updates=%lu cpu=%lu.%lu%% update-us=%lu runtime-us=%lu spi-misses=%lu stack-free=%lu nes=%s nes-scans=%lu nes-faults=%lu pads=%u onboard=%02x external=%02x",
         small_task?(owned?"owned":console?"console":active?"on":"off"):"unavailable",(unsigned long)updates,(unsigned long)(cpu/10),(unsigned long)(cpu%10),
         (unsigned long)elapsed,(unsigned long)runtime,(unsigned long)misses,
         small_task?(unsigned long)(uxTaskGetStackHighWaterMark(small_task)*sizeof(StackType_t)):0UL,
-        nes_reader::mode,(unsigned long)nes_reader::scans,(unsigned long)nes_reader::faults);
+        nes_reader::mode,(unsigned long)nes_reader::scans,(unsigned long)nes_reader::faults,sk_small_controller_count(),
+        pads[0],pads[1]);
     for(unsigned i=0;i<9;++i) {
         const size_t used=strlen(out);
         if(used<size) snprintf(out+used,size-used,"\n%s",lines[i]);
@@ -249,7 +266,8 @@ void sk_small_monitor_status(char *out,size_t size,int enabled) {
 extern "C" bool sk_small_acquire() {
 #if SK_SECONDARY_ST7735
     if(!small_task || !sk_spi_lock(superkeyboard::secondary_spi)) return false;
-    const bool available=!small_owned;
+    const bool available=!small_owned
+        ;
     if(available) {
         taskENTER_CRITICAL(); small_owned=true; ++small_owner_generation; taskEXIT_CRITICAL();
         secondary.fillScreen(ST7735_BLACK);
@@ -308,8 +326,8 @@ extern "C" bool sk_small_music_take_toggle() {
 }
 extern "C" bool sk_small_page(unsigned page) {
 #if SK_SECONDARY_ST7735
-    if(page>=5 || !small_task) return false;
-    taskENTER_CRITICAL(); small_nav.page=page; ++small_generation; taskEXIT_CRITICAL();
+    if(page>=sk_small_page_count || !small_task) return false;
+    taskENTER_CRITICAL(); small_nav.page=page; small_motion_buttons=0; ++small_generation; taskEXIT_CRITICAL();
     xTaskNotifyGive(small_task);
     return true;
 #else
@@ -325,22 +343,28 @@ extern "C" void sk_small_input_poll() {
     if(sampling) { taskEXIT_CRITICAL(); return; }
     sampling=true;
     taskEXIT_CRITICAL();
-    uint8_t raw=0;
+    uint8_t raw=0,external=0;
     uint32_t at=now;
-    if(!nes_reader::poll(now,raw,at)) {
+    if(!nes_reader::poll(now,raw,external,at)) {
         taskENTER_CRITICAL(); sampling=false; taskEXIT_CRITICAL();
         return;
     }
-    // A missing controller floats high; a grounded data line is not eight keys.
-    const uint8_t buttons=raw==255?0:sk_nes_buttons(raw);
     taskENTER_CRITICAL();
+    nes_inputs.update(raw,external,at);
+    const uint8_t buttons=nes_inputs.combined();
     const unsigned old_page=small_nav.page,old_slot=small_nav.slot;
-    const uint8_t pressed=small_nav.update(buttons,at,small_owned || !small_enabled || small_console);
-    nes_held=small_nav.held;
+    const uint8_t pressed=small_nav.update_debounced(buttons,small_owned || !small_enabled || small_console
+        );
+    nes_held=buttons;
+    if(!small_owned && !small_console && small_enabled && old_page==small_nav.page && old_page>=5) {
+        small_motion_buttons|=pressed&3;
+        if((pressed&3) && small_task)xTaskNotifyGive(small_task);
+    }
     sampling=false;
     if(small_nav.page==2 && old_page==2 && (pressed&1) && small_music.active && uint32_t(now-small_music_at)<2000)
         small_music_toggle=true;
     const bool changed=old_page!=small_nav.page || old_slot!=small_nav.slot;
+    if(old_page!=small_nav.page)small_motion_buttons=0;
     if(changed) ++small_generation;
     taskEXIT_CRITICAL();
     if(changed || (pressed&1)) xTaskNotifyGive(small_task);
@@ -352,7 +376,7 @@ extern "C" void sk_small_input_stop() {
     // Final power-cut path: scheduling cannot resume a partially executed poll.
     taskENTER_CRITICAL();
     nes_reader::stop();
-    nes_held=0;
+    nes_held=0;nes_inputs=NesInputs{};
     taskEXIT_CRITICAL();
 #endif
 }
@@ -364,6 +388,29 @@ extern "C" uint8_t sk_small_buttons() {
 #else
     return 0;
 #endif
+}
+
+extern "C" unsigned sk_small_controller_count() {
+#if SK_SECONDARY_ST7735
+    return SK_NES_CONTROLLER_DATA_PIN>=0?2:1;
+#else
+    return 0;
+#endif
+}
+extern "C" void sk_small_controller_snapshot(uint8_t buttons[2]) {
+    if(!buttons)return;
+#if SK_SECONDARY_ST7735
+    taskENTER_CRITICAL();
+    buttons[0]=nes_inputs.held[0];buttons[1]=nes_inputs.held[1];
+    taskEXIT_CRITICAL();
+#else
+    buttons[0]=buttons[1]=0;
+#endif
+}
+extern "C" uint8_t sk_small_controller_buttons(unsigned controller) {
+    if(controller>=sk_small_controller_count())return 0;
+    uint8_t buttons[2];sk_small_controller_snapshot(buttons);
+    return buttons[controller];
 }
 
 #if SK_DMM && SK_SECONDARY_ST7735

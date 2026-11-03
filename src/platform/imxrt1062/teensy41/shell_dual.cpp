@@ -600,14 +600,14 @@ extern "C" void solar_os_shell_cmd_lcd(solar_os_context_t *ctx,int argc,char **a
         return;
     }
     if(argc==4 && !strcmp(argv[1],"small") && !strcmp(argv[2],"page")) {
-        const char *names[]={"system","network","music","mesh","power"};
-        for(unsigned page=0;page<5;++page) if(!strcmp(argv[3],names[page])) {
+        const char *names[]={"system","network","music","mesh","power","level","compass"};
+        for(unsigned page=0;page<sizeof(names)/sizeof(names[0]);++page) if(!strcmp(argv[3],names[page])) {
             io->command_status=sk_small_page(page)?0:1;
             solar_os_shell_io_writeln(io,io->command_status?"Small display unavailable":names[page]);
             return;
         }
         io->command_status=2;
-        solar_os_shell_io_writeln(io,"usage: lcd small page system|network|music|mesh|power"); return;
+        solar_os_shell_io_writeln(io,"usage: lcd small page system|network|music|mesh|power|level|compass"); return;
     }
     if(argc>=2 && !strcmp(argv[1],"small")) {
         int enabled=-1;

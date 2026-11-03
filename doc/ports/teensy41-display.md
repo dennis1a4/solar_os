@@ -222,6 +222,126 @@ details come from the normal network poll, without extra bridge requests.
 
 The `teensy41_power_board` profile adds `lcd small page power` with common-path
 voltage/current/watts, three valid inputs, USB-PD settings, host status and saved
-current-trip threshold. NES Left/Right cycles five pages. Missing power hardware
+current-trip threshold. NES Left/Right cycles seven pages, including Level and
+Compass. Missing power hardware
 shows `unconnected`; see [power path](teensy41-power-path.md) for GPIO assignments
 and the direct hardware overcurrent shutdown behavior.
+
+## Digital level and compass
+
+The `teensy41_power_board` profile enables `SK_MOTION=1` for the motherboard
+`Environment.kicad_sch`: U17 LSM6DSOX (SA0 grounded, I2C address `0x6a`) and
+U19 MMC5983MA (address `0x30`). Both use Wire1, SDA GPIO17 / SCL GPIO16, with
+CS tied high for I2C. The schematic routes IMU INT1 to GPIO22 and magnetic INT
+to GPIO38; this driver polls data-ready registers and does not configure those
+GPIOs. BME280 is independent and is not changed.
+
+Open `lcd small page level` or `lcd small page compass`, or use NES Left/Right.
+Select returns home. Both onboard and external controllers support the controls.
+Sensor pages refresh at 10 Hz; other dashboard pages retain their 1 Hz refresh.
+They yield the display to apps and the console using the existing ownership rules.
+
+Level shows roll/pitch in degrees and a centered bubble (green within 0.5 degrees
+on both axes). A sets the current angle as a relative zero; B restores absolute
+level. Keep still: readings outside 0.85–1.15 g are rejected. Roll/pitch use the
+LSM6DSOX package X/Y/Z frame, not a case mounting calibration.
+
+Compass shows **magnetic**, not true, north, with an eight-point direction and
+north pointer. Hold the PCB flat and still (about 15 degrees maximum tilt).
+The reference is the MMC5983MA package +X direction; heading increases clockwise
+with +Y treated as right. The PCB places U17 at 0 degrees and U19 at 90 degrees;
+the compass deliberately uses a flat measurement rather than assuming their axes
+align for tilt compensation. Confirm the forward edge and heading sense on the
+assembled board before relying on case markings.
+
+On Compass, press A, slowly rotate the complete device through all orientations,
+then A again to save. At least 50 fresh samples and 20 microtesla span on every
+axis are required; inadequate coverage keeps calibration running. B cancels a
+new calibration and keeps any previous solution. Calibration applies hard-iron
+offset and diagonal scale correction, lasts for this boot, and does not correct
+arbitrary cross-axis distortion. The page labels uncalibrated readings. Keep away
+from magnets, speakers, and high-current wiring; implausible field readings are
+suppressed. No declination correction is applied.
+
+The transport uses the existing I2C mutex per transaction and never holds SPI
+while reading sensors. LSM6DSOX uses 52 Hz accelerometer/gyro outputs, +/-2 g
+and +/-250 dps ranges, block-data update and auto-increment. MMC5983MA uses
+18-bit output, automatic set/reset and continuous 20 Hz measurements. Each
+device checks its identity, recovers independently at two-second intervals, and
+expires data after 500 ms. Missing or stale hardware displays a status message
+and clears the bubble/pointer. Sensor initialization is lazy, on opening a sensor
+page; builds without `SK_MOTION` show that sensors are disabled.
+
+Register references: [ST LSM6DSOX datasheet](https://www.st.com/resource/en/datasheet/lsm6dsox.pdf)
+and [MEMSIC MMC5983MA datasheet](https://www.memsic.com/Public/Uploads/uploadfile/files/20220119/MMC5983MADatasheetRevA.pdf).
+Run `bash scripts/ports/test_teensy41_motion_host.sh` for register, decoding,
+failure/recovery, angle, calibration and display-control/bounds tests.
+Hardware heading orientation, noise and accuracy remain bench acceptance items.
+
+## Two physical controller inputs — 2026-10-26
+
+The `teensy41_power_board` profile now reads **on-board data on GPIO4** and
+**external NES data on GPIO6**, sharing **clock2 / latch3**. GPIO6 is U1's KiCad
+symbol/package pin8; Teensy GPIO8 remains the SGTL5000 audio input. The saved
+schematic and user confirmation establish this distinction. No jumper selection
+is needed. Older profiles keep their original single data input and USB fault
+pin6 allocation; `SK_NES_CONTROLLER_DATA_PIN` defaults to disabled outside the
+power-board profile. Resource reservations reject GPIO reuse and compile checks
+reject overlap with codec pins or the legacy USB control pins.
+
+Each source has its own 20ms debounce and held mask. The dashboard, Music page,
+DMM and current single-player Game Boy input use their bitwise union: either
+source works, simultaneous presses combine, and releasing one source cannot
+release a button still held by the other. Owned displays suppress dashboard
+navigation while the physical states continue updating. An unplugged data line
+is pulled high/idle. The existing grounded-line filter applies independently,
+so an invalid stream cannot suppress the healthy source.
+
+Future two-player applications can include `small_display.h` and use:
+
+- `sk_small_controller_count()` — supported physical input slots (not presence
+  detection); two in the power-board profile, one in older single-input builds.
+- `sk_small_controller_snapshot(uint8_t buttons[2])` — one atomic pair snapshot;
+  index0 is the on-board buttons and index1 the external NES controller.
+- `sk_small_controller_buttons(index)` — one source; unsupported indices return0.
+- `sk_small_buttons()` — merged physical mask retained for existing apps.
+
+Masks use A=0x01, B=0x02, Select=0x04, Start=0x08, Right=0x10, Left=0x20,
+Up=0x40 and Down=0x80. These APIs never include or consume keyboard events.
+Game Boy still adds its keyboard mapping separately. This makes the two physical
+inputs available independently; it does not add multiplayer to the Game Boy
+emulator or an existing single-player game.
+
+### Capture timing and diagnostics
+
+Both inputs are captured in the same 100Hz scan. GPIO2/3/4 use FlexIO1; GPIO6 uses
+FlexIO2. The primary block generates the shared physical latch/clock waveform.
+The secondary block has an input shifter, DMA buffer and internal sampling timer
+with **exactly the same slot period**. An internal dummy TX triggers that timer
+without driving another pin. Adjacent peripheral writes launch both timers with
+IRQs masked only for those writes. No per-edge CPU interrupts or busy waits are
+added to the normal path. A pair is published only when both captures complete;
+a failed/timed-out side makes the reader fall back to GPIO for both, still using
+one common latch and eight clock pulses. Busy blocks are not retuned, and another
+driver's shifters/timers are not released. Each DMA buffer has its own cache line.
+
+`lcd small` reports `nes=flexio-dual-dma`, scan/fault counters, `pads=2`, and
+separate hex `onboard`/`external` masks. This lets physical testing distinguish the
+sources without a game or synthetic input. Check idle=00, then each source
+separately and simultaneously; unsupported/unplugged input is not a second
+player presence signal. `lcd small input` remains the existing Game Boy timing
+trace of the final app input.
+
+Host checks: `python3 tests/ports/test_teensy41_nes_flexio.py` covers both DMA
+blocks, all serial bit patterns, matched clock/resource failures, either-side
+errors/timeouts, fallback and IRQ preservation. The navigation test covers all
+65,536 input pairs and independent debounce/holds. `python3
+tests/ports/test_teensy41_dual_input.py` exercises the production publication,
+navigation/Music, Game Boy/keyboard merge, ownership and shutdown APIs. Real
+buttons and cross-block sampling phase still require the physical tests in the
+[master checklist](teensy41-test-checklist.md#two-physical-controller-inputs--2026-10-26).
+
+The updated power-board image was built/flashed and read back over USB: both DMA
+captures completed continuously (`flexio-dual-dma`, `pads=2`), with zero reader
+faults across six observations/576 paired scans. Idle masks were00/00; physical
+presses, shared-clock timing and concurrent-load validation remain pending.

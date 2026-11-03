@@ -16,7 +16,12 @@ bool sk_small_music_take_toggle(void);
 bool sk_small_page(unsigned page);
 void sk_small_input_poll(void);
 void sk_small_input_stop(void);
-// Debounced physical NES state only (never consumes a keyboard event).
+// Debounced physical inputs (never consume keyboard events). Sources are
+// 0=on-board buttons, 1=external NES. Existing apps use their combined mask.
+unsigned sk_small_controller_count(void);
+// Atomic pair snapshot, indexed as above; disabled sources return zero.
+void sk_small_controller_snapshot(uint8_t buttons[2]);
+uint8_t sk_small_controller_buttons(unsigned controller);
 uint8_t sk_small_buttons(void);
 // One graphics owner at a time. The dashboard pauses while claimed.
 bool sk_small_acquire(void);

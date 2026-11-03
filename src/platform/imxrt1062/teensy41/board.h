@@ -17,6 +17,9 @@
 #ifndef SK_MOTOR_ENABLE_PIN
 #define SK_MOTOR_ENABLE_PIN 10
 #endif
+#ifndef SK_NES_CONTROLLER_DATA_PIN
+#define SK_NES_CONTROLLER_DATA_PIN -1
+#endif
 #ifndef SK_SLOT2_CS
 #define SK_SLOT2_CS 9
 #endif
@@ -34,9 +37,21 @@ static_assert(!SK_UART_CONSOLE || (SK_AMPLIFIER_SHUTDOWN_PIN != 0 && SK_AMPLIFIE
 namespace superkeyboard {
 constexpr uint8_t console_rx = 0, console_tx = 1;
 constexpr uint8_t shift_clock = 2, nes_latch = 3, nes_data = 4;
+constexpr int nes_controller_data = SK_NES_CONTROLLER_DATA_PIN;
+static_assert(nes_controller_data >= -1 && nes_controller_data <= 41, "Invalid NES controller GPIO");
+static_assert(nes_controller_data != shift_clock && nes_controller_data != nes_latch && nes_controller_data != nes_data, "NES data pins must be independent");
+#if SK_USB_HOST_POWER && !SK_POWER_PATH
+static_assert(nes_controller_data != 5 && nes_controller_data != 6, "NES input conflicts with legacy USB power wiring");
+#endif
 constexpr uint8_t usb_host_enable = 5, usb_host_fault = 6; // Legacy direct wiring.
 constexpr uint8_t power_expander_int = 5; // Revised power PCB.
+#if SK_POWER_PATH
+static_assert(nes_controller_data != power_expander_int, "NES input conflicts with power expander interrupt");
+#endif
 constexpr uint8_t audio_out = 7, audio_in = 8;
+#if SK_AUDIO_SGTL5000
+static_assert(nes_controller_data != audio_in && nes_controller_data != audio_out, "NES input conflicts with codec I2S");
+#endif
 constexpr uint8_t primary_cs = SK_PRIMARY_CS, primary_reset = SK_PRIMARY_RESET;
 constexpr int primary_wait = SK_PRIMARY_WAIT, primary_backlight = SK_PRIMARY_BACKLIGHT;
 constexpr int motor_enable = SK_MOTOR_ENABLE_PIN;
