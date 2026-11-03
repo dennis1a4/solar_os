@@ -1,3 +1,6 @@
+#if SK_DNP3
+#include "solar_os_dnp3_app.h"
+#endif
 #if SK_MESH_CLIENT
 #include "solar_os_mesh_view.h"
 #endif
@@ -285,6 +288,9 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #else
     APP_ENTRY("less", "text file pager", &solar_os_less_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "less <file>", 2, 2),
 #endif
+#endif
+#if SK_DNP3
+    APP_ENTRY("dnp3", "DNP3 traffic bridge and simulator", &solar_os_dnp3_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "dnp3 [--demo] [--config FILE]", 1, 4),
 #endif
 #if SOLAR_OS_PACKAGE_APP_MQTT_EXPLORER
     APP_ENTRY("mqttx", "MQTT topic and message explorer", &solar_os_mqtt_explorer_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "mqttx HOST[:PORT] [--auth FILE] [--log NEWFILE]", 2, 6),

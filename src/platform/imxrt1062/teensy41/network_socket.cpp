@@ -64,6 +64,7 @@ DMAMEM static uint8_t request_storage[sizeof(sk_net_request)], reply_storage[siz
 struct Slot {
     EthernetClient client; int handle=0, failure=0; bool started=false, service=false;
     udp_pcb *udp=nullptr; uint8_t *rx=nullptr, *tx=nullptr;
+    bool half_close=false, read_eof=false, write_eof=false;
     bool packet=false, rx_held=false; size_t rx_len=0, tx_len=0, tx_expected=0;
     uint8_t peer[4], target[4]; uint16_t peer_port=0, target_port=0;
 };
@@ -81,7 +82,18 @@ static void udp_receive(void *arg,udp_pcb *,pbuf *p,const ip_addr_t *ip,u16_t po
     }
     if (p) pbuf_free(p);
 }
+#if SK_DNP3
+struct PendingFin {uintptr_t id=0;uint16_t port=0;};
+static PendingFin pending_fin[16];
+extern "C" void sk_net_tcp_forget(void *pcb) {
+    for(auto &p:pending_fin)if(p.id==reinterpret_cast<uintptr_t>(pcb))p=PendingFin{};
+}
+#endif
 static void release_slot(Slot &s,bool abort) {
+#if SK_DNP3
+    sk_net_tcp_forget(reinterpret_cast<void *>(s.client.connectionId()));
+#endif
+    s.half_close=s.read_eof=s.write_eof=false;
     if (s.udp) { udp_remove(s.udp); s.udp=nullptr; }
     solar_os_memory_free(s.rx); solar_os_memory_free(s.tx); s.rx=s.tx=nullptr;
     if (abort || s.client.connecting()) s.client.abort(); else s.client.close();
@@ -98,10 +110,25 @@ struct FtpListener {
     EthernetServer server{0};
     EthernetClient pending;
     int handle=0;
-    bool failed=false;
+    bool failed=false,half_close=false;
 };
 static FtpListener ftp_listeners[2];
 static unsigned ftp_generation;
+#endif
+#if SK_DNP3
+extern "C" bool sk_net_tcp_fin(void *pcb) {
+    uintptr_t id=reinterpret_cast<uintptr_t>(pcb);
+    for(auto &s:slots)if(s.handle&&s.half_close&&s.client.connectionId()==id){s.read_eof=true;return true;}
+#if SK_FTP
+    uint16_t port=0;ip_addr_t address;
+    if(altcp_get_tcp_addrinfo(static_cast<altcp_pcb *>(pcb),1,&address,&port)!=ERR_OK)return false;
+    for(auto &listener:ftp_listeners)if(listener.handle&&!listener.failed&&listener.half_close&&listener.server.port()==port) {
+        for(auto &p:pending_fin)if(p.id==id)return true;
+        for(auto &p:pending_fin)if(!p.id){p.id=id;p.port=port;return true;}
+    }
+#endif
+    return false;
+}
 #endif
 static unsigned next_handle;
 static bool was_ready;
@@ -129,6 +156,9 @@ extern "C" int sk_net_call(sk_net_request *request, sk_net_reply *reply) {
     return result;
 }
 extern "C" void sk_net_transport_reset() {
+#if SK_DNP3
+    for(auto &p:pending_fin)p=PendingFin{};
+#endif
 #if SK_NET_DIAGNOSTICS
     ping_reset();
 #endif
@@ -188,7 +218,7 @@ extern "C" void sk_net_transport_poll(int ready) {
         for(auto &listener:ftp_listeners)if(!listener.handle) {
             if(!listener.server.beginWithReuse(q.port)){r.error=EADDRINUSE;break;}
             listener.handle=int((++ftp_generation & 0x3fffffff)+1);
-            listener.failed=false;r.value=listener.handle;r.port=listener.server.port();r.error=0;break;
+            listener.failed=false;listener.half_close=q.length==1;r.value=listener.handle;r.port=listener.server.port();r.error=0;break;
         }
         break;
     }
@@ -197,7 +227,10 @@ extern "C" void sk_net_transport_poll(int ready) {
         for(auto &entry:ftp_listeners)if(entry.handle==q.handle && q.handle)listener=&entry;
         if(!listener){r.error=EBADF;break;}
         if(q.op==SK_NET_FTP_END) {
-            listener->pending.abort();listener->server.end();listener->handle=0;break;
+#if SK_DNP3
+            for(auto &p:pending_fin)if(p.port==listener->server.port())p=PendingFin{};
+#endif
+            listener->pending.abort();listener->server.end();listener->handle=0;listener->half_close=false;break;
         }
         if(!ready || listener->failed){r.error=ENETDOWN;break;}
         if(!listener->pending)listener->pending=listener->server.accept();
@@ -211,6 +244,10 @@ extern "C" void sk_net_transport_poll(int ready) {
         entry.handle=int((++next_handle & 0x3fffffff)+1);
         entry.failure=0;entry.started=entry.service=true;
         entry.packet=entry.rx_held=false;
+        entry.half_close=listener->half_close;entry.read_eof=entry.write_eof=false;
+#if SK_DNP3
+        for(auto &p:pending_fin)if(p.id==entry.client.connectionId()){entry.read_eof=true;p=PendingFin{};}
+#endif
         r.value=entry.handle;r.port=entry.client.remotePort();
         auto ip=entry.client.remoteIP();for(unsigned i=0;i<4;++i)r.ip[i]=ip[i];
         break;
@@ -288,7 +325,7 @@ extern "C" void sk_net_transport_poll(int ready) {
         if (q.op==SK_NET_OPEN && legacy>=4) break;
         for (auto &slot:slots) if (!slot.handle) {
             slot.handle=int((++next_handle & 0x3fffffff) + 1);
-            slot.failure=0; slot.started=false; slot.packet=slot.rx_held=false;
+            slot.failure=0; slot.started=false;slot.half_close=slot.read_eof=slot.write_eof=false; slot.packet=slot.rx_held=false;
             slot.service=q.op==SK_NET_SERVICE_OPEN;
             slot.client.setConnectionTimeoutEnabled(false);
             r.value=slot.handle; r.error=0;
@@ -371,10 +408,16 @@ extern "C" void sk_net_transport_poll(int ready) {
             s->started=true;
             if (!s->client.connect(IPAddress(q.ip),q.port)) r.error=errno ? errno : ECONNREFUSED;
             break;
+        case SK_NET_HALF_CLOSE:
+            if(s->udp){r.error=EINVAL;break;}s->half_close=true;break;
+        case SK_NET_CLOSE_OUTPUT:
+            if(!s->started){r.error=ENOTCONN;break;}
+            s->client.closeOutput();s->write_eof=true;break;
         case SK_NET_CONNECTED:
             r.error=s->client.connecting() ? EAGAIN : (s->client.connected() ? 0 : ECONNREFUSED);
             break;
         case SK_NET_SEND: {
+            if(s->write_eof){r.error=EPIPE;break;}
             if (!s->started) { r.error=ENOTCONN; break; }
             if (!s->client.connected()) { r.error=EPIPE; break; }
             int space=s->client.availableForWrite();
@@ -391,7 +434,7 @@ extern "C" void sk_net_transport_poll(int ready) {
                 r.value=s->client.read(r.data,std::min(available,q.length));
                 if (r.value<0) r.error=ECONNRESET;
             }
-            else if (s->client.connected() || s->client.connecting()) r.error=EAGAIN;
+            else if (!s->read_eof && (s->client.connected() || s->client.connecting())) r.error=EAGAIN;
             // A closed peer with no buffered bytes is EOF (value=0).
             break;
         }

@@ -796,3 +796,30 @@ Details: [dual input, APIs and timing](teensy41-display.md#two-physical-controll
   Check keyboard coexistence, no phantom navigation after apps close, and no
   stuck buttons during source removal. Separately verify codec capture/playback
   still works on GPIO8 and DMA/CPU latency under load remains acceptable.
+
+### DNP3 lab (power-board build)
+
+- [ ] Run `bash scripts/ports/test_teensy41_dnp3_host.sh`: independent CRC oracle,
+  transparent forwarding/partial writes, transactional rewrite fallback, packed
+  binary and floating analog edits, directional faults, malformed objects,
+  transport-fragmented class-0 reads, SBO/direct controls, expired selects,
+  duplicate requests/FCB suppression, profiles and background log cleanup.
+- [ ] Run `python3 scripts/ports/test_teensy41_dnp3.py --log /tmp/dnp3-live.json`
+  with idle LCD, exclusive USB, SD and Ethernet. This uses only host-owned test
+  connections and a unique SD fixture; it leaves the internal demo visible.
+- [ ] Physical serial pass-through: connect known bench endpoints through UART7
+  and UART8 with appropriate transceivers; test both directions, mismatched baud
+  settings, supported parity/stop-bit modes, sustained throughput/backpressure,
+  corrupt frames and reconnect. Verify UART leases reject occupied wireless slots.
+- [ ] Check RS-232/RS-485 electrical levels and wiring; RS-485 automatic DE/RE
+  control is not implemented. GPIO UART pins are 3.3V only.
+- [ ] Interoperate master/outstation simulation with an independent DNP3 stack
+  over real serial hardware. Verify class-0 reads, link RESET/STATUS, confirmed
+  link retransmission, application confirmations and successful/rejected controls.
+- [ ] Verify live control-address/status edits on supported single-frame objects,
+  original payload retained on fragmented/unknown/authenticated messages,
+  directional fault counters and received-versus-transmitted audit records.
+- [ ] Exercise SD full/write failure and long capture with explicit log_lost
+  counts, concurrent Python/FTP, retained sessions, USB disconnect and app closure.
+  Simulator is a documented subset; secure authentication, event queues,
+  application fragmentation and time synchronization are not supported.

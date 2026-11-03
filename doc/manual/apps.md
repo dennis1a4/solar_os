@@ -2155,3 +2155,108 @@ Shows text/packet activity, channel/direct scope, RSSI/SNR when available, and
 local queued/radio accepted/delivery events. Escape exits without disconnecting
 the radio. Each view has independent bounded history. See `man mesh` for wiring
 and protocol limits. Radio hardware testing is pending.
+
+## dnp3
+
+DNP3 serial/TCP traffic bridge, decoder, master and outstation simulator for the
+Teensy power-board build. `dnp3` opens stopped; `dnp3 --demo` runs an internal
+master/outstation pair without opening hardware. `dnp3 --config /sd/dnp3.cfg`
+loads settings without starting transport.
+
+A faces the master and B faces the outstation. Use Tab for Traffic, Settings,
+Points, Rules/faults and Help. `s` starts/stops, space freezes only the view,
+`x` includes raw hex, arrows scroll, `:` enters a command, `?` opens help and
+`q` or Ctrl+] exits. Suspending retains the worker and logging in the background.
+
+Enter these commands after pressing `:` (Enter executes):
+
+```
+mode bridge
+a serial uart7 9600 8n1
+b serial uart8 9600 8n1
+addresses 1 1024
+start
+stop
+mode master
+b tcp connect 192.168.1.10 20000
+interval 1000
+timeout 2000
+start
+poll
+control binary 4 1 sbo
+control analog 2 125 direct
+```
+
+Serial ports
+are uart7 (RX28/TX29), uart8 (RX34/TX35), and uart3 (RX15/TX14); uart3 conflicts
+with the main display. UART leases prevent conflicts with wireless/mesh modules.
+Both ports share the service worker but retain independent baud/framing settings.
+Framing: 8n1, 7e1, 7o1, 8e1, 8o1 and corresponding two-stop-bit variants. Pins are
+3.3V UART; use the appropriate external RS-232/RS-485 transceiver. Automatic
+RS-485 direction control is not implemented. TCP uses the wired Ethernet service;
+client and listener endpoints can be mixed with serial. Example listener:
+`a tcp listen 20000`. Master mode uses B only; outstation mode uses A only.
+TCP listeners share the two dynamic listener slots with FTP. Restart explicitly
+after a disconnect or transport error.
+
+Outstation settings: `points 32`, `point bi 0 1`, `point ai 0 -123 1`,
+`point bo 0 0`, `point ao 0 456`. Flags are optional (default online=1).
+`addresses MASTER OUTSTATION` sets link addresses, `interval 0` disables automatic
+master scans, and `timeout MS` sets response/select timeout. Endpoints, role,
+addresses and point count require stopped transport. Points/rules/faults can
+change live.
+
+Directional bridge rewrite examples:
+
+```
+rule add link a2b dst 1024 200
+rule add link b2a src 200 1024
+rule add control a2b 4 12
+rule add control b2a 12 4
+rule add binary b2a 7 1
+rule add analog b2a 3 12.5 1
+rule del 0
+rule clear
+```
+
+`a2b`/`b2a` select direction; `src`/`dst` remap link addresses. Control rules
+remap CROB/analog-command point indexes. Add the inverse B-to-A rule when the
+master must see the original index in SELECT/OPERATE echoes. Binary/analog rules replace status
+values and optional flags. Edits rebuild header and data CRCs. Index replacements
+must fit the original index width; an implicit range can be remapped only for
+one point. Supported objects include packed/flagged binary inputs/outputs and
+integer/floating analog inputs/outputs. Unknown, malformed, authenticated or
+fragmented application payloads are retained and recorded as SKIP; this version
+does not rewrite reassembled multi-frame applications. Link remapping remains
+possible per valid frame. Rule hit/skip counters appear in Rules/faults.
+
+Fault injection applies to framed bridge traffic:
+
+```
+fault a2b drop 10
+fault b2a duplicate 5
+fault b2a crc 3
+fault a2b delay 100
+fault a2b truncate 2 4
+fault b2a flip 12 0x80 8
+fault clear
+```
+
+EVERY_N is directional and deterministic (0 disables); delay is milliseconds.
+Flip uses a zero-based wire-byte offset and mask. Corruption/truncation deliberately
+do not repair CRCs. Received decoding, edits/drops and actual completed output
+are separate timestamped records. The 128-event view is bounded; there is no
+persistent capture until `log /sd/NEWFILE.tsv`. `log stop` closes it. Logs include
+sequence, milliseconds, direction, stage, text and hex; dropped history records
+are counted in the closing log_lost trailer. File I/O failure stops logging while
+transport continues. `save /sd/dnp3.cfg` saves a command profile, `load PATH`
+validates then applies it while stopped. Profiles never start transport.
+
+Simulation implements a bounded protocol subset: 32 static BI/AI/BO/AO points,
+class-0 scans and supported explicit static reads; latch-on/off CROB and int32
+analog commands with select-before-operate or direct operate; link reset/status,
+confirmed link acknowledgement/duplicate suppression, transport reassembly, and
+application confirmations. Controls change simulated points only. Class 1–3 scans
+return empty data; event queues, application fragmentation, secure authentication,
+time synchronization and general file/object services are not implemented. This
+is a bench simulator, not a complete conformant DNP3 master/outstation stack.

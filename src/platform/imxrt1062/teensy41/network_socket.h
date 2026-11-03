@@ -7,13 +7,16 @@ extern "C" {
 #define SK_NET_CHUNK 512
 // TCP payloads are copied; UDP uses worker-owned PSRAM staging storage.
 // The Ethernet worker never retains interpreter memory.
+// SK_NET_HALF_CLOSE opts a TCP channel into independent FIN handling before
+// connect; SK_NET_FTP_LISTEN length=1 opts its accepted channels in as well.
+// SK_NET_CLOSE_OUTPUT sends FIN after the caller has drained queued writes.
 enum sk_net_op { SK_NET_OPEN, SK_NET_CLOSE, SK_NET_CLOSE_ALL, SK_NET_CONNECT,
     SK_NET_CONNECTED, SK_NET_SEND, SK_NET_RECV, SK_NET_DNS_START, SK_NET_DNS_POLL,
     SK_NET_SERVICE_OPEN, SK_NET_POLL, SK_NET_UDP_TX_BEGIN, SK_NET_UDP_TX_END,
     SK_NET_UDP_RX_BEGIN, SK_NET_UDP_RX_END, SK_NET_ENTROPY,
     SK_NET_LISTEN_START, SK_NET_LISTEN_STOP, SK_NET_LISTEN_ACCEPT,
     SK_NET_PING_START, SK_NET_PING_POLL, SK_NET_PING_CLOSE,
-    SK_NET_FTP_LISTEN, SK_NET_FTP_ACCEPT, SK_NET_FTP_POLL, SK_NET_FTP_END, SK_NET_LOCAL_ADDR };
+    SK_NET_FTP_LISTEN, SK_NET_FTP_ACCEPT, SK_NET_FTP_POLL, SK_NET_FTP_END, SK_NET_LOCAL_ADDR, SK_NET_CLOSE_OUTPUT, SK_NET_HALF_CLOSE };
 typedef struct { uint32_t id; int op, handle, length; uint16_t port; uint8_t ip[4];
     char host[254]; uint8_t data[SK_NET_CHUNK]; } sk_net_request;
 typedef struct { uint32_t id; int error, value; uintptr_t owned_buffer; uint16_t port; uint8_t ip[4], data[SK_NET_CHUNK]; } sk_net_reply;

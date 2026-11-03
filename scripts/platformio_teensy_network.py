@@ -44,6 +44,23 @@ if qnet_opts.exists():
         driver.write_text(source_text.replace(old, new))
     else:
         assert new in source_text, "Pinned ENET checksum descriptor changed"
+# QNEthernet normally closes both sides on FIN. DNP3 relays opt in to keeping
+# the write side alive; the owner hook also covers FIN before listener accept.
+if qnet_opts.exists():
+    manager = qnet_opts.parent / "qnethernet/internal/ConnectionManager.cpp"
+    manager_text = manager.read_text()
+    hook_marker = "// SolarOS opt-in TCP half-close"
+    if hook_marker not in manager_text:
+        include = '#include "QNEthernet.h"'
+        assert manager_text.count(include) == 1
+        manager_text = manager_text.replace(include, include + '\n#if SK_DNP3\n' + hook_marker + '\nextern "C" bool sk_net_tcp_fin(void *);\nextern "C" void sk_net_tcp_forget(void *);\n#endif')
+        guard = '  // Check for errors and null packets'
+        assert manager_text.count(guard) == 1
+        manager_text = manager_text.replace(guard, '#if SK_DNP3\n  if ((p == nullptr) && (err == ERR_OK) && sk_net_tcp_fin(tpcb)) return ERR_OK;\n  if (err != ERR_OK) sk_net_tcp_forget(tpcb);\n#endif\n\n' + guard)
+        error_guard = '  if ((holder->state != nullptr) && (err != ERR_OK)) {'
+        assert manager_text.count(error_guard) == 1
+        manager_text = manager_text.replace(error_guard, error_guard + '\n#if SK_DNP3\n    sk_net_tcp_forget(holder->state->pcb);\n#endif')
+        manager.write_text(manager_text)
 framework = Path(env.PioPlatform().get_package_dir("framework-arduinoteensy-ts"))
 source = framework / "teensy4" / "imxrt1062_t41.ld"
 script = source.read_text()
@@ -75,6 +92,11 @@ for obj in ("dmm.cpp", "adc_guard.cpp", "motor_module.cpp", "usb_host_power.cpp"
             "solar_os_tui.c", "solar_os_tui_widgets.c", "solar_os_completion.c", "solar_os_completion_files.c", "solar_os_edit.c", "solar_os_calc.c",
             "solar_os_ltop.c", "solar_os_webradio.c", "solar_os_player.c", "solar_os_recorder.c", "player_folder.c", "solar_os_storage_browser.c", "solar_os_media_widgets.c", "solar_os_signal_widgets.c", "solar_os_dsp.c", "solar_os_webradio_catalog.c", "sshkey_command.cpp", "midi_commands.cpp", "serial_terminal.cpp", "radio_audio.cpp", "pd_controller.cpp", "power_shutdown.cpp", "power_button.cpp", "solar_os_stusb4500.c", "solar_os_midi_codec.c", "solar_os_shell.c", "solar_os_shell_fs.c", "solar_os_shell_io.c", "solar_os_expr.c",
             "solar_os_net_session.c", "solar_os_network.c", "solar_os_shell_network_status.c"):
+    script = script.replace(marker, marker + "\n\t\t*" + obj + ".o(.text* .rodata*)")
+# DNP3 decoding, simulation and UI are bounded worker tasks, not interrupt code.
+for obj in ("solar_os_app_registry.c", "solar_os_dnp3_app.c", "solar_os_dnp3_lab.c",
+            "solar_os_dnp3_wire.c", "solar_os_dnp3_bridge.c", "dnp3_service.cpp",
+            "crc.c", "functions.c", "decode.c"):
     script = script.replace(marker, marker + "\n\t\t*" + obj + ".o(.text* .rodata*)")
 # Keep DTCM for startup/network allocations and the 8 KiB core stack guard.
 # The console stack is now in OCRAM. Catch an ITCM-bank regression at link time.

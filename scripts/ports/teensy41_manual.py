@@ -1,5 +1,5 @@
 """Select accurate embedded documentation for the Teensy workstation shell."""
-APP_NAMES = set('chat meshmon recorder ftp player synth ltop webradio io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders gameboy mqttx obd clock pdpower scope help curl'.split())
+APP_NAMES = set('dnp3 chat meshmon recorder ftp player synth ltop webradio io com calc edit hexedit python aplay arecord ssh files less notes sheet plot playground view invaders gameboy mqttx obd clock pdpower scope help curl'.split())
 COMMAND_NAMES = set('dmm motor powerpath usbpower wifi bt wbridge mesh meshstatus meshlog meshbridge poweroff serial sshkey midi pd grep head wc ramfs gpio i2c spi uart expansion help man commands echo wait watch apps mem uptime clear setterm identity network audio cd ls cat sh mkdir rm mv cp exit reboot version board status top port df pwd session sessions fg bg tail close ping netscan ntp jobs job schedule zip unzip rtc date time flash sd usb lcd telnetd'.split())
 # Audited Teensy contracts. Hardware-neutral shared app pages remain upstream.
 OVERRIDES = {
