@@ -60,6 +60,12 @@ void solar_os_shell_cmd_charger(solar_os_context_t *ctx, int argc, char **argv);
 #if SOLAR_OS_PACKAGE_SERVICE_IMU
 void solar_os_shell_cmd_imu(solar_os_context_t *ctx, int argc, char **argv);
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_MAG || SK_MOTION
+void solar_os_shell_cmd_mag(solar_os_context_t *ctx, int argc, char **argv);
+#endif
+#if SK_MOTION
+void sk_shell_cmd_motion_stream(solar_os_context_t *ctx, int argc, char **argv);
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_NFC
 void solar_os_shell_cmd_nfc(solar_os_context_t *ctx, int argc, char **argv);
 #endif

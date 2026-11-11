@@ -52,3 +52,16 @@ functions are package-gated.
 accepted timezone expressions use POSIX TZ syntax and its POSIX sign
 convention. SolarOS does not include the IANA timezone database;
 `Europe/Berlin` is a built-in daylight-saving alias.
+
+## Teensy motherboard motion sensors
+
+The power-board profile exposes the LSM6DSOX as `imu0` and MMC5983MA as `mag0`.
+Use `imu list`, `imu sample imu0 1000`, `mag list`, or `mag sample mag0 1000`.
+Acceleration uses m/s², angular velocity uses rad/s, and magnetic field uses
+microtesla. The devices retain independent timestamps and validity.
+
+`stream list` includes shared byte sources `imu.imu0` (`imu-v1-le`, 52 bytes)
+and `mag.mag0` (`mag-v1-le`, 24 bytes). `stream status ID` prints metadata and
+`stream sample ID` prints a CSV sample on Teensy. Polling continues while the
+level/compass pages are hidden. Missing hardware returns an error, and samples
+older than 500 ms are unavailable.

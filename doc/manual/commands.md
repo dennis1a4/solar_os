@@ -824,6 +824,7 @@ unzip -l /books/archive.zip
 | --- | --- | --- |
 | `stream` | `stream` or `stream list` | List dynamic typed stream endpoints. |
 | `stream` | `stream status <id>` | Show type, direction, provider, format, owner, and counters for one stream. |
+| `stream` | `stream sample <id>` | Teensy motion profile reads one CSV sample through a shared stream handle. |
 | `daq` | `daq help` | Print DAQ usage. |
 | `daq` | `daq status` | Show DAQ job status. |
 | `daq` | `daq streams` | List stream IDs. |
@@ -1184,6 +1185,7 @@ available for the compiled board.
 | `charger` | `charger voltage <mV> [name]` | Set charge voltage to an advertised, exact step value. |
 | `imu` | `imu [list]` | List registered motion sensors, their concrete drivers, and available measurements. |
 | `imu` | `imu sample [name] [timeout-ms]` | Read acceleration, angular velocity, and optional orientation from one motion sensor. |
+| `mag` | `mag [list]`; `mag sample [name] [timeout-ms]` | List magnetometers or read timestamped X/Y/Z magnetic field in microtesla. On Teensy, `mag0` is the onboard MMC5983MA and `imu0` is the LSM6DSOX. |
 | `nfc` | `nfc [list]` | List registered NFC readers and their concrete drivers. |
 | `nfc` | `nfc power <on\|off> [name]` | Enable or disable a reader that has a driver-managed power rail. |
 | `nfc` | `nfc scan [name] [timeout-ms]` | Discover one collision-free NFC-A tag and print its UID, ATQA, and SAK. |

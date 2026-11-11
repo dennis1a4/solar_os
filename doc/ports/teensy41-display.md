@@ -269,8 +269,42 @@ and +/-250 dps ranges, block-data update and auto-increment. MMC5983MA uses
 18-bit output, automatic set/reset and continuous 20 Hz measurements. Each
 device checks its identity, recovers independently at two-second intervals, and
 expires data after 500 ms. Missing or stale hardware displays a status message
-and clears the bubble/pointer. Sensor initialization is lazy, on opening a sensor
-page; builds without `SK_MOTION` show that sensors are disabled.
+and clears the bubble/pointer. A dedicated motion task starts with the shell and
+polls every 20 ms. The level and compass read its cache through the shared
+services. Sensor reads continue while another app owns the display.
+Builds without `SK_MOTION` show that sensors are disabled.
+
+### Shared motion services and streams
+
+`imu list` registers the board device as `imu0` with driver `lsm6dsox`.
+`imu sample imu0 1000` reads acceleration in m/s² and angular velocity in rad/s.
+The validity mask advertises those two measurements. `mag list` registers `mag0`
+with driver `mmc5983ma`; `mag sample mag0 1000` reads package-axis magnetic field
+in microtesla. Missing hardware returns `ESP_ERR_NOT_FOUND`; stale data from a
+connected device returns `ESP_ERR_TIMEOUT`. A zero-timeout service call reads the
+cache immediately, and positive timeouts can wait for the worker's next sample.
+Both registrations remain discoverable when hardware is absent.
+
+`stream list` shows `imu.imu0` and `mag.mag0`. Use `stream status ID` for format
+metadata or `stream sample ID` for a CSV header and sample. Shared stream handles
+support simultaneous consumers. Each sample retains its acquisition timestamp
+across repeated reads. The binary formats are little endian and omit padding.
+
+| Stream | Format | Record |
+| --- | --- | --- |
+| `imu.imu0` | `imu-v1-le`, 52 bytes | uint64 timestamp_us, uint32 valid, float32 acceleration[3], gyro[3], quaternion[4] |
+| `mag.mag0` | `mag-v1-le`, 24 bytes | uint64 timestamp_us, uint32 valid, float32 magnetic_field_ut[3] |
+
+Quaternion order is w/x/y/z and is used only when the orientation validity bit
+is set. The LSM6DSOX provider sets acceleration and angular-velocity bits.
+The magnetometer service exposes the measured field. Compass calibration and
+the level's relative zero apply to their display pages.
+
+Shared C interfaces are in `solar_os_imu.h` and `solar_os_mag.h`. Each service
+owns device registration, reference protection and its typed/CSV stream adapter.
+The Teensy provider serializes hardware polling in one worker and copies cached
+samples inside short critical sections. I2C transactions use the existing Wire1
+mutex, and service readers perform no I2C transactions.
 
 Register references: [ST LSM6DSOX datasheet](https://www.st.com/resource/en/datasheet/lsm6dsox.pdf)
 and [MEMSIC MMC5983MA datasheet](https://www.memsic.com/Public/Uploads/uploadfile/files/20220119/MMC5983MADatasheetRevA.pdf).

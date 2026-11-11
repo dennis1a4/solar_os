@@ -13,7 +13,7 @@ MANUAL_GENERATED_HEADER := $(MANUAL_GENERATED_DIR)/solar_os_manual_data.h
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test
 TARGETS += input_action_match_test gesture_completion_test
 TARGETS += epd_ssd1677_test
-TARGETS += doc_memory_test
+TARGETS += doc_memory_test mag_service_test
 TARGETS += axp2101_service_test
 TARGETS += camera_service_test camera_expansion_test media_test mjpeg_test
 TARGETS += http_server_test
@@ -395,9 +395,13 @@ modem_service_test: modem_service_test.c $(ROOT)/src/services/solar_os_modem.c $
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
 		modem_service_test.c $(ROOT)/src/services/solar_os_modem.c -o $@
 
-imu_service_test: imu_service_test.c $(ROOT)/src/services/solar_os_imu.c $(ROOT)/src/services/solar_os_imu.h
+imu_service_test: imu_service_test.c $(ROOT)/src/services/solar_os_imu.c $(ROOT)/src/services/solar_os_imu.h $(ROOT)/src/services/solar_os_stream.c
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
-		imu_service_test.c $(ROOT)/src/services/solar_os_imu.c -lm -o $@
+		imu_service_test.c $(ROOT)/src/services/solar_os_imu.c $(ROOT)/src/services/solar_os_stream.c -lm -o $@
+
+mag_service_test: mag_service_test.c $(ROOT)/src/services/solar_os_mag.c $(ROOT)/src/services/solar_os_mag.h $(ROOT)/src/services/solar_os_stream.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
+		mag_service_test.c $(ROOT)/src/services/solar_os_mag.c $(ROOT)/src/services/solar_os_stream.c -lm -o $@
 
 bhi260ap_codec_test: bhi260ap_codec_test.c $(ROOT)/src/drivers/bhi260ap_codec.c \
 		$(ROOT)/src/drivers/bhi260ap_codec.h

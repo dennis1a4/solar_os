@@ -636,6 +636,11 @@ static const shell_command_t shell_builtin_commands[] = {
     {"usb", "USB drive status, mount or eject", solar_os_shell_cmd_usb},
 #endif
 #if SOLAR_OS_SHELL_CORE_ONLY
+#if SK_MOTION
+    {"imu", "motion sensor tools", solar_os_shell_cmd_imu},
+    {"mag", "magnetometer tools", solar_os_shell_cmd_mag},
+    {"stream", "list, inspect or sample data streams", sk_shell_cmd_motion_stream},
+#endif
 #if SK_POWER && SK_HW_RESOURCES
     {"pd", "configure and monitor an STUSB4500", sk_shell_cmd_pd},
 #endif
@@ -894,6 +899,9 @@ static const shell_command_t shell_builtin_commands[] = {
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_IMU
     {"imu", "motion sensor tools", solar_os_shell_cmd_imu},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_MAG
+    {"mag", "magnetometer tools", solar_os_shell_cmd_mag},
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_NFC
     {"nfc", "NFC reader tools", solar_os_shell_cmd_nfc},

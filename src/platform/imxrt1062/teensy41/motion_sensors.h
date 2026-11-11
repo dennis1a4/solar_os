@@ -27,6 +27,8 @@ public:
     Sample sample;
     uint32_t errors=0;
     explicit Sensors(Bus &transport):bus(transport) {}
+    bool imu_available() const { return imu_ready; }
+    bool mag_available() const { return mag_ready; }
     void poll(uint32_t now) {
         uint8_t id=0,status=0,data[12];
         if(imu_ready && uint32_t(now-(sample.imu_valid?sample.imu_at:imu_probe))>=2000) {

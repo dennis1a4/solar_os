@@ -3,31 +3,35 @@
 #ifndef SK_MOTION
 #define SK_MOTION 0
 #endif
+#if SK_MOTION
+extern "C" {
+#include "solar_os_imu.h"
+#include "solar_os_mag.h"
+}
+#endif
 
 // Owned by the small-monitor task. Input IRQ/task paths only queue button bits.
 struct SmallMotion {
-    struct Transport {
-        bool read(uint8_t a,uint8_t reg,uint8_t *out,size_t n) {
-            return sk_i2c_transfer(1,a,&reg,1,out,n)==ESP_OK;
-        }
-        bool write(uint8_t a,uint8_t reg,uint8_t value) {
-            const uint8_t data[]={reg,value};
-            return sk_i2c_transfer(1,a,data,2,nullptr,0)==ESP_OK;
-        }
-    } bus;
-    sk_motion::Sensors<Transport> sensors{bus};
     sk_motion::Calibration calibration;
     float roll=0,pitch=0,zero_roll=0,zero_pitch=0,bearing=0;
     bool level_ok=false,compass_ok=false;
     bool calibration_rejected=false;
-    uint32_t calibration_at=0;
+    uint64_t calibration_at=0;
 
     void update(unsigned page,uint8_t buttons,uint32_t now,char lines[9][27]) {
         strcpy(lines[1],page==5?"Digital level":"Compass - magnetic");
         strcpy(lines[8],page==5?"<> Page A Zero B Reset":"<> Page A Cal B Cancel");
 #if SK_MOTION
-        sensors.poll(now);
-        const auto &s=sensors.sample;
+        solar_os_imu_sample_t imu{};
+        solar_os_mag_sample_t mag{};
+        sk_motion::Sample s;
+        s.imu_valid=solar_os_imu_read_sample("imu0",0,&imu)==ESP_OK &&
+            (imu.valid&SOLAR_OS_IMU_CAP_ACCELERATION);
+        s.mag_valid=solar_os_mag_read_sample("mag0",0,&mag)==ESP_OK &&
+            (mag.valid&SOLAR_OS_MAG_CAP_FIELD);
+        s.imu_at=s.mag_at=now;
+        s.acceleration={imu.acceleration_m_s2[0]/9.80665f,imu.acceleration_m_s2[1]/9.80665f,imu.acceleration_m_s2[2]/9.80665f};
+        s.magnetic={mag.magnetic_field_ut[0],mag.magnetic_field_ut[1],mag.magnetic_field_ut[2]};
         float r=0,p=0;
         level_ok=s.imu_fresh(now) && sk_motion::level(s.acceleration,r,p);
         if(page==5) {
@@ -44,8 +48,8 @@ struct SmallMotion {
             if(calibration.collecting)calibration_rejected=!calibration.finish();
             else {calibration.start();calibration_rejected=false;}
         }
-        if(s.mag_fresh(now) && s.mag_at!=calibration_at) {
-            calibration.add(s.magnetic);calibration_at=s.mag_at;
+        if(s.mag_fresh(now) && mag.timestamp_us!=calibration_at) {
+            calibration.add(s.magnetic);calibration_at=mag.timestamp_us;
         }
         // The flat compass does not combine differently mounted sensor axes.
         const float lateral=s.acceleration.x*s.acceleration.x+s.acceleration.y*s.acceleration.y;

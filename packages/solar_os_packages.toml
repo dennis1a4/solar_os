@@ -96,6 +96,11 @@ label = "Motion sensors"
 category = "Hardware interfaces"
 members = ["service_imu"]
 
+[groups.mag]
+label = "Magnetometers"
+category = "Hardware interfaces"
+members = ["service_mag"]
+
 [groups.spi]
 label = "SPI"
 category = "Hardware interfaces"
@@ -1345,9 +1350,18 @@ sources = [
 
 [packages.service_imu]
 label = "service.imu"
+depends = ["service_streams"]
 sources = [
   "services/solar_os_imu.c",
   "shell/solar_os_shell_imu.c",
+]
+
+[packages.service_mag]
+label = "service.mag"
+depends = ["service_streams"]
+sources = [
+  "services/solar_os_mag.c",
+  "shell/solar_os_shell_mag.c",
 ]
 
 [packages.service_nfc]

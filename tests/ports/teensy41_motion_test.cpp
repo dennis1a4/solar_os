@@ -28,10 +28,29 @@ struct Bus {
 };
 static Bus display_bus;
 constexpr unsigned ST7735_BLACK=0,ST7735_WHITE=1,ST7735_GREEN=2,ST7735_YELLOW=3,ST7735_RED=4;
-constexpr int ESP_OK=0;
-static int sk_i2c_transfer(unsigned bus,uint8_t address,const uint8_t *tx,size_t n,uint8_t *rx,size_t length) {
-    assert(bus==1 && n==(length?1u:2u));
-    return (length?display_bus.read(address,tx[0],rx,length):display_bus.write(address,tx[0],tx[1]))?0:-1;
+extern "C" {
+#include "solar_os_imu.h"
+#include "solar_os_mag.h"
+}
+static sk_motion::Sensors<Bus> display_driver(display_bus);
+static uint32_t display_now;
+extern "C" esp_err_t solar_os_imu_read_sample(const char *,uint32_t,solar_os_imu_sample_t *out) {
+    display_driver.poll(display_now);
+    *out={};const auto &s=display_driver.sample;
+    if(!s.imu_fresh(display_now))return ESP_ERR_NOT_FOUND;
+    out->valid=SOLAR_OS_IMU_CAP_ACCELERATION;
+    out->acceleration_m_s2[0]=s.acceleration.x*9.80665f;
+    out->acceleration_m_s2[1]=s.acceleration.y*9.80665f;
+    out->acceleration_m_s2[2]=s.acceleration.z*9.80665f;
+    return ESP_OK;
+}
+extern "C" esp_err_t solar_os_mag_read_sample(const char *,uint32_t,solar_os_mag_sample_t *out) {
+    *out={};const auto &s=display_driver.sample;
+    if(!s.mag_fresh(display_now))return ESP_ERR_NOT_FOUND;
+    out->timestamp_us=uint64_t(s.mag_at)*1000;
+    out->valid=SOLAR_OS_MAG_CAP_FIELD;
+    out->magnetic_field_ut[0]=s.magnetic.x;out->magnetic_field_ut[1]=s.magnetic.y;out->magnetic_field_ut[2]=s.magnetic.z;
+    return ESP_OK;
 }
 #ifndef SK_MOTION
 #define SK_MOTION 1
@@ -104,26 +123,26 @@ int main() {
     assert(calibration.valid); // A failed recalibration preserves the old solution.
     SmallMotion screen;char lines[9][27]{};Display lcd;
 #if SK_MOTION
-    screen.update(5,0,0,lines);assert(strstr(lines[2],"missing"));
+    display_now=0;screen.update(5,0,0,lines);assert(strstr(lines[2],"missing"));
     display_bus.imu[0x1e]=3;display_bus.axis(0x2c,16384);
     display_bus.field(139264,131072,131072);
-    screen.update(5,0,100,lines);assert(screen.level_ok && strstr(lines[2],"Roll"));screen.draw(lcd,5);
+    display_now=100;screen.update(5,0,100,lines);assert(screen.level_ok && strstr(lines[2],"Roll"));screen.draw(lcd,5);
     display_bus.axis(0x28,-8192);display_bus.axis(0x2c,14189);
-    screen.update(5,1,200,lines);assert(near(screen.pitch,0) && strstr(lines[3],"Relative"));
-    screen.update(5,2,300,lines);assert(near(screen.pitch,30,0.1f));screen.draw(lcd,5);
-    screen.update(6,0,400,lines);assert(!screen.compass_ok && strstr(lines[2],"Hold flat"));
+    display_now=200;screen.update(5,1,200,lines);assert(near(screen.pitch,0) && strstr(lines[3],"Relative"));
+    display_now=300;screen.update(5,2,300,lines);assert(near(screen.pitch,30,0.1f));screen.draw(lcd,5);
+    display_now=400;screen.update(6,0,400,lines);assert(!screen.compass_ok && strstr(lines[2],"Hold flat"));
     display_bus.axis(0x28,0);display_bus.axis(0x2c,16384);display_bus.field(139264,131072,131072);
-    screen.update(6,0,500,lines);assert(screen.compass_ok && strstr(lines[2],"000.0"));screen.draw(lcd,6);
-    screen.update(6,1,600,lines);assert(screen.calibration.collecting && !screen.compass_ok);
-    screen.update(6,1,700,lines);assert(screen.calibration.collecting); // Insufficient coverage: keep collecting.
-    screen.update(6,2,800,lines);assert(!screen.calibration.collecting);
-    display_bus.missing_mag=true;screen.update(6,0,900,lines);assert(!screen.compass_ok);
+    display_now=500;screen.update(6,0,500,lines);assert(screen.compass_ok && strstr(lines[2],"000.0"));screen.draw(lcd,6);
+    display_now=600;screen.update(6,1,600,lines);assert(screen.calibration.collecting && !screen.compass_ok);
+    display_now=700;screen.update(6,1,700,lines);assert(screen.calibration.collecting); // Insufficient coverage: keep collecting.
+    display_now=800;screen.update(6,2,800,lines);assert(!screen.calibration.collecting);
+    display_bus.missing_mag=true;display_now=900;screen.update(6,0,900,lines);assert(!screen.compass_ok);
     const unsigned clears=lcd.clears,before=lcd.drawn;
     screen.draw(lcd,6);assert(lcd.clears==clears+1 && lcd.drawn==before+2); // Remove stale pointer.
 #else
     const unsigned before=display_bus.calls;
-    screen.update(5,1,100,lines);assert(strstr(lines[2],"disabled"));
-    screen.update(6,1,200,lines);assert(strstr(lines[2],"disabled"));
+    display_now=100;screen.update(5,1,100,lines);assert(strstr(lines[2],"disabled"));
+    display_now=200;screen.update(6,1,200,lines);assert(strstr(lines[2],"disabled"));
     screen.draw(lcd,6);assert(before==display_bus.calls && !screen.compass_ok);
 #endif
     puts("PASS: IMU/magnetometer registers, signed and 18-bit decode, independent recovery, stale data, level, compass, calibration");

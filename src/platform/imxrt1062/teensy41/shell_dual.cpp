@@ -2,6 +2,7 @@
 #include "solar_os_organizer.h"
 #endif
 #include "power_path.h"
+#include "motion_service.h"
 #if SK_WIRELESS_BRIDGE
 #include "wireless_bridge.h"
 #endif
@@ -724,6 +725,9 @@ void sk_upstream_shell_run() {
 #endif
 #if SK_PLOT
     extern void sk_plot_streams_begin(); sk_plot_streams_begin();
+#endif
+#if SK_MOTION
+    configASSERT(sk_motion_begin()==ESP_OK);
 #endif
     configASSERT(sk_lcd_ready());
     console_gate=xSemaphoreCreateRecursiveMutex(); configASSERT(console_gate);

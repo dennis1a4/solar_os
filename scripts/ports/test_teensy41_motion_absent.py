@@ -21,6 +21,18 @@ def main():
         with serial.Serial(ports[0], 115200, timeout=.03, write_timeout=3, exclusive=True) as usb:
             c = Console(usb, report)
             c.command('')
+            assert 'imu0  lsm6dsox' in c.command('imu list')
+            assert 'mag0  mmc5983ma' in c.command('mag list')
+            endpoints = c.command('stream list')
+            assert 'imu.imu0' in endpoints and 'mag.mag0' in endpoints, endpoints
+            for endpoint, format_name in (('imu.imu0', 'imu-v1-le'), ('mag.mag0', 'mag-v1-le')):
+                out = c.command('stream status ' + endpoint)
+                assert format_name in out, out
+            for command in ('imu sample imu0 1000', 'mag sample mag0 1000',
+                            'stream sample imu.imu0', 'stream sample mag.mag0'):
+                out = c.command(command)
+                assert 'ESP_ERR_NOT_FOUND' in out, out
+            report['checks'].append('shared IMU/magnetometer registration, stream metadata and missing-hardware sample errors before opening pages')
             c.command('lcd small on')
             for page, title, message in (
                     ('level', 'Digital level', 'IMU missing / stale'),

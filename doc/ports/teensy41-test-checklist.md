@@ -1,6 +1,6 @@
 # Teensy / SuperKeyboard outstanding test checklist
 
-Updated 2026-11-02. **Use this as the master test queue.** Feature notes linked
+Updated 2026-11-10. **Use this as the master test queue.** Feature notes linked
 below contain procedures and historical evidence; the roadmap tracks development.
 Unchecked items are outstanding, not failed unless explicitly described as such.
 Do not check off a physical test based on simulation, injected input or a build.
@@ -705,6 +705,19 @@ grounded), U19 MMC5983MA at `0x30`, SDA17/SCL16. IMU INT1 is GPIO22 and
 Mag INT is GPIO38; the current driver polls and leaves these GPIOs untouched.
 Enabled by `SK_MOTION=1` in `teensy41_power_board`.
 Details: [sensor pages and controls](teensy41-display.md#digital-level-and-compass).
+
+- [x] **MOTION-SHARED-SW — Shared services (2026-11-10):** IMU stream registry
+  and magnetometer registry/stream tests cover simultaneous handles, unregister
+  protection, duplicate-stream rollback, byte layout, CSV and capability masking.
+  The production Teensy provider host test verifies SI conversions, stable sample
+  timestamps, stream reads, cache-only consumers, independent sensor recovery,
+  expiry and bounded waits. The level/compass tests use shared service reads.
+- [ ] **MOTION-SHARED-DEVICE — Shared service acceptance:** with sensors absent,
+  check `imu list`, `mag list`, `stream list`, `stream status imu.imu0` and
+  `stream status mag.mag0`. Both direct samples and `stream sample ID` should
+  report missing hardware promptly. After assembly, compare direct and binary/CSV
+  samples, their timestamps, units and valid bits while changing dashboard pages
+  and running an app that owns the display. Confirm polling and recovery continue.
 
 - [x] **MOTION-SW — Host acceptance:**
   `bash scripts/ports/test_teensy41_motion_host.sh` passes for enabled/disabled
