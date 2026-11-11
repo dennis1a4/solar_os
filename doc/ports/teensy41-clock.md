@@ -40,6 +40,25 @@ and TLS UTC remain unaffected; the clock applies local-time conversion only.
 NTP synchronization was added. An implausible RTC date yields dashed digits;
 a plausible RTC date is not proof it has been synchronized or battery-backed.
 
+### Startup restoration fix — 2026-11-11
+
+The device reproduced a boot failure where `setterm timezone` reported UTC
+although the flash file still contained Manitoba/UTC5 with a valid checksum.
+The lazy loader marked itself loaded before reading settings, so an unsuccessful
+first read permanently cached the default for that boot.
+
+Startup now restores the timezone after flash mounting and before creating the
+display and background consumers. A shared mutex serializes loading and updates.
+Failed reads remain retryable; successful loads and an absent settings namespace
+establish the cache. A successful save also establishes the active cache.
+
+Host regression tests cover an unavailable flash mount and a temporarily occupied
+settings namespace before restoring the saved value. The flashed fix restored
+Manitoba/UTC5 across three software reboots without re-saving the configuration.
+The local clock matched the UTC RTC and the saved file remained byte-for-byte
+unchanged. Run `python3 scripts/ports/test_teensy41_timezone.py --reboots 3 --log LOG.json`
+to repeat these checks against the timezone already saved on the device.
+
 ## Implementation and boundaries
 
 - Shared `src/apps/solar_os_clock.c` is compiled unchanged; app registry already
@@ -49,7 +68,7 @@ a plausible RTC date is not proof it has been synchronized or battery-backed.
   relative-alarm subset of the scheduler API. It rejects persistent schedules,
   script actions, other names, duplicate alarms and out-of-range durations.
 - Countdown uses the 64-bit monotonic timer, independent of RTC/timezone edits.
-  The existing dual-console gate serializes service state and timezone changes.
+  A timezone mutex serializes settings loading and updates across tasks.
   Console yields poll the alarm even when the clock is suspended, provided the
   console scheduler is running. No wake-from-sleep or power-off timer is claimed.
 - Alarm requests a one-second 440 Hz tone every 1.6 seconds on an available

@@ -4,6 +4,7 @@
 #include "solar_os_keys.h"
 #include "solar_os_schedule.h"
 #include "solar_os_time.h"
+#include "nvs.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,7 @@ static uint32_t rtc_epoch;
 static unsigned tones, stops, presents;
 static uint32_t draw_hash, last_hash;
 static bool fail_replace;
+static bool flash_mounted = true;
 static solar_os_gfx_color_t color;
 int64_t esp_timer_get_time(void) { return (int64_t)monotonic_ms * 1000; }
 uint32_t sk_clock_rtc_epoch(void) { return rtc_epoch; }
@@ -26,7 +28,7 @@ void sk_clock_alarm_sound(bool on) {
     else
         ++stops;
 }
-bool solar_os_storage_flash_is_mounted(void) { return true; }
+bool solar_os_storage_flash_is_mounted(void) { return flash_mounted; }
 esp_err_t solar_os_storage_sync_file(FILE *f) { return fflush(f) == 0 ? ESP_OK : ESP_FAIL; }
 esp_err_t sk_settings_replace(const char *a, const char *b) {
     return !fail_replace && rename(a, b) == 0 ? ESP_OK : ESP_FAIL;
@@ -127,10 +129,19 @@ int main(int argc, char **argv) {
     char name[32], posix[80];
     rtc_epoch = epoch(2026, 1, 15, 12, 34);
     if (!strcmp(argv[2], "reload")) {
+        flash_mounted = false;
+        solar_os_time_get_timezone(name, sizeof(name), posix, sizeof(posix));
+        assert(!strcmp(name, "UTC"));
+        flash_mounted = true;
+        nvs_handle_t busy;
+        assert(nvs_open("time", NVS_READONLY, &busy) == ESP_OK);
+        solar_os_time_get_timezone(name, sizeof(name), posix, sizeof(posix));
+        assert(!strcmp(name, "UTC"));
+        nvs_close(busy);
         solar_os_time_get_timezone(name, sizeof(name), posix, sizeof(posix));
         assert(!strcmp(name, "Manitoba"));
         assert(solar_os_time_get_datetime(&d) == ESP_OK && d.hour == 7 && d.minute == 34);
-        puts("PASS: timezone persists across independent process restart");
+        puts("PASS: saved timezone reloads after delayed flash mount and temporary settings contention");
         return 0;
     }
     solar_os_time_get_timezone(name, sizeof(name), posix, sizeof(posix));

@@ -184,6 +184,17 @@ through software reboot passed. They do not establish visual or audible behavior
 - [ ] **CLOCK-3 — Power loss:** verify saved Manitoba setting across a full power
   cycle, and RTC retention with the intended backup battery. Confirm UTC RTC vs
   displayed UTC−5. Software-reboot retention already passed.
+- [x] **CLOCK-BOOT — Saved-timezone restoration (2026-11-11):** reproduced UTC
+  after reboot while the checksummed flash file retained Manitoba/UTC5. Fixed
+  premature caching of failed reads, serialized timezone settings access, and
+  restored settings before background consumers start. Host tests pass delayed
+  flash mounting, temporary namespace contention, save rollback and reload.
+  Flashed the fix and verified the saved timezone and local clock across three
+  software reboots without issuing a timezone-setting command. The flash file's
+  SHA256 remained `3fd6bba73c2a088c7945bc8c4ca165ff2e325caa9a35d6ba6b8db9763faf23e2`.
+  Capture: `/tmp/solaros-timezone-fixed.json`; upload: `/tmp/solaros-timezone-upload.log`.
+  Installed HEX SHA256:
+  `a4293edba5f884b7a246f6d1b6056823566de01a182c5302bbd7612a4405649c`.
 - [ ] **AUDIO-1 — Integrated hardware:** restore the shield and test playback,
   recording, synth and alarm with LCD/USB/SD active and the new AmpEn wiring.
 - [ ] **AUDIO-2 — Quality:** investigate the recorded 60 Hz microphone hum; verify

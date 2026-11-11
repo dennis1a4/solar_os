@@ -10,6 +10,9 @@ extern "C" {
 #include "solar_os_shell_parse.h"
 #include "solar_os_expr.h"
 #include "solar_os_memory.h"
+#if SK_CLOCK
+#include "solar_os_time.h"
+#endif
 }
 
 static volatile uint32_t heartbeat_count;
@@ -135,6 +138,10 @@ static void shell_task(void *) {
     #if SK_QSPI_FLASH
     extern void sk_flash_begin();
     sk_flash_begin();
+    #endif
+    #if SK_CLOCK
+    // Restore settings before display, scheduler and organizer tasks read time.
+    solar_os_time_get_timezone(nullptr, 0, nullptr, 0);
     #endif
     sk_memory_print();
     sk_displays_begin();
