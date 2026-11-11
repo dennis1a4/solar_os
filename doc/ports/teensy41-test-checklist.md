@@ -1,6 +1,6 @@
 # Teensy / SuperKeyboard outstanding test checklist
 
-Updated 2026-11-10. **Use this as the master test queue.** Feature notes linked
+Updated 2026-11-11. **Use this as the master test queue.** Feature notes linked
 below contain procedures and historical evidence; the roadmap tracks development.
 Unchecked items are outstanding, not failed unless explicitly described as such.
 Do not check off a physical test based on simulation, injected input or a build.
@@ -712,10 +712,22 @@ Details: [sensor pages and controls](teensy41-display.md#digital-level-and-compa
   The production Teensy provider host test verifies SI conversions, stable sample
   timestamps, stream reads, cache-only consumers, independent sensor recovery,
   expiry and bounded waits. The level/compass tests use shared service reads.
-- [ ] **MOTION-SHARED-DEVICE — Shared service acceptance:** with sensors absent,
-  check `imu list`, `mag list`, `stream list`, `stream status imu.imu0` and
-  `stream status mag.mag0`. Both direct samples and `stream sample ID` should
-  report missing hardware promptly. After assembly, compare direct and binary/CSV
+- [x] **MOTION-SHARED-ABSENT — Installed shared services (2026-11-11):** flashed
+  the `teensy41_power_board` image built from `59a27f1b`. `imu list`, `mag list`
+  and stream metadata confirm `imu0`/LSM6DSOX, `mag0`/MMC5983MA, `imu.imu0`
+  (`imu-v1-le`) and `mag.mag0` (`mag-v1-le`, uT). Direct and stream samples
+  report `NOT_FOUND`. Four repeated failed reads per stream leave zero handles.
+  With the dashboard disabled, the motion task remains running with 2848 bytes
+  of stack headroom. Level and Compass report missing hardware across repeated
+  probes, with advancing updates/scans, zero SPI misses and NES faults, and
+  1540 bytes of monitor stack headroom. Returned to System with USB responsive.
+  The separate paired-controller check also passed six observations, with scans
+  advancing from 6987 to 7564 and zero reader faults.
+  The acceptance script now accepts Teensy's `NOT_FOUND` label as well as the
+  ESP-style error name. Capture: `/tmp/solaros-shared-motion-absent-20261111.json`;
+  upload: `/tmp/solaros-shared-motion-upload-20261111.log`. Installed HEX SHA256:
+  `7e808c3a33a428d4d3e4933579a3287537279f29eedc25f4db3abc5194807373`.
+- [ ] **MOTION-SHARED-DEVICE — Assembled sensor acceptance:** compare direct and binary/CSV
   samples, their timestamps, units and valid bits while changing dashboard pages
   and running an app that owns the display. Confirm polling and recovery continue.
 

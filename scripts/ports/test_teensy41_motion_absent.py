@@ -31,9 +31,25 @@ def main():
             for command in ('imu sample imu0 1000', 'mag sample mag0 1000',
                             'stream sample imu.imu0', 'stream sample mag.mag0'):
                 out = c.command(command)
-                assert 'ESP_ERR_NOT_FOUND' in out, out
+                assert re.search(r'^(imu|mag|stream): (ESP_ERR_)?NOT_FOUND$', out, re.M), out
             report['checks'].append('shared IMU/magnetometer registration, stream metadata and missing-hardware sample errors before opening pages')
-            c.command('lcd small on')
+            c.command('lcd small off')
+            try:
+                for _ in range(4):
+                    for endpoint in ('imu.imu0', 'mag.mag0'):
+                        started = time.monotonic()
+                        out = c.command('stream sample ' + endpoint)
+                        assert re.search(r'^stream: (ESP_ERR_)?NOT_FOUND$', out, re.M), out
+                        assert time.monotonic() - started < 2, out
+                        out = c.command('stream status ' + endpoint)
+                        assert 'handles=0' in out, out
+                out = c.command('top')
+                task = re.search(r'^motion\s+(run|ready|wait)\s+\d+\s+(\d+)\s+', out, re.M)
+                assert task and int(task.group(2)) >= 512, out
+                report['motion_stack_free_bytes'] = int(task.group(2))
+                report['checks'].append('repeated failed stream reads release handles; motion task remains healthy with dashboard disabled')
+            finally:
+                c.command('lcd small on')
             for page, title, message in (
                     ('level', 'Digital level', 'IMU missing / stale'),
                     ('compass', 'Compass - magnetic', 'Magnetometer missing/stale')):
